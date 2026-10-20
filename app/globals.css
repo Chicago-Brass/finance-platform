@@ -42,7 +42,7 @@ a { color: inherit; }
 .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
 .btn-primary:hover { background: #2a3646; }
 .btn-quiet { width: auto; padding: 0.35rem 0.7rem; font-weight: 500; }
-input[type="email"] {
+input[type="email"], input[type="password"] {
   width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--rule); border-radius: 8px; font: inherit; background: #fff;
 }
 label { font-weight: 600; font-size: 13px; }
