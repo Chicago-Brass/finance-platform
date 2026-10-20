@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NavLinks } from "@/components/NavLinks";
+import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,9 @@ export default async function ReportsLayout({ children }: { children: React.Reac
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
-            <span className="brand-mark small" aria-hidden>CB</span>
-            <span className="brand-name">Chicago Brass Finance</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="brand-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
+            <span className="brand-name">Finance</span>
           </div>
           <NavLinks />
           <div className="user-box">
