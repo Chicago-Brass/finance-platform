@@ -150,3 +150,16 @@ label { font-weight: 600; font-size: 13px; }
   .fin-table { min-width: 0; }
   .fin-table tbody tr:hover td, .fin-table tbody tr:hover th { background: none; }
 }
+
+/* ---------- Live ledger test ---------- */
+.live-badge { background: var(--ok-tint); color: var(--ok); font-weight: 600; font-size: 12px; padding: 0.2rem 0.6rem; border-radius: 999px; }
+.date-filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin: 0 0 1rem; }
+.date-filter label { display: grid; gap: 0.25rem; font-size: 12px; color: var(--ink-2); }
+.date-filter input[type="date"] { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--rule); border-radius: 6px; background: #fff; }
+.date-filter .btn-quiet { background: var(--ink); color: #fff; border-color: var(--ink); }
+.empty-state { margin: 1.5rem 0 0; padding: 1.25rem; border: 1px dashed var(--rule); border-radius: 8px; color: var(--ink-2); text-align: center; }
+.gl-table, .tchart-table { min-width: 960px; font-size: 13px; }
+.gl-table td, .tchart-table td { vertical-align: top; }
+.tchart-section { margin-top: 1.5rem; }
+.tchart-heading { font-size: 1.05rem; margin: 0 0 0.25rem; }
+.nowrap { white-space: nowrap; }

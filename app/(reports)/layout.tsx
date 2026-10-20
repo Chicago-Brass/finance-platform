@@ -28,11 +28,8 @@ export default async function ReportsLayout({ children }: { children: React.Reac
       </header>
       <div className="toolbar">
         <div className="toolbar-inner">
-          <label htmlFor="period" className="toolbar-label">Period</label>
-          <select id="period" defaultValue="2026-09" disabled title="Period selection arrives with live ledger data">
-            <option value="2026-09">September 2026</option>
-          </select>
-          <span className="toolbar-hint">More periods arrive when the app is connected to the ledger.</span>
+          <span className="live-badge">Live ledger test</span>
+          <span className="toolbar-hint">Read-only view of the Supabase ledger (DUAL ENTRY). Nothing here changes data.</span>
         </div>
       </div>
       <main className="content">{children}</main>
