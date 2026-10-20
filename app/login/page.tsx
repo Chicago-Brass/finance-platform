@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <h1>Chicago Brass Finance</h1>
         <p className="muted">Sign in with your @{allowedEmailDomain} account.</p>
         {error === "link" && (
-          <p className="notice notice-warn">That sign-in link expired or was already used. Request a new one below.</p>
+          <p className="notice notice-warn">That sign-in attempt didn&apos;t complete. Please sign in again.</p>
         )}
         <LoginForm microsoftEnabled={microsoftLoginEnabled} domain={allowedEmailDomain} />
       </div>
