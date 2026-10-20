@@ -19,7 +19,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
           </div>
           <NavLinks />
           <div className="user-box">
-            <span className="user-email">{user?.email}</span>
+            <a className="user-email" href="/account" title="Change password">{user?.email} · Change password</a>
             <form action="/auth/signout" method="post">
               <button className="btn btn-quiet" type="submit">Sign out</button>
             </form>
