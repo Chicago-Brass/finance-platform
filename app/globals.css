@@ -78,7 +78,9 @@ label { font-weight: 600; font-size: 13px; }
 .nav-link:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .nav-link.active { color: #fff; background: rgba(255,255,255,0.14); }
 .user-box { display: flex; align-items: center; gap: 0.75rem; }
-.user-email { color: #c9d1dc; font-size: 13px; }
+.user-email { color: #c9d1dc; font-size: 13px; text-decoration: none; }
+.user-email:hover { color: #fff; text-decoration: underline; }
+.back-link { margin: 1rem 0 0 !important; font-size: 13px; }
 .user-box .btn-quiet { background: transparent; color: #fff; border-color: rgba(255,255,255,0.3); }
 .toolbar { background: var(--surface); border-bottom: 1px solid var(--rule); }
 .toolbar-inner { display: flex; align-items: center; gap: 0.75rem; min-height: 48px; flex-wrap: wrap; }
