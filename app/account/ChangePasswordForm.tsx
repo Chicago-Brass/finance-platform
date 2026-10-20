@@ -15,7 +15,6 @@ export function ChangePasswordForm() {
     e.preventDefault();
     if (pw.length < MIN) return setMsg({ ok: false, text: `Use at least ${MIN} characters.` });
     if (pw !== pw2) return setMsg({ ok: false, text: "The two passwords don't match." });
-    if (pw === "ChicagoBrass2026!") return setMsg({ ok: false, text: "Choose a password different from the temporary one." });
     setBusy(true);
     const { error } = await createClient().auth.updateUser({ password: pw });
     setBusy(false);
