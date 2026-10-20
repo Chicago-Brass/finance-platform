@@ -141,12 +141,43 @@ label { font-weight: 600; font-size: 13px; }
   .report-checks { align-items: flex-start; }
 }
 
-/* ---------- Print ---------- */
+/* ---------- Report filters ---------- */
+.filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1rem;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 0.85rem 1rem; margin-bottom: 1rem;
+}
+.filter { display: grid; gap: 0.25rem; }
+.filter label { color: var(--ink-2); font-size: 12px; }
+.filter select {
+  font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--rule); border-radius: 6px; background: #fff; color: var(--ink);
+}
+.filter select:disabled { opacity: 0.55; }
+.filters-reset { font-size: 13px; color: var(--ink-2); padding-bottom: 0.4rem; }
+.filters-hint { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--ink-3); }
+
+/* ---------- Report actions & collapsible rows ---------- */
+.report-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.25rem; }
+.report-actions-spacer { flex: 1; }
+.row-toggle {
+  appearance: none; border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit;
+  cursor: pointer; text-align: left; display: inline-flex; align-items: baseline; gap: 0.35rem;
+}
+.row-toggle:hover { color: var(--brass); }
+.row-caret { display: inline-block; width: 0.8rem; color: var(--ink-3); font-size: 11px; }
+.fin-table thead th:first-child, .fin-table tbody th { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+
+/* ---------- Print / PDF ---------- */
+@page { size: landscape; margin: 12mm; }
 @media print {
-  body { background: #fff; font-size: 11px; }
-  .topbar, .toolbar { display: none; }
+  body { background: #fff; font-size: 11px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .topbar, .toolbar, .no-print { display: none !important; }
   .content { padding: 0; max-width: none; }
   .report { border: 0; padding: 0; }
+  .table-wrap { overflow: visible; }
   .fin-table { min-width: 0; }
+  .fin-table thead { display: table-header-group; }
+  .fin-table tr { break-inside: avoid; }
   .fin-table tbody tr:hover td, .fin-table tbody tr:hover th { background: none; }
+  .check { white-space: normal; }
 }
