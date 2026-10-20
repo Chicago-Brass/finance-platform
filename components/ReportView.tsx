@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { Report, ReportLine } from "@/lib/reports/types";
 import { formatAmount, formatPercent } from "@/lib/format";
 import { downloadExcel } from "@/lib/reports/export-excel";
+import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 
 /** Rows that print a $ sign: first amount row of the report and every total. */
 function showsSymbol(line: ReportLine, firstAmountId: string | undefined) {
@@ -51,7 +52,9 @@ export function ReportView({ report }: { report: Report }) {
   return (
     <article className="report">
       <header className="report-header">
-        <div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="print-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
+        <div className="report-heading">
           <p className="report-entity">{report.entity}</p>
           <h1 className="report-title">{report.title}</h1>
           <p className="report-period">
