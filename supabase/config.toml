@@ -1,0 +1,4 @@
+project_id = "finance-platform"
+
+[functions.ledger-payment]
+verify_jwt = false # The function authenticates Airtable's x-ledger-secret.
