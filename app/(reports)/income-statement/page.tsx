@@ -3,6 +3,7 @@ import { ReportView } from "@/components/ReportView";
 import { getIncomeStatement, parseIncomeStatementParams } from "@/lib/reports/income-statement";
 
 export const metadata = { title: "Income Statement · Chicago Brass Finance" };
+export const dynamic = "force-dynamic";
 
 export default async function IncomeStatementPage({
   searchParams,

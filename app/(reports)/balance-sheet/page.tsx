@@ -3,6 +3,7 @@ import { ReportView } from "@/components/ReportView";
 import { getBalanceSheet, parseBalanceSheetParams } from "@/lib/reports/balance-sheet";
 
 export const metadata = { title: "Balance Sheet · Chicago Brass Finance" };
+export const dynamic = "force-dynamic";
 
 export default async function BalanceSheetPage({
   searchParams,
