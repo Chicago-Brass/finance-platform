@@ -48,8 +48,8 @@ Amounts are positive decimal strings with cents precision calculated by Airtable
 provides both account references and can carry the relevant invoice, vendor, client, staff,
 transaction, PO, tax state, source-line and branch values. `transactionType` is the free-text T-Chart
 title; `ruleCode` is stable source metadata. The database stores transaction and source-event types
-without using them to choose posting accounts. Branch is forwarded unchanged; structured branch
-persistence awaits its planned database field.
+without using them to choose posting accounts. The nullable journal_lines.branch text field is reserved for future attribution. The writer
+does not populate it while branch reporting is deferred.
 
 `invoiceRecordId` is the shared invoice reference. Optional `debitInvoiceRecordId` and
 `creditInvoiceRecordId` override it per leg. This can preserve a

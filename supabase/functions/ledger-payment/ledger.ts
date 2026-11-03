@@ -208,7 +208,7 @@ function expandPostings(source: LedgerSource, postings: LedgerPosting[], catalog
       airtable_record_id: optionalText(posting.sourceRecordId),
     };
     const magnitude = formatCents(amount);
-    // Branch travels with each pair and will be stored when its field is added.
+    // Branch attribution is deferred; the reserved journal_lines.branch column stays NULL.
     lines.push(
       { ...context, invoice_ref: debitInvoice, account_code: debit, debit: magnitude, credit: "0.00" },
       { ...context, invoice_ref: creditInvoice, account_code: credit, debit: "0.00", credit: magnitude },

@@ -18,7 +18,8 @@ equality; retries retain the originally saved URL. A cancellation replayed as a 
 even when its date, transaction wording and lines are unchanged. Source event type also scopes the
 complete category set. A header payment-name rename alone returns the original journal without
 changing its static description. The receiver retains notes support, while Airtable does not send
-notes. Branch values remain payload context until the planned database field is added.
+notes. Branch values remain payload context. The nullable journal_lines.branch field exists but is
+not populated while branch reporting is deferred.
 
 Invoice-source tests cover a discount alongside the triggering payment's cash settlement, exact
 replay, replay through a different triggering payment, strict changed-discount/date/line conflicts,

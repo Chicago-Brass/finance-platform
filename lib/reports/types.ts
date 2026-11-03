@@ -1,8 +1,7 @@
 /**
  * ReportLine data contract.
  *
- * Stage 1 feeds these from static sample data. Stage 3 feeds the SAME shape
- * from Supabase ledger views, so the UI May signs off on does not change.
+ * Live ledger report builders return this shape for the shared UI and exports.
  */
 
 export type ColumnKind = "amount" | "percent";

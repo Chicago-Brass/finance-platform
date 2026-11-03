@@ -4,6 +4,29 @@ This page summarizes the latest verified state. The [webhook contract](ledger-we
 [category matrix](ledger-payment-category-matrix.md) and actual source describe behavior.
 The [initial rollout](ledger-rollout-2026-10-30.md) is historical evidence, not current deployment state.
 
+## Local financial reports - 4 November
+
+The develop branch connects Income Statement and Balance Sheet to authenticated, posted
+Supabase trial balances. Account groups use the live chart of accounts, including contra-account
+signs and interest below operating income. Dynamic years/dates replace workbook/forecast cutoffs;
+branch filters are removed for now. The shared report renderer and exports keep their contract.
+
+The current goal is correct page queries, field mappings, account groupings and filters against
+the existing database dataset. Airtable synchronization and business-data completeness are outside
+this frontend work.
+
+Twelve focused report checks and TypeScript passed. Independent journal-line SQL matches 2026
+net income/current-year earnings of -43.16, prior unclosed earnings of -87.45, and both Balance Sheet
+sides at 26084.00. Browser checks covered 2025/2026, annual summary and quarterly as-of balances.
+Trial Balance matched all 61 accounts at 2025-12-31 and 2026-11-03. General Ledger matched all
+64 lines for 2025 and 128 lines for 2026, including displayed fields and 2026 audit links.
+T-Chart matched all 58 catalog rules and their displayed mappings. Export downloads were not retested.
+
+Migration 20261103214849_add_journal_line_branch is applied and recorded in the hosted migration
+history. All 192 existing branch values remain NULL; 85 journal headers and debit/credit totals
+are unchanged. There is no branch attribution/backfill, posting-rule change, or hosted frontend
+deployment in this work. See [report data and mappings](ledger-reporting.md).
+
 ## Logging fixes - 4 November
 
 Payment Sent prints its match summary before the first webhook. Its shared sender prints each

@@ -7,7 +7,7 @@ export function todayChicago() {
 
 export function cleanDate(v: string | string[] | undefined, fallback: string) {
   const s = Array.isArray(v) ? v[0] : v;
-  return s && ISO.test(s) && !Number.isNaN(Date.parse(s)) ? s : fallback;
+  return s && ISO.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s ? s : fallback;
 }
 
 export function startOfYear(iso: string) {

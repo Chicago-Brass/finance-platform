@@ -2,13 +2,18 @@
 
 Internal financial reporting (income statement, balance sheet) on Next.js + Vercel, backed by Supabase.
 
-**Status:** Stage 1. Reports show **sample data** and are not yet connected to the ledger.
+**Status:** On `develop`, Income Statement and Balance Sheet read posted Supabase ledger data.
+The local app uses the DUAL ENTRY project. Current testing verifies page queries, field mappings,
+account groupings and filters against the existing database records. Branch reporting is deferred.
 
 ## How it works
 - Sign-in: Supabase Auth; Microsoft SSO can be enabled once the Entra app is registered.
 - Access: only emails in `public.app_users` with `active = true` can see reports (checked in `middleware.ts`).
-- Reports: the builders under `lib/reports/` currently read checked-in data and return the
-  `Report` / `ReportLine` contract in `lib/reports/types.ts`. Connecting the ledger is separate work.
+- Reports: authenticated server reads use `get_trial_balance` and the ledger views. The builders under
+  `lib/reports/` return the existing `Report` / `ReportLine` contract for the UI and Excel/PDF exports.
+  Income Statement supports selectable years and monthly/quarterly/annual actuals. Balance Sheet uses
+  cumulative as-of balances, with prior-year and current-year earnings separated.
+  See [report data and account mapping](docs/ledger-reporting.md).
 
 ## Develop locally
 ```
@@ -29,13 +34,15 @@ The Edge Function authenticates, resolves account references and saves the suppl
 in one database transaction. Transaction types are metadata; there is no PAY/category accounting router
 or database posting function. A migration adds `transaction_type` and `source_event_type` to journal
 headers. See the
-[webhook contract](docs/ledger-webhook-contract.md). This does not connect the report UI yet.
+[webhook contract](docs/ledger-webhook-contract.md). Report reads are documented separately in
+[ledger reporting](docs/ledger-reporting.md).
 Current deployment and live-test scope: [ledger status](docs/ledger-current-status.md).
 Earlier setup evidence: [initial 2026-10-30 rollout](docs/ledger-rollout-2026-10-30.md).
 
 Checks:
 
 ```sh
+node --test lib/reports/reporting.test.cjs
 node airtable/check.cjs
 node airtable/check-invoice-settlement.cjs
 node --test supabase/functions/ledger-payment/handler.test.mjs
