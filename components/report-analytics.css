@@ -1,0 +1,65 @@
+.report-analytics {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  padding: 12px; color: #f8fafc; background: var(--navy); border: 1px solid #234563;
+  border-radius: var(--panel-radius); font-variant-numeric: tabular-nums;
+}
+.report-analytics .analytics-panel:not([hidden]) {
+  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #8096ac transparent;
+}
+.report-analytics .analytics-tabs {
+  display: grid; flex-shrink: 0; grid-template-columns: 1fr 1fr; gap: 3px;
+  padding: 3px; margin-bottom: 10px; border: 1px solid #ffffff33; border-radius: var(--control-radius); background: #102c45;
+}
+.report-analytics .analytics-tabs button {
+  display: flex; justify-content: center; align-items: center; height: 29px; padding: 0 8px;
+  border: 0; border-radius: var(--inner-radius); color: #dbe4ed; background: transparent;
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.report-analytics .analytics-tabs button[aria-selected="true"] { color: var(--navy); background: white; font-weight: 600; }
+.report-analytics .analytics-tabs button:focus-visible { outline-color: white; }
+.report-analytics .analytics-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px; margin-bottom: 8px; }
+.report-analytics .analytics-heading h2 { margin: 0; color: white; font-size: 13px; line-height: 19px; font-weight: 600; }
+.report-analytics .analytics-heading p { flex: 1; min-width: 110px; margin: 0; text-align: right; }
+.report-analytics .analytics-panel p { color: #ccd7e2; font-size: 11px; line-height: 16px; }
+.report-analytics .analytics-headline { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 9px; }
+.report-analytics .analytics-headline > span { color: #dbe4ed; font-size: 12px; }
+.report-analytics .analytics-value { color: white; font-size: 18px; line-height: 25px; font-weight: 600; letter-spacing: -0.02em; text-align: right; }
+.report-analytics .analytics-module { margin-top: 12px; padding-top: 11px; border-top: 1px solid #ffffff26; }
+.report-analytics .analytics-module h3 { margin: 0 0 8px; color: white; font-size: 12px; line-height: 18px; font-weight: 600; }
+.report-analytics .analytics-module-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.report-analytics .analytics-module-header h3 { margin: 0; }
+.report-analytics .analytics-composition-layout { display: grid; gap: 10px; }
+.report-analytics .analytics-composition-layout.has-chart { grid-template-columns: 84px minmax(0, 1fr); align-items: center; }
+.report-analytics .analytics-donut { display: block; width: 84px; height: 84px; margin: 0; }
+.report-analytics .analytics-legend { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.report-analytics .analytics-legend li { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; line-height: 16px; }
+.report-analytics .analytics-legend-label { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
+.report-analytics .analytics-legend-label i { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 2px; }
+.report-analytics .analytics-legend-value { flex-shrink: 0; text-align: right; }
+.report-analytics .analytics-legend-value strong { font-size: 11px; font-weight: 500; white-space: nowrap; }
+.report-analytics .analytics-legend-value small { display: block; color: #ccd7e2; font-size: 10px; line-height: 14px; }
+.report-analytics .analytics-panel .analytics-share-value { display: flex; align-items: baseline; gap: 4px; margin: 0; color: white; font-size: 16px; line-height: 21px; font-weight: 600; }
+.report-analytics .analytics-share-value > span { color: #ccd7e2; font-size: 10px; font-weight: 400; }
+.report-analytics .analytics-secondary-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11px; line-height: 17px; }
+.report-analytics .analytics-secondary-amount strong { font-weight: 500; text-align: right; }
+.report-analytics .analytics-share-track { height: 4px; overflow: hidden; margin-top: 7px; background: #ffffff26; border-radius: 3px; }
+.report-analytics .analytics-share-track > span { display: block; height: 100%; background: #dce5ed; border-radius: 3px; }
+.report-analytics .analytics-movements { display: grid; margin-top: 5px; }
+.report-analytics .analytics-movement { padding: 9px 0; border-bottom: 1px solid #ffffff26; }
+.report-analytics .analytics-movement-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.report-analytics .analytics-movement-top > span { color: #dbe4ed; font-size: 12px; }
+.report-analytics .analytics-movement-top > strong { color: white; font-size: 15px; line-height: 21px; font-weight: 600; text-align: right; }
+.report-analytics .analytics-movement-bottom { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 3px 10px; margin-top: 3px; }
+.report-analytics .analytics-previous { color: #b7c9d9; font-size: 10px; line-height: 15px; text-align: right; }
+.report-analytics .analytics-change { display: flex; align-items: center; justify-content: flex-end; gap: 4px; color: #dbe4ed; font-size: 11px; line-height: 16px; text-align: right; }
+.report-analytics .analytics-change svg { width: 12px; height: 12px; }
+.report-analytics .analytics-change small { font-size: 10px; white-space: nowrap; }
+.report-analytics .analytics-panel .analytics-trend-value { margin: 0; color: white; font-size: 13px; line-height: 18px; font-weight: 600; text-align: right; }
+.report-analytics .analytics-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.report-analytics .analytics-gridline { stroke: #ffffff26; stroke-width: 0.8; }
+.report-analytics .analytics-trend-line { stroke: #f4f7fa; stroke-width: 1.6; }
+.report-analytics .analytics-trend-dot { fill: #f4f7fa; stroke: var(--navy); stroke-width: 1; }
+.report-analytics .analytics-axis { fill: #ccd7e2; font-size: 10px; font-family: inherit; }
+.report-analytics .analytics-note { margin: 0 0 7px; }
+@media print { .report-analytics { display: none !important; } }

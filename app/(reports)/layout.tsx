@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NavLinks } from "@/components/NavLinks";
+import { ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +10,10 @@ export default async function ReportsLayout({ children }: { children: React.Reac
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const initials = user?.email?.split("@")[0].split(/[._-]/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "CB";
 
   return (
-    <div className="app-shell">
+    <ReportNavigationProvider><div className="app-shell reports-shell">
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
@@ -20,15 +22,17 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             <span className="brand-name">Finance</span>
           </div>
           <NavLinks />
-          <div className="user-box">
-            <a className="user-email" href="/account" title="Change password">{user?.email} · Change password</a>
-            <form action="/auth/signout" method="post">
-              <button className="btn btn-quiet" type="submit">Sign out</button>
-            </form>
-          </div>
+          <details className="account-menu">
+            <summary className="account-trigger" aria-label="Account menu"><span className="account-avatar" aria-hidden="true">{initials}</span><span aria-hidden="true">▾</span></summary>
+            <div className="account-menu-panel">
+              <p className="account-email">{user?.email}</p>
+              <a href="/account">Change password</a>
+              <form action="/auth/signout" method="post"><button type="submit">Sign out</button></form>
+            </div>
+          </details>
         </div>
       </header>
-      <main className="content">{children}</main>
-    </div>
+      <ReportContent>{children}</ReportContent>
+    </div></ReportNavigationProvider>
   );
 }

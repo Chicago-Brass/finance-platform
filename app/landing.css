@@ -1,0 +1,70 @@
+.landing {
+  --landing-navy: #102940;
+  position: relative; isolation: isolate; min-height: 100svh;
+  overflow: clip; background: #fff; color: var(--landing-navy);
+  font-family: var(--font-landing-sans), Arial, sans-serif;
+}
+.landing .landing-art { z-index: -1; object-fit: cover; object-position: center; pointer-events: none; }
+.landing-content {
+  display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 80px;
+  min-height: 100svh; width: 100%; max-width: 1920px; margin: auto;
+  padding: 0 9.5% 0 5.2%;
+}
+.landing-brand { align-self: start; margin-top: 17.5vh; }
+.landing-brand h1 { margin: 0; font-family: var(--font-landing-serif), Georgia, serif; font-size: clamp(42px, 3.2vw, 60px); font-weight: 600; line-height: 1.12; letter-spacing: -.045em; }
+.landing-brand > p { margin: 22px 0 0; font-size: 16px; line-height: 24px; }
+.landing-card {
+  align-self: center; width: 100%; margin: 0 0 4vh; padding: 32px 36px;
+  background: #fff; border: 1px solid #d4dbe3; border-radius: 16px;
+  box-shadow: 0 14px 40px #0a23451a;
+}
+.landing-card-heading { margin-bottom: 28px; }
+.landing-card-heading .landing-workspace { margin: 0 0 10px; font-size: 12px; line-height: 18px; font-weight: 600; }
+.landing-card-heading h2 { margin: 0 0 7px; font-family: var(--font-landing-serif), Georgia, serif; font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -.025em; }
+.landing-card-heading > p { margin: 0; font-size: 14px; line-height: 22px; }
+.landing-login-actions { display: grid; gap: 18px; }
+.landing-form { display: grid; gap: 20px; }
+.landing-field { display: grid; gap: 8px; min-width: 0; }
+.landing-field label { font-family: inherit; font-size: 13px; font-weight: 600; line-height: 18px; }
+.landing-input { display: flex; align-items: center; gap: 10px; min-height: 46px; padding-left: 13px; border: 1px solid #c7d1de; border-radius: 8px; background: #fff; }
+.landing-input > svg { flex-shrink: 0; width: 18px; height: 18px; color: #4d6078; }
+.landing-input:focus-within { border-color: #31536f; box-shadow: 0 0 0 3px #17355312; }
+.landing .landing-input input { flex: 1; width: 0; min-width: 0; min-height: 44px; margin: 0; padding: 0 12px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--landing-navy); font: 400 14px/20px var(--font-landing-sans), Arial, sans-serif; box-shadow: none; outline: none; }
+.landing-input input::placeholder { opacity: 1; color: #596d87; }
+.landing-input input:disabled { opacity: .7; }
+.landing-password-toggle { display: inline-grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; padding: 0; border-radius: 8px; background: transparent; color: #4d6078; cursor: pointer; }
+.landing-password-toggle:hover { color: var(--landing-navy); background: #f1f4f7; }
+.landing-password-toggle svg { width: 18px; height: 18px; }
+.landing-submit, .landing-microsoft { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 46px; padding: 10px 16px; border: 1px solid var(--landing-navy); border-radius: 8px; font: 600 14px/20px var(--font-landing-sans), Arial, sans-serif; cursor: pointer; }
+.landing-submit { margin-top: 5px; background: var(--landing-navy); color: #fff; box-shadow: 0 2px 4px #1029400d; }
+.landing-submit > svg { width: 20px; height: 20px; }
+.landing-submit:hover { background: #1c3e60; }
+.landing-microsoft { background: white; color: var(--landing-navy); border-color: #c7d1de; }
+.landing-microsoft:hover { background: #f3f5f8; }
+.landing button:disabled { opacity: .65; cursor: default; }
+.landing button:focus-visible { outline: 2px solid #31536f; outline-offset: 3px; }
+.landing-divider { display: flex; align-items: center; gap: 12px; font-size: 11px; color: #637086; }
+.landing-divider::before, .landing-divider::after { content: ""; flex: 1; height: 1px; background: #dce1e8; }
+.landing-card .landing-card-footer { margin: 24px 0 0; text-align: center; font-size: 12px; line-height: 20px; }
+.landing-notice { margin: 0; padding: 12px; border: 1px solid #ecd1ce; border-radius: 8px; background: #fff3f1; color: #842f27; font-size: 13px; line-height: 20px; }
+.landing-card > .landing-notice { margin-bottom: 20px; }
+.landing-spinner { width: 14px; height: 14px; border: 2px solid #ffffff66; border-top-color: white; border-radius: 50%; animation: landing-spin .7s linear infinite; }
+@keyframes landing-spin { to { transform: rotate(360deg); } }
+@media (min-width: 1921px) { .landing-content { padding-right: 180px; padding-left: 100px; } }
+@media (max-width: 1150px) {
+  .landing-content { grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; padding-right: 5%; }
+  .landing-brand h1 { font-size: 44px; }
+  .landing-brand > p { max-width: 270px; font-size: 14px; }
+  .landing-card { padding: 30px; }
+}
+@media (max-width: 760px) {
+  .landing-content { display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 40px 24px 80px; }
+  .landing-brand { align-self: stretch; margin: 0; }
+  .landing-brand h1 { font-size: 38px; }
+  .landing-brand > p { max-width: none; margin-top: 12px; font-size: 13px; }
+  .landing-card { width: 100%; max-width: 440px; margin: 0; padding: 28px 26px; }
+  .landing .landing-art { object-position: 32% bottom; }
+  .landing-card-heading { margin-bottom: 24px; }
+}
+@media (max-width: 380px) { .landing-content { padding: 30px 18px 56px; } .landing-card { padding: 26px 22px; } }
+@media (prefers-reduced-motion: reduce) { .landing-spinner { animation: none; } }

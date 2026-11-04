@@ -14,5 +14,5 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/income-statement`);
     }
   }
-  return NextResponse.redirect(`${origin}/login?error=link`);
+  return NextResponse.redirect(`${origin}/?error=link`);
 }

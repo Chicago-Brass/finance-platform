@@ -108,10 +108,9 @@ class Styles {
   xml() {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="3">
-<numFmt numFmtId="164" formatCode="#,##0;(#,##0);&quot;–&quot;"/>
-<numFmt numFmtId="165" formatCode="&quot;$&quot;#,##0;(&quot;$&quot;#,##0);&quot;–&quot;"/>
-<numFmt numFmtId="166" formatCode="0.0%;(0.0%);&quot;–&quot;"/>
+<numFmts count="2">
+<numFmt numFmtId="165" formatCode="&quot;$&quot;#,##0.00;(&quot;$&quot;#,##0.00);&quot;$0.00&quot;"/>
+<numFmt numFmtId="166" formatCode="0.0%;(0.0%);0.0%"/>
 </numFmts>
 <fonts count="7">
 <font><sz val="10"/><color rgb="FF1F2A37"/><name val="Arial"/><family val="2"/></font>
@@ -201,15 +200,15 @@ export function reportToXlsx(report: Report, lines: ReportLine[] = report.lines)
           const pct = c.kind === "percent";
           const s =
             l.kind === "account"
-              ? st.get({ numFmt: pct ? 166 : 164 })
+              ? st.get({ numFmt: pct ? 166 : 165 })
               : st.get({
-                  numFmt: pct ? 166 : isTot ? 165 : 164,
+                  numFmt: pct ? 166 : 165,
                   font: isTot ? 5 : 1,
                   fill: isTot ? 3 : 0,
                   border: l.kind === "grandTotal" ? 2 : 1,
                 });
           const v = l.values[c.key];
-          return numCell(i + 1, pct || v == null ? v : Math.round(v), s);
+          return numCell(i + 1, v, s);
         })
         .join("");
     }
@@ -232,7 +231,7 @@ export function reportToXlsx(report: Report, lines: ReportLine[] = report.lines)
 <selection pane="bottomRight" activeCell="B${headRow + 1}" sqref="B${headRow + 1}"/>
 </sheetView></sheetViews>
 <sheetFormatPr defaultRowHeight="14"/>
-<cols><col min="1" max="1" width="44" customWidth="1"/><col min="2" max="${ncol}" width="14" customWidth="1"/></cols>
+<cols><col min="1" max="1" width="44" customWidth="1"/><col min="2" max="${ncol}" width="18" customWidth="1"/></cols>
 <sheetData>${rows.join("")}</sheetData>
 <printOptions horizontalCentered="1"/>
 <pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>

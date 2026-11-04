@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseConfig } from "@/lib/supabase/config";
 
 // Pages anyone can reach without signing in.
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/not-authorized"];
+const PUBLIC_PATHS = ["/", "/login", "/auth/callback", "/not-authorized"];
 
 export async function middleware(request: NextRequest) {
   const { url, key } = supabaseConfig();
@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     if (isPublic) return response;
     const login = request.nextUrl.clone();
-    login.pathname = "/login";
+    login.pathname = "/";
     login.search = "";
     return NextResponse.redirect(login);
   }

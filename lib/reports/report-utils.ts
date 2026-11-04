@@ -15,6 +15,14 @@ export const monthStart = (year: number, month: number) => `${year}-${String(mon
 export const monthEnd = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 export const formatDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
+export function periodHeading(date: string, grain: "single" | "month" | "quarter" | "year") {
+  const year = date.slice(0, 4);
+  if (grain === "year") return year;
+  if (grain === "quarter") return `Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
+  if (grain === "month") return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  return formatDate(date);
+}
+
 export function cents(value: number | string): number {
   const amount = Number(value), result = Math.round(amount * 100);
   if (!Number.isFinite(amount) || !Number.isSafeInteger(result)) throw new Error("Report amount exceeds supported cents precision.");

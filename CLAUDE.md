@@ -28,8 +28,11 @@ Go-live: Dec 15, 2026, on live Supabase ledger data.
 
 ## Non-negotiables
 - Report UI consumes the `Report` / `ReportLine` contract in `lib/reports/types.ts`. Keep that shape stable.
-- Money: whole-dollar display, negatives in parentheses; in the DB `numeric(18,2)`, never float.
-- Real Chicago Brass figures are approved (Ram, Oct 20, 2026). The repo stays private; preview links are confidential.
+- Money: the current financial reports show USD with two decimals, explicit `$0.00` and negatives
+  in parentheses. Calculate in integer cents; in the DB use `numeric(18,2)`, never float.
+- GitHub reported this repository public on Nov 4, 2026. Do not assume private visibility. Never
+  commit credentials, raw conversation/tool logs or private financial extracts. Use synthetic
+  examples; keep the conversation summary and local session path in `knowledge-base/`.
 - Never put the Supabase service-role/secret key in code, `.env.*` files, or the browser.
 - Schema changes go in as SQL files in `supabase/migrations/`, reviewed through a PR. RLS on every table;
   new tables have no default access for anon/authenticated (every grant is explicit).

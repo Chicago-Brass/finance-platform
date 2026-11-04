@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { AccountBalance } from "./report-utils";
+import { cachedLedgerRead } from "./read-cache";
 
 /**
  * Live-ledger reports. READ-ONLY: every query runs as the signed-in user through RLS.
@@ -9,19 +10,21 @@ import type { AccountBalance } from "./report-utils";
 export type TbRow = AccountBalance;
 
 export async function getTrialBalance(asOf: string, from: string | null) {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_trial_balance", { p_as_of: asOf, p_from: from });
-  if (error) throw new Error(`Trial balance query failed: ${error.message}`);
-  return (data ?? []) as TbRow[];
+  return cachedLedgerRead(["trial-balance", asOf, from ?? "all"], async supabase => {
+    const { data, error } = await supabase.rpc("get_trial_balance", { p_as_of: asOf, p_from: from });
+    if (error) throw new Error(`Trial balance query failed: ${error.message}`);
+    return (data ?? []) as TbRow[];
+  });
 }
 
 export async function countPostedEntries(asOf: string, from: string | null) {
-  const supabase = await createClient();
-  let q = supabase.from("v_journal_entries").select("id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
-  if (from) q = q.gte("entry_date", from);
-  const { count, error } = await q;
-  if (error) throw new Error(`Posted entry count failed: ${error.message}`);
-  return count ?? 0;
+  return cachedLedgerRead(["posted-count", asOf, from ?? "all"], async supabase => {
+    let q = supabase.from("v_journal_entries").select("id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
+    if (from) q = q.gte("entry_date", from);
+    const { count, error } = await q;
+    if (error) throw new Error(`Posted entry count failed: ${error.message}`);
+    return count ?? 0;
+  });
 }
 
 export type LedgerRow = {
@@ -36,20 +39,29 @@ export type LedgerRow = {
   audit_link: string | null;
   offset_is_split: boolean | null;
   entry_number: number;
+  line_id: string;
+  line_no: number;
 };
 
-export async function getGeneralLedger(from: string, to: string) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("v_ledger")
-    .select("date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number")
-    .gte("date", from)
-    .lte("date", to)
-    .order("date", { ascending: true })
-    .order("entry_number", { ascending: true })
-    .limit(1000);
-  if (error) throw new Error(`Ledger query failed: ${error.message}`);
-  return (data ?? []) as LedgerRow[];
+export const LEDGER_PAGE_SIZE = 100;
+
+export async function getGeneralLedger(from: string, to: string, requestedPage = 1) {
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / LEDGER_PAGE_SIZE) ? requestedPage : 1;
+  const offset = (page - 1) * LEDGER_PAGE_SIZE;
+  return cachedLedgerRead(["general-ledger", from, to, String(page)], async supabase => {
+    const { data, error } = await supabase
+      .from("v_ledger")
+      .select("date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no")
+      .gte("date", from)
+      .lte("date", to)
+      .order("date", { ascending: true })
+      .order("entry_number", { ascending: true })
+      .order("line_no", { ascending: true })
+      .range(offset, offset + LEDGER_PAGE_SIZE);
+    if (error) throw new Error(`Ledger query failed: ${error.message}`);
+    const rows = (data ?? []) as LedgerRow[];
+    return { rows: rows.slice(0, LEDGER_PAGE_SIZE), hasNext: rows.length > LEDGER_PAGE_SIZE, page, pageSize: LEDGER_PAGE_SIZE };
+  });
 }
 
 export type TChartRow = {

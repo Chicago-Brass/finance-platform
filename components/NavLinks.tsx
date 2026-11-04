@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ReportLink } from "./ReportNavigation";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
@@ -16,9 +16,9 @@ export function NavLinks() {
   return (
     <nav className="nav" aria-label="Reports">
       {LINKS.map((l) => (
-        <Link key={l.href} href={l.href} className={path === l.href ? "nav-link active" : "nav-link"}>
+        <ReportLink key={l.href} href={l.href} className={path === l.href ? "nav-link active" : "nav-link"} aria-current={path === l.href ? "page" : undefined}>
           {l.label}
-        </Link>
+        </ReportLink>
       ))}
     </nav>
   );

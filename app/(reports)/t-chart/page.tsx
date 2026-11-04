@@ -16,10 +16,9 @@ export default async function TChartPage() {
   return (
     <article className="report">
       <header className="report-header">
-        <div>
-          <p className="report-entity">Chicago Brass Inc.</p>
+        <div className="report-heading">
           <h1 className="report-title">T-Chart: Posting Rules</h1>
-          <p className="report-period">{rows.length} rules · from Supabase ledger_rules</p>
+          <p className="report-entity">Chicago Brass Inc. / {rows.length} posting rules</p>
         </div>
       </header>
       {cats.map((c) => (

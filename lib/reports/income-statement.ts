@@ -1,6 +1,6 @@
 import { todayChicago } from "../dates";
 import type { Report, ReportCheck, ReportLine } from "./types";
-import { accountGroup, amountLine, formatDate, monthEnd, monthStart, one, section, subtractAmounts, sumAmounts } from "./report-utils";
+import { accountGroup, amountLine, formatDate, monthEnd, monthStart, one, periodHeading, section, subtractAmounts, sumAmounts } from "./report-utils";
 import type { Period, Snapshot } from "./report-utils";
 
 export type IncomeStatementOptions = { year: number; from: number; to: number; grain: "month" | "quarter" | "year"; summary: boolean };
@@ -75,7 +75,7 @@ export function getIncomeStatement(options: IncomeStatementOptions, snapshots: S
     title: options.summary ? "Income Statement (summary)" : "Income Statement", entity: "Chicago Brass Inc. - Consolidated",
     periodLabel: `${formatDate(snapshots[0].period.from)} to ${formatDate(snapshots[snapshots.length - 1].period.to)}`,
     basis: "Accrual basis - Posted ledger actuals", isSample: false,
-    columns: snapshots.map(snapshot => ({ key: snapshot.period.key, label: snapshot.period.label, sublabel: options.grain === "quarter" ? `${formatDate(snapshot.period.from)} to ${formatDate(snapshot.period.to)}` : "Actual", kind: "amount" as const })).concat(includeTotal ? [{ key: "total", label: "Total", sublabel: "Selected period", kind: "amount" as const }] : []),
+    columns: snapshots.map(snapshot => ({ key: snapshot.period.key, label: periodHeading(snapshot.period.to, options.grain), sublabel: options.grain === "year" ? "Selected period" : String(options.year), kind: "amount" as const })).concat(includeTotal ? [{ key: "total", label: "Total", sublabel: "Selected period", kind: "amount" as const }] : []),
     lines, checks,
   };
 }

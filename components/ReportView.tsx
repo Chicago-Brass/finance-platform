@@ -1,169 +1,138 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { Report, ReportLine } from "@/lib/reports/types";
-import { formatAmount, formatPercent } from "@/lib/format";
+import type { ReportAnalytics as AnalyticsData } from "@/lib/reports/analytics";
+import { formatReportAmount, formatPercent } from "@/lib/format";
 import { downloadExcel } from "@/lib/reports/export-excel";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
+import { ReportAnalytics } from "./ReportAnalytics";
+import { ReportIcon } from "./ReportIcons";
 
-/** Rows that print a $ sign: first amount row of the report and every total. */
-function showsSymbol(line: ReportLine, firstAmountId: string | undefined) {
-  return line.id === firstAmountId || line.kind === "total" || line.kind === "grandTotal";
-}
-
-/** A section row can collapse when the next row is indented deeper than it. */
-function collapsibleIds(lines: ReportLine[]) {
+/** A section can collapse when its next row is nested inside it. */
+export function collapsibleIds(lines: ReportLine[]) {
   const ids = new Set<string>();
-  lines.forEach((l, i) => {
-    if (l.kind === "section" && lines[i + 1] && lines[i + 1].depth > l.depth) ids.add(l.id);
+  lines.forEach((line, index) => {
+    if (line.kind === "section" && lines[index + 1]?.depth > line.depth) ids.add(line.id);
   });
   return ids;
 }
 
-/** Hides rows deeper than a collapsed section until the next row at its level or above. */
-function visibleLines(lines: ReportLine[], collapsed: Set<string>) {
-  const out: ReportLine[] = [];
+export function visibleLines(lines: ReportLine[], collapsed: Set<string>) {
+  const rows: ReportLine[] = [];
   let hideBelow: number | null = null;
-  for (const l of lines) {
+  for (const line of lines) {
     if (hideBelow !== null) {
-      if (l.depth > hideBelow) continue;
+      if (line.depth > hideBelow) continue;
       hideBelow = null;
     }
-    out.push(l);
-    if (l.kind === "section" && collapsed.has(l.id)) hideBelow = l.depth;
+    rows.push(line);
+    if (line.kind === "section" && collapsed.has(line.id)) hideBelow = line.depth;
   }
-  return out;
+  return rows;
 }
 
-export function ReportView({ report }: { report: Report }) {
-  const firstAmountId = report.lines.find((l) => l.kind !== "section")?.id;
-  const canCollapse = useMemo(() => collapsibleIds(report.lines), [report.lines]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const rows = useMemo(() => visibleLines(report.lines, collapsed), [report.lines, collapsed]);
+/** Display filters hide individual accounts; financial totals retain their full-period values. */
+export function filterReportLines(lines: ReportLine[], query: string, hideZero: boolean) {
+  const search = query.trim().toLocaleLowerCase();
+  return lines.filter(line => {
+    if (!line.accountCode) return true;
+    if (search && !`${line.accountCode} ${line.label}`.toLocaleLowerCase().includes(search)) return false;
+    const values = Object.values(line.values);
+    return !hideZero || !values.length || !values.every(value => value === 0);
+  });
+}
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+export function ReportView({ report, analytics, filters, viewControls }: {
+  report: Report;
+  analytics?: AnalyticsData;
+  filters?: ReactNode;
+  viewControls?: ReactNode;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [hideZero, setHideZero] = useState(false);
+  const canCollapse = useMemo(() => collapsibleIds(report.lines), [report.lines]);
+  const hasAccounts = report.lines.some(line => line.accountCode);
+  const filtered = useMemo(() => filterReportLines(report.lines, query, hideZero), [report.lines, query, hideZero]);
+  const rows = useMemo(() => visibleLines(filtered, collapsed), [filtered, collapsed]);
+  const displayFiltered = hasAccounts && (query.trim() !== "" || hideZero);
+  const matchingAccounts = filtered.filter(line => line.accountCode).length;
+  const toggle = (id: string) => setCollapsed(previous => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
-    <article className="report">
+    <article className="report-page">
       <header className="report-header">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="print-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
         <div className="report-heading">
-          <p className="report-entity">{report.entity}</p>
           <h1 className="report-title">{report.title}</h1>
-          <p className="report-period">
-            {report.periodLabel} · {report.basis}
-          </p>
+          <p className="report-entity">{report.entity} / {report.basis.split(" - ")[0]} / USD</p>
+          <p className="report-period">{report.periodLabel}</p>
         </div>
-        <div className="report-checks">
-          {report.checks.map((c) => (
-            <span key={c.label} className={`check ${c.ok ? "check-ok" : "check-bad"}`} title={c.detail}>
-              <span aria-hidden>{c.ok ? "✓" : "!"}</span> {c.label}: {c.detail}
-            </span>
-          ))}
+        <div className="report-exports no-print" aria-label="Export report">
+          <button type="button" className="btn btn-quiet" onClick={() => downloadExcel(report, rows)}><ReportIcon name="excel" />Export Excel</button>
+          <button type="button" className="btn btn-quiet" onClick={() => window.print()}><ReportIcon name="pdf" />Export PDF</button>
         </div>
       </header>
 
-      {report.isSample && (
-        <p className="sample-banner" role="note">
-          Sample data. These figures are invented for layout review and are not Chicago Brass results.
-        </p>
-      )}
+      {report.isSample && <p className="sample-banner" role="note">Sample data. These figures are for layout review and are not Chicago Brass results.</p>}
+      {report.checks.some(check => !check.ok) && <div className="report-alerts" role="status">{report.checks.filter(check => !check.ok).map(check => <p className="check check-bad" key={check.label}>{check.label}: {check.detail}</p>)}</div>}
+      {filters}
 
-      <div className="report-actions no-print">
-        {canCollapse.size > 0 && (
-          <>
-            <button type="button" className="btn btn-quiet" onClick={() => setCollapsed(new Set())}>
-              Expand all
-            </button>
-            <button type="button" className="btn btn-quiet" onClick={() => setCollapsed(new Set(canCollapse))}>
-              Collapse all
-            </button>
-          </>
-        )}
-        <span className="report-actions-spacer" />
-        <button type="button" className="btn btn-quiet" onClick={() => downloadExcel(report, rows)}>
-          Export Excel
-        </button>
-        <button type="button" className="btn btn-quiet" onClick={() => window.print()}>
-          Export PDF
-        </button>
-      </div>
+      <div className={`report-workspace${analytics ? " has-analytics" : ""}`}>
+        <section className="statement-panel" aria-label={report.title}>
+          <div className="statement-toolbar no-print">
+            <div className="statement-view-controls">{viewControls}</div>
+            <div className="statement-tools">
+              {hasAccounts && <label className="report-account-search"><ReportIcon name="search" /><span className="sr-only">Search accounts</span><input type="search" placeholder="Search accounts" value={query} onChange={event => { setQuery(event.target.value); setCollapsed(new Set()); }} /></label>}
+              {(hasAccounts || canCollapse.size > 0) && <details className="report-filter-menu">
+                <summary className="btn btn-quiet"><ReportIcon name="filter" />Filters{hasAccounts && hideZero && <span className="report-filter-count">1</span>}</summary>
+                <div className="report-filter-popover">
+                  <h2>Account display</h2>
+                  {hasAccounts && <label className="report-zero-option"><input type="checkbox" checked={!hideZero} onChange={event => setHideZero(!event.target.checked)} />Show zero accounts</label>}
+                  {canCollapse.size > 0 && <div className="report-collapse-actions"><button className="btn btn-quiet" type="button" onClick={() => setCollapsed(new Set())}><ReportIcon name="expand" />Expand all</button><button className="btn btn-quiet" type="button" onClick={() => setCollapsed(new Set(canCollapse))}><ReportIcon name="collapse" />Collapse all</button></div>}
+                  <p>Display filters do not change financial totals.</p>
+                  {displayFiltered && <button type="button" className="report-reset-display" onClick={() => { setQuery(""); setHideZero(false); }}>Reset display filters</button>}
+                </div>
+              </details>}
+            </div>
+          </div>
 
-      <div className="table-wrap">
-        <table className="fin-table">
-          <colgroup>
-            <col className="col-label" />
-            {report.columns.map((c) => (
-              <col key={c.key} className={c.kind === "percent" ? "col-pct" : "col-amt"} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col" className="label-cell">
-                <span className="sr-only">Line item</span>
-              </th>
-              {report.columns.map((c) => (
-                <th key={c.key} scope="col" className="num-cell">
-                  <span className="col-head">{c.label}</span>
-                  {c.sublabel && <span className="col-sub">{c.sublabel}</span>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((line) => {
-              const isToggle = canCollapse.has(line.id);
-              const isCollapsed = collapsed.has(line.id);
-              return (
-                <tr
-                  key={line.id}
-                  className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}`}
-                  data-account={line.accountCode}
-                >
-                  <th scope="row" className="label-cell" style={{ paddingLeft: `${0.75 + line.depth * 1.25}rem` }}>
-                    {isToggle ? (
-                      <button
-                        type="button"
-                        className="row-toggle"
-                        aria-expanded={!isCollapsed}
-                        onClick={() => toggle(line.id)}
-                      >
-                        <span className="row-caret no-print" aria-hidden>
-                          {isCollapsed ? "▸" : "▾"}
-                        </span>
-                        {line.label}
-                      </button>
-                    ) : (
-                      line.label
-                    )}
-                  </th>
-                  {report.columns.map((c) => {
-                    const v = line.values[c.key];
-                    const text =
-                      line.kind === "section"
-                        ? ""
-                        : c.kind === "percent"
-                          ? formatPercent(v)
-                          : formatAmount(v, showsSymbol(line, firstAmountId));
-                    const neg = typeof v === "number" && v < 0;
-                    return (
-                      <td key={c.key} className={`num-cell${neg ? " neg" : ""}`}>
-                        {text}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          {displayFiltered && <p className="report-display-note" role="status">{matchingAccounts} matching accounts. Totals include all accounts.</p>}
+          <div className="table-wrap">
+            <table className="fin-table">
+              <colgroup><col className="col-label" />{report.columns.map(column => <col key={column.key} className={column.kind === "percent" ? "col-pct" : "col-amt"} />)}</colgroup>
+              <thead><tr><th scope="col" className="label-cell">Account</th>{report.columns.map(column => <th key={column.key} scope="col" className="num-cell"><span className="col-head">{column.label}</span>{column.sublabel && <span className="col-sub">{column.sublabel}</span>}</th>)}</tr></thead>
+              <tbody>
+                {displayFiltered && hasAccounts && matchingAccounts === 0 && <tr><td colSpan={report.columns.length + 1} className="report-no-matches">No accounts match the display filters. Financial totals remain below.</td></tr>}
+                {rows.map(line => {
+                  const isToggle = canCollapse.has(line.id), isCollapsed = collapsed.has(line.id);
+                  return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}`} data-account={line.accountCode}>
+                    <th scope="row" className="label-cell" style={{ paddingLeft: `${14 + line.depth * 14}px` }}>
+                      {isToggle ? <button type="button" className="row-toggle" aria-expanded={!isCollapsed} onClick={() => toggle(line.id)}><ReportIcon name={isCollapsed ? "chevronRight" : "chevronDown"} className="row-caret no-print" />{line.label}</button> : line.label}
+                    </th>
+                    {report.columns.map(column => {
+                      const value = line.values[column.key];
+                      const text = line.kind === "section" ? "" : column.kind === "percent" ? formatPercent(value) : formatReportAmount(value);
+                      return <td key={column.key} className={`num-cell${typeof value === "number" && value < 0 ? " neg" : ""}`}>{text}</td>;
+                    })}
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+          <footer className="report-status">
+            {report.checks.filter(check => check.ok).map(check => <span key={check.label} title={check.detail}><ReportIcon name="check" />{check.label}: {check.detail}</span>)}
+            {displayFiltered && <span>Export includes the visible account rows.</span>}
+          </footer>
+        </section>
+        {analytics && <ReportAnalytics analytics={analytics} />}
       </div>
     </article>
   );
