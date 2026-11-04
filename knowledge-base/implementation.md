@@ -24,13 +24,16 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `supabase/functions/ledger-payment/` | Shared-secret HTTP boundary and generic transactional writer |
 | `supabase/migrations/` | Tracked database changes, including lifecycle metadata and nullable branch |
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
-| `lib/reports/read-cache.ts` | Short session-scoped cache for ledger reads |
+| `lib/reports/read-cache.ts` | One shared Auth check per request and the session-scoped ledger read cache |
+| `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
 | `lib/reports/analytics.ts` | Position/Movement data derived from the report and comparison periods |
 | `components/ReportView.tsx` | Shared report table, account display filters, collapse controls and exports |
 | `components/ReportAnalytics.tsx` | Accessible Position/Movement tabs and compact signed-value charts |
-| `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables |
+| `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables, account-to-ledger links |
+| `components/LedgerAccountFilter.tsx` | General Ledger account and offsetting-account query filters |
+| `components/PostingRulesTable.tsx` | T-Chart posting-rule table |
 | `components/ReportNavigation.tsx` | Client navigation, GET forms, immediate spinner/skeleton feedback |
 | `app/page.tsx`, `components/LoginForm.tsx`, `app/landing.css` | Public landing and existing sign-in flow |
 | `middleware.ts`, `lib/supabase/` | Session validation, approved-user gate and user-scoped database clients |
@@ -61,9 +64,11 @@ access to the landing does not expose reports. Report clients use the signed-in 
   earnings and current-year earnings are separate from existing equity balances.
 - Trial Balance: cumulative account debit, credit and natural-balance fields, with full-account totals.
 - General Ledger: posted `v_ledger` records, 100 per page plus one lookahead. Stable order is date,
-  entry number and line number. Date changes reset page one. Search/side controls apply to the current
+  entry number and line number. Date changes reset page one. Account and offsetting-account filters
+  run in the query and survive date and page changes. Search/side controls apply to the current
   page, whose totals are explicitly labeled as page totals.
-- T-Chart page: database rule/catalog metadata. It does not execute Airtable category filters.
+- T-Chart page: database rule/catalog metadata in one grouped table. It does not execute Airtable
+  category filters.
 
 All four financial report pages display USD cents and `$0.00`. Display filters preserve full-report
 totals; General Ledger separately labels its loaded-page totals. Dates are formatted as calendar
@@ -81,8 +86,9 @@ month names, Q1-Q4 or years, with exact partial-snapshot dates retained where ne
 
 Next client navigation replaces full-page filter reloads. A spinner/skeleton appears during a
 transition and stale controls become inert. Ledger results use a 30-second Next data cache keyed
-by a hash of the signed-in session token plus operation/date/page. Authentication precedes cache
-access. Errors propagate; credentials are not stored in cache keys. New postings may take roughly
+by a hash of the signed-in session token plus operation/date/page/account filters; the T-Chart
+catalog uses five minutes. One Auth check per request is shared by the layout and reads and precedes
+cache access. Errors propagate; credentials are not stored in cache keys. New postings may take roughly
 30 seconds plus revalidation to appear. This is not a live synchronization guarantee.
 
 ## Local setup

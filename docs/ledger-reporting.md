@@ -38,8 +38,9 @@ exact as-of date below the compact heading. Analytics use compact, right-aligned
 Report links and GET forms navigate through the Next router. A spinner and table skeleton appear
 immediately while a new view loads; stale controls are inert during the transition. Ledger reads
 use a 30-second Next data cache scoped by a hash of the signed-in session token and the operation,
-date range and page. Authentication runs before cache access; middleware still checks the current
-application role. Query failures propagate and are not cached. New postings can take about 30
+date range, page and account filters. The T-Chart catalog uses a five-minute window. Authentication
+runs once per request before cache access and is shared with the report layout; middleware still
+checks the current application role. Query failures propagate and are not cached. New postings can take about 30
 seconds plus revalidation to appear. No tokens are stored in cache keys.
 
 Both reports and their Excel/PDF outputs show currency symbols, two decimal places, `$0.00` zeros
@@ -139,9 +140,15 @@ currency formats are covered by the export test. The native PDF dialog was not e
 General Ledger reads posted lines from v_ledger within the inclusive selected date range,
 100 records per page with a single lookahead record to determine Next availability. Sorting by
 date, entry number and line number gives stable page ordering. Date changes reset to page one.
+Account and offsetting-account filters are URL parameters (`account`, `offset`) applied in the
+database query, so they cover every page; date changes and pagination keep them. The offsetting
+filter excludes lines whose entry is split across several offsetting accounts, and the page says so.
 Search and debit/credit display filters apply to the current page; its totals include all
 loaded rows, not the entire date range. Trial Balance reads cumulative get_trial_balance
-through the selected as-of date. T-Chart displays v_t_chart rule metadata rather than journal activity.
+through the selected as-of date. T-Chart displays v_t_chart rule metadata rather than journal activity: one table grouped by
+category, with client-side category and text filters. An exact `Name (000.000)` debit/credit
+reference becomes an account link into the General Ledger; alternatives and descriptions stay
+as written. Trial Balance account pills link to the General Ledger the same way.
 
 Validation uses the current database dataset. Importing history, changing posting rules and
 reconciling Airtable records are not prerequisites or next steps for this frontend work.

@@ -1,5 +1,6 @@
 import { DateFilter } from "@/components/DateFilter";
 import { TrialBalanceTable } from "@/components/LedgerTable";
+import { ReportPageHeader } from "@/components/ReportPageHeader";
 import { getTrialBalance } from "@/lib/reports/ledger";
 import { cleanDate, todayChicago } from "@/lib/dates";
 
@@ -12,9 +13,9 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
   const rows = await getTrialBalance(asOf, null);
   return (
     <article className="report-page ledger-page">
-      <header className="report-header"><div className="report-heading"><h1 className="report-title">Trial Balance</h1><p className="report-entity">Chicago Brass Inc. / Posted ledger / USD</p></div></header>
+      <ReportPageHeader title="Trial Balance" description="Chicago Brass Inc. / Posted ledger / USD" />
       <DateFilter to={asOf} asOfOnly note="Cumulative posted balances" />
-      <TrialBalanceTable rows={rows} />
+      <TrialBalanceTable rows={rows} asOf={asOf} />
     </article>
   );
 }

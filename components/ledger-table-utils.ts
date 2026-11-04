@@ -1,13 +1,33 @@
-import type { LedgerRow, TbRow } from "@/lib/reports/ledger";
+import type { LedgerAccountFilters, LedgerRow, TbRow } from "@/lib/reports/ledger";
 import { cents } from "@/lib/reports/report-utils";
+import { startOfYear } from "@/lib/dates";
 
 export function ledgerPageNumber(value: string | string[] | undefined) {
   const page = Number(Array.isArray(value) ? value[0] : value);
   return Number.isSafeInteger(page) && page >= 1 ? page : 1;
 }
 
-export function ledgerPageHref(from: string, to: string, page: number) {
-  return `?${new URLSearchParams({ from, to, page: String(page) })}`;
+const ACCOUNT_CODE = /^\d{3}\.\d{3}$/;
+
+/** Accepts only a ledger account code such as 112.300; anything else means no filter. */
+export function ledgerAccountParam(value: string | string[] | undefined) {
+  const code = Array.isArray(value) ? value[0] : value;
+  return code && ACCOUNT_CODE.test(code) ? code : undefined;
+}
+
+export type LedgerQuery = LedgerAccountFilters & { from: string; to: string; page?: number };
+
+export function ledgerHref({ from, to, account, offset, page }: LedgerQuery) {
+  const params = new URLSearchParams({ from, to });
+  if (account) params.set("account", account);
+  if (offset) params.set("offset", offset);
+  if (page) params.set("page", String(page));
+  return `?${params}`;
+}
+
+/** General Ledger for one account, from the start of the as-of year through the as-of date. */
+export function accountLedgerHref(account: string, asOf: string) {
+  return `/general-ledger${ledgerHref({ from: startOfYear(asOf), to: asOf, account })}`;
 }
 
 export function ledgerDatePresets(today: string) {
@@ -53,3 +73,10 @@ export function safeAuditLink(value: string | null) {
 }
 
 export const ACCOUNT_TYPES: Record<string, string> = { asset: "Asset", liability: "Liability", equity: "Equity", revenue: "Revenue", expense: "Expense" };
+
+/** Accounts grouped by type in statement order, for account pickers. */
+export function accountGroups(rows: Pick<TbRow, "account_number" | "account_name" | "account_type">[]) {
+  return Object.keys(ACCOUNT_TYPES)
+    .map(type => ({ type, label: ACCOUNT_TYPES[type], accounts: rows.filter(row => row.account_type === type) }))
+    .filter(group => group.accounts.length > 0);
+}

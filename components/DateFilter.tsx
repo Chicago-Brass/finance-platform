@@ -4,10 +4,22 @@ import { balanceDatePresets } from "@/lib/reports/filter-options";
 import { CalendarMark } from "./ReportViewControls";
 import { ReportForm, ReportLink } from "./ReportNavigation";
 import { ledgerDatePresets } from "./ledger-table-utils";
+import type { ReactNode } from "react";
 import "./ledger-tables.css";
 
-/** Native GET fields reset pagination while keeping the date range in the URL. */
-export function DateFilter({ from, to, asOfOnly = false, note }: { from?: string; to: string; asOfOnly?: boolean; note?: string }) {
+type Preserved = Record<string, string | undefined>;
+
+const query = (params: Record<string, string>, preserve: Preserved) => {
+  const search = new URLSearchParams(params);
+  for (const [key, value] of Object.entries(preserve)) if (value) search.set(key, value);
+  return `?${search}`;
+};
+
+/**
+ * Native GET fields reset pagination while keeping the date range in the URL.
+ * `preserve` carries other active filters through date changes; `children` adds filters to the bar.
+ */
+export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, children }: { from?: string; to: string; asOfOnly?: boolean; note?: string; preserve?: Preserved; children?: ReactNode }) {
   const today = todayChicago();
   const rangePresets = ledgerDatePresets(today);
   const asOfPresets = balanceDatePresets(today);
@@ -23,14 +35,16 @@ export function DateFilter({ from, to, asOfOnly = false, note }: { from?: string
               <div className="filter-field"><label htmlFor="ledger-to">{asOfOnly ? "As of date" : "End date"}</label><input id="ledger-to" type="date" name="to" defaultValue={to} required /></div>
             </div>
             <p className="filter-help">{asOfOnly ? "Includes all posted activity through this date." : "Includes both start and end dates."}</p>
+            {Object.entries(preserve).map(([key, value]) => value && <input key={key} type="hidden" name={key} value={value} />)}
             <button className="btn btn-primary" type="submit">{asOfOnly ? "Apply date" : "Apply dates"}</button>
           </ReportForm>
         </div>
       </details>
       <div className="date-presets" aria-label={asOfOnly ? "Quick as-of dates" : "Quick ledger periods"}>
-        {asOfOnly ? asOfPresets.map(preset => <ReportLink key={preset.label} href={`?${new URLSearchParams({ to: preset.asOf })}`} className={`preset-link${to === preset.asOf ? " is-active" : ""}`} aria-current={to === preset.asOf ? "true" : undefined}>{preset.label}</ReportLink>) : rangePresets.map(preset => <ReportLink key={preset.label} href={`?${new URLSearchParams({ from: preset.from, to: preset.to })}`} className={`preset-link${from === preset.from && to === preset.to ? " is-active" : ""}`} aria-current={from === preset.from && to === preset.to ? "true" : undefined}>{preset.label}</ReportLink>)}
+        {asOfOnly ? asOfPresets.map(preset => <ReportLink key={preset.label} href={query({ to: preset.asOf }, preserve)} className={`preset-link${to === preset.asOf ? " is-active" : ""}`} aria-current={to === preset.asOf ? "true" : undefined}>{preset.label}</ReportLink>) : rangePresets.map(preset => <ReportLink key={preset.label} href={query({ from: preset.from, to: preset.to }, preserve)} className={`preset-link${from === preset.from && to === preset.to ? " is-active" : ""}`} aria-current={from === preset.from && to === preset.to ? "true" : undefined}>{preset.label}</ReportLink>)}
       </div>
-      <ReportLink className="filter-reset" href={asOfOnly ? `?to=${today}` : `?${new URLSearchParams({ from: rangePresets[0].from, to: today })}`}>{asOfOnly ? "Reset to today" : "Reset to current year"}</ReportLink>
+      <ReportLink className="filter-reset" href={asOfOnly ? query({ to: today }, preserve) : query({ from: rangePresets[0].from, to: today }, preserve)}>{asOfOnly ? "Reset to today" : "Reset to current year"}</ReportLink>
+      {children}
       {note && <span className="filter-context">{note}</span>}
     </div>
   );

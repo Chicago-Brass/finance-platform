@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { reportUser } from "@/lib/reports/read-cache";
 import { NavLinks } from "@/components/NavLinks";
 import { ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
@@ -6,10 +6,8 @@ import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 export const dynamic = "force-dynamic";
 
 export default async function ReportsLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Shares the page's Auth check. A failure here is left for the page's error boundary to report.
+  const user = await reportUser().catch(() => null);
   const initials = user?.email?.split("@")[0].split(/[._-]/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "CB";
 
   return (

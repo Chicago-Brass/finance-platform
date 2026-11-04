@@ -30,14 +30,15 @@ export function ReportForm({ children, onSubmit, ...props }: Omit<FormHTMLAttrib
     if (!navigation || event.defaultPrevented) return;
     event.preventDefault();
     const params = new URLSearchParams();
-    new FormData(event.currentTarget).forEach((value, key) => { if (typeof value === "string") params.set(key, value); });
+    // Empty optional fields (such as "All accounts") stay out of the URL.
+    new FormData(event.currentTarget).forEach((value, key) => { if (typeof value === "string" && value !== "") params.set(key, value); });
     navigation.navigate(`?${params}`);
   }}>{children}</form>;
 }
 
 export function ReportLoading() {
   const path = usePathname();
-  const titles: Record<string, string> = { "/income-statement": "Income Statement", "/balance-sheet": "Balance Sheet", "/trial-balance": "Trial Balance", "/general-ledger": "General Ledger" };
+  const titles: Record<string, string> = { "/income-statement": "Income Statement", "/balance-sheet": "Balance Sheet", "/trial-balance": "Trial Balance", "/general-ledger": "General Ledger", "/t-chart": "T-Chart" };
   const analytics = path === "/income-statement" || path === "/balance-sheet";
   return <article className="report-page report-skeleton" aria-busy="true" aria-label="Loading report">
     <header className="report-header"><div className="report-heading"><h1 className="report-title">{titles[path] || "Report"}</h1><p className="report-entity loading-message" role="status"><span className="report-spinner" aria-hidden="true" />Loading report...</p></div></header>

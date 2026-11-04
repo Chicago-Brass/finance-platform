@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import type { AccountBalance } from "./report-utils";
 import { cachedLedgerRead } from "./read-cache";
 
@@ -45,15 +44,21 @@ export type LedgerRow = {
 
 export const LEDGER_PAGE_SIZE = 100;
 
-export async function getGeneralLedger(from: string, to: string, requestedPage = 1) {
+export type LedgerAccountFilters = { account?: string; offset?: string };
+
+export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}) {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / LEDGER_PAGE_SIZE) ? requestedPage : 1;
   const offset = (page - 1) * LEDGER_PAGE_SIZE;
-  return cachedLedgerRead(["general-ledger", from, to, String(page)], async supabase => {
-    const { data, error } = await supabase
+  const { account, offset: offsetAccount } = filters;
+  return cachedLedgerRead(["general-ledger", from, to, String(page), ...(account || offsetAccount ? [account ?? "", offsetAccount ?? ""] : [])], async supabase => {
+    let query = supabase
       .from("v_ledger")
       .select("date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no")
       .gte("date", from)
-      .lte("date", to)
+      .lte("date", to);
+    if (account) query = query.eq("account_number", account);
+    if (offsetAccount) query = query.eq("offsetting_account_number", offsetAccount);
+    const { data, error } = await query
       .order("date", { ascending: true })
       .order("entry_number", { ascending: true })
       .order("line_no", { ascending: true })
@@ -78,13 +83,15 @@ export type TChartRow = {
   audit_trail: string | null;
 };
 
+/** The rule catalog changes rarely, so it stays cached for five minutes per session. */
 export async function getTChart() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("v_t_chart")
-    .select("rule_code,category,sort_order,trigger_name,debit_accounts,credit_accounts,reversible,airtable_sources,when_to_post,fin_notes,audit_trail")
-    .order("category")
-    .order("sort_order");
-  if (error) throw new Error(`T-Chart query failed: ${error.message}`);
-  return (data ?? []) as TChartRow[];
+  return cachedLedgerRead(["t-chart"], async supabase => {
+    const { data, error } = await supabase
+      .from("v_t_chart")
+      .select("rule_code,category,sort_order,trigger_name,debit_accounts,credit_accounts,reversible,airtable_sources,when_to_post,fin_notes,audit_trail")
+      .order("category")
+      .order("sort_order");
+    if (error) throw new Error(`T-Chart query failed: ${error.message}`);
+    return (data ?? []) as TChartRow[];
+  }, 300);
 }
