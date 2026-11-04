@@ -24,7 +24,7 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `supabase/functions/ledger-payment/` | Shared-secret HTTP boundary and generic transactional writer |
 | `supabase/migrations/` | Tracked database changes, including lifecycle metadata and nullable branch |
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
-| `lib/reports/read-cache.ts` | One shared Auth check per request and the session-scoped ledger read cache |
+| `lib/reports/report-session.ts` | One shared Auth check per request; ledger reads run as the signed-in user |
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
@@ -85,11 +85,11 @@ Balance/General Ledger headings because their filters already show them. Stateme
 month names, Q1-Q4 or years, with exact partial-snapshot dates retained where needed.
 
 Next client navigation replaces full-page filter reloads. A spinner/skeleton appears during a
-transition and stale controls become inert. Ledger results use a 30-second Next data cache keyed
-by a hash of the signed-in session token plus operation/date/page/account filters; the T-Chart
-catalog uses five minutes. One Auth check per request is shared by the layout and reads and precedes
-cache access. Errors propagate; credentials are not stored in cache keys. New postings may take roughly
-30 seconds plus revalidation to appear. This is not a live synchronization guarantee.
+transition and stale controls become inert. Visited pages stay in the browser router cache for
+five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
+bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
+layout and reads. View switches (grain, summary/detail) are still server requests; moving them to
+the browser and batching the trial-balance reads into one database call are the planned next steps.
 
 ## Local setup
 

@@ -1,6 +1,6 @@
-import { reportUser } from "@/lib/reports/read-cache";
+import { reportUser } from "@/lib/reports/report-session";
 import { NavLinks } from "@/components/NavLinks";
-import { ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
+import { RefreshDataButton, ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             <span className="brand-name">Finance</span>
           </div>
           <NavLinks />
+          <RefreshDataButton />
           <details className="account-menu">
             <summary className="account-trigger" aria-label="Account menu"><span className="account-avatar" aria-hidden="true">{initials}</span><span aria-hidden="true">▾</span></summary>
             <div className="account-menu-panel">

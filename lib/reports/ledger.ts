@@ -1,5 +1,5 @@
 import type { AccountBalance } from "./report-utils";
-import { cachedLedgerRead } from "./read-cache";
+import { ledgerRead } from "./report-session";
 
 /**
  * Live-ledger reports. READ-ONLY: every query runs as the signed-in user through RLS.
@@ -9,7 +9,7 @@ import { cachedLedgerRead } from "./read-cache";
 export type TbRow = AccountBalance;
 
 export async function getTrialBalance(asOf: string, from: string | null) {
-  return cachedLedgerRead(["trial-balance", asOf, from ?? "all"], async supabase => {
+  return ledgerRead(async supabase => {
     const { data, error } = await supabase.rpc("get_trial_balance", { p_as_of: asOf, p_from: from });
     if (error) throw new Error(`Trial balance query failed: ${error.message}`);
     return (data ?? []) as TbRow[];
@@ -17,7 +17,7 @@ export async function getTrialBalance(asOf: string, from: string | null) {
 }
 
 export async function countPostedEntries(asOf: string, from: string | null) {
-  return cachedLedgerRead(["posted-count", asOf, from ?? "all"], async supabase => {
+  return ledgerRead(async supabase => {
     let q = supabase.from("v_journal_entries").select("id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
     if (from) q = q.gte("entry_date", from);
     const { count, error } = await q;
@@ -50,7 +50,7 @@ export async function getGeneralLedger(from: string, to: string, requestedPage =
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / LEDGER_PAGE_SIZE) ? requestedPage : 1;
   const offset = (page - 1) * LEDGER_PAGE_SIZE;
   const { account, offset: offsetAccount } = filters;
-  return cachedLedgerRead(["general-ledger", from, to, String(page), ...(account || offsetAccount ? [account ?? "", offsetAccount ?? ""] : [])], async supabase => {
+  return ledgerRead(async supabase => {
     let query = supabase
       .from("v_ledger")
       .select("date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no")
@@ -83,9 +83,8 @@ export type TChartRow = {
   audit_trail: string | null;
 };
 
-/** The rule catalog changes rarely, so it stays cached for five minutes per session. */
 export async function getTChart() {
-  return cachedLedgerRead(["t-chart"], async supabase => {
+  return ledgerRead(async supabase => {
     const { data, error } = await supabase
       .from("v_t_chart")
       .select("rule_code,category,sort_order,trigger_name,debit_accounts,credit_accounts,reversible,airtable_sources,when_to_post,fin_notes,audit_trail")
@@ -93,5 +92,5 @@ export async function getTChart() {
       .order("sort_order");
     if (error) throw new Error(`T-Chart query failed: ${error.message}`);
     return (data ?? []) as TChartRow[];
-  }, 300);
+  });
 }

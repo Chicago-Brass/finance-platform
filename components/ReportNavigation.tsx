@@ -4,13 +4,24 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useTransition } from "react";
 import type { AnchorHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
+import { ReportIcon } from "./ReportIcons";
 
-const Navigation = createContext<{ pending: boolean; navigate: (href: string) => void } | null>(null);
+const Navigation = createContext<{ pending: boolean; navigate: (href: string) => void; refresh: () => void } | null>(null);
 
 export function ReportNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  return <Navigation.Provider value={{ pending, navigate: href => startTransition(() => router.push(href, { scroll: false })) }}>{children}</Navigation.Provider>;
+  return <Navigation.Provider value={{
+    pending,
+    navigate: href => startTransition(() => router.push(href, { scroll: false })),
+    // Clears the browser's cached report pages and re-reads the current one from the ledger.
+    refresh: () => startTransition(() => router.refresh()),
+  }}>{children}</Navigation.Provider>;
+}
+
+export function RefreshDataButton() {
+  const navigation = useContext(Navigation);
+  return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={navigation?.pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={navigation?.pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
 }
 
 export function ReportLink({ href, children, onClick, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {

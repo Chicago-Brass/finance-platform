@@ -36,12 +36,14 @@ statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapsh
 exact as-of date below the compact heading. Analytics use compact, right-aligned values.
 
 Report links and GET forms navigate through the Next router. A spinner and table skeleton appear
-immediately while a new view loads; stale controls are inert during the transition. Ledger reads
-use a 30-second Next data cache scoped by a hash of the signed-in session token and the operation,
-date range, page and account filters. The T-Chart catalog uses a five-minute window. Authentication
-runs once per request before cache access and is shared with the report layout; middleware still
-checks the current application role. Query failures propagate and are not cached. New postings can take about 30
-seconds plus revalidation to appear. No tokens are stored in cache keys.
+immediately while a new view loads; stale controls are inert during the transition. Visited
+report pages stay in the browser's Next router cache for five minutes (`staleTimes.dynamic` in
+`next.config.mjs`), so returning to a page or a filter combination already seen is instant. The
+server does not cache ledger reads: a browser reload, or the Refresh data button in the top bar
+(`router.refresh()`, which also clears the router cache), reads the latest postings. Authentication
+runs once per request and is shared by the report layout and every read; middleware still checks
+the current application role. Query failures propagate. Router-cached pages belong to that browser
+tab only and are cleared by signing out.
 
 Both reports and their Excel/PDF outputs show currency symbols, two decimal places, `$0.00` zeros
 and parentheses for negative amounts. Missing values remain distinct from zero. General Ledger
