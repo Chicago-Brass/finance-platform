@@ -26,7 +26,7 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
 | `lib/reports/report-session.ts` | One shared Auth check per request; ledger reads run as the signed-in user |
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
-| `lib/reports/statement-loaders.ts` | Server reads for one statement data window (IS year/months, BS as-of date) |
+| `lib/reports/statement-loaders.ts` | One batched `get_trial_balances` read plus the posted count per statement data window |
 | `lib/reports/statement-data.ts` | Builds every IS/BS View and Display from one data window; runs in the browser |
 | `components/StatementWorkspace.tsx` | IS/BS client state for View/Display switches without a request |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
@@ -95,8 +95,9 @@ transition and stale controls become inert. Visited pages stay in the browser ro
 five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
 bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
 layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
-from data loaded once per year/month range or as-of date, so they make no request. Batching those
-trial-balance reads into one database call is the planned next step.
+from data loaded once per year/month range or as-of date, so they make no request. That data comes
+from one `get_trial_balances` call (migration `20261105120000`); without the migration the app falls
+back to one `get_trial_balance` call per range.
 
 Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
 above the page with that account's summary, filters and posted lines. It loads through a server

@@ -87,15 +87,22 @@ page overflow. Print media expands the table and hides the sidebar instead of cl
 
 ## Data and periods
 
-- Income Statement reads get_trial_balance once per calendar month in the selected range, plus the
-  prior-year comparison period. Quarterly and annual columns, and the Total column, are sums of those
+Statement loaders (`lib/reports/statement-loaders.ts`) make one batched trial-balance call and one
+posted-entry count per data window. `get_trial_balances` (migration `20261105120000`) runs
+`get_trial_balance` for each requested range inside the database, so each set is identical to a
+single call. Until that migration is applied to a database, the app falls back to one
+`get_trial_balance` call per range.
+
+- Income Statement reads one trial balance per calendar month in the selected range, plus the
+  prior-year comparison period, all in a single `get_trial_balances` call. Quarterly and annual columns, and the Total column, are sums of those
   disjoint months in integer cents, built in the browser (`lib/reports/statement-data.ts`).
 - The default is the current Chicago calendar year, January through the current calendar month.
   Month selections include the whole selected month. Past/future years and different ranges are explicit choices.
 - Every amount is a posted ledger actual. There is no September cutoff or implied forecast.
 - Balance Sheet reads, once per as-of date, every cumulative snapshot any View needs: year-to-date
   month ends, the selected date, the three prior December 31 baselines and the analytics comparison
-  and trend dates. Each View then selects its columns from that set in the browser. Columns end
+  and trend dates, in a single `get_trial_balances` call. Each View then selects its columns from
+  that set in the browser. Columns end
   exactly on the selected date. Its default as-of date is today in Chicago.
 - Annual Balance Sheet displays the preceding two December 31 snapshots and the exact selected
   as-of date. Columns are independent balances, never summed. Each column uses its own previous
