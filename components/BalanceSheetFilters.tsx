@@ -2,7 +2,7 @@ import { ReportLink, ReportForm } from "./ReportNavigation";
 import type { BalanceSheetOptions } from "@/lib/reports/balance-sheet";
 import { formatDate } from "@/lib/reports/report-utils";
 import { balanceDatePresets, reportHref } from "@/lib/reports/filter-options";
-import { CalendarMark, ReportViewControls } from "./ReportViewControls";
+import { CalendarMark } from "./ReportViewControls";
 
 export function BalanceSheetFilters({ options }: { options: BalanceSheetOptions }) {
   const params = { asof: options.asOf, grain: options.grain, layout: options.summary ? "summary" : "detail" };
@@ -27,8 +27,4 @@ export function BalanceSheetFilters({ options }: { options: BalanceSheetOptions 
       <span className="filter-context">Cumulative posted balances</span>
     </div>
   );
-}
-
-export function BalanceSheetViewControls({ options }: { options: BalanceSheetOptions }) {
-  return <ReportViewControls params={{ asof: options.asOf, grain: options.grain, layout: options.summary ? "summary" : "detail" }} grains={[{ value: "single", label: "As of" }, { value: "month", label: "Monthly" }, { value: "quarter", label: "Quarterly" }, { value: "year", label: "Annual" }]} />;
 }

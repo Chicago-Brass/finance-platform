@@ -26,6 +26,9 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
 | `lib/reports/report-session.ts` | One shared Auth check per request; ledger reads run as the signed-in user |
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
+| `lib/reports/statement-loaders.ts` | Server reads for one statement data window (IS year/months, BS as-of date) |
+| `lib/reports/statement-data.ts` | Builds every IS/BS View and Display from one data window; runs in the browser |
+| `components/StatementWorkspace.tsx` | IS/BS client state for View/Display switches without a request |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
 | `lib/reports/analytics.ts` | Position/Movement data derived from the report and comparison periods |
@@ -88,8 +91,9 @@ Next client navigation replaces full-page filter reloads. A spinner/skeleton app
 transition and stale controls become inert. Visited pages stay in the browser router cache for
 five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
 bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
-layout and reads. View switches (grain, summary/detail) are still server requests; moving them to
-the browser and batching the trial-balance reads into one database call are the planned next steps.
+layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
+from data loaded once per year/month range or as-of date, so they make no request. Batching those
+trial-balance reads into one database call is the planned next step.
 
 ## Local setup
 

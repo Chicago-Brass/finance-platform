@@ -1,25 +1,26 @@
-import { ReportLink } from "./ReportNavigation";
-import { reportHref } from "@/lib/reports/filter-options";
-
-export function ReportViewControls({ params, grains }: {
-  params: Record<string, string>;
-  grains: { value: string; label: string }[];
+/** View (columns) and Display (summary/detail) switches. They change state in the browser, not the URL's data. */
+export function ReportViewControls<G extends string>({ grains, grain, summary, onGrain, onSummary }: {
+  grains: { value: G; label: string }[];
+  grain: G;
+  summary: boolean;
+  onGrain: (grain: G) => void;
+  onSummary: (summary: boolean) => void;
 }) {
   return (
     <div className="report-segments">
       <div className="view-control-group">
         <span className="segment-label">View</span>
-        <div className="segmented-control" aria-label="Report columns">
-          {grains.map(grain => (
-            <ReportLink key={grain.value} href={reportHref(params, { grain: grain.value })} className={`segment-option${params.grain === grain.value ? " is-active" : ""}`} aria-current={params.grain === grain.value ? "true" : undefined}>{grain.label}</ReportLink>
+        <div className="segmented-control" role="group" aria-label="Report columns">
+          {grains.map(item => (
+            <button key={item.value} type="button" onClick={() => onGrain(item.value)} className={`segment-option${grain === item.value ? " is-active" : ""}`} aria-pressed={grain === item.value}>{item.label}</button>
           ))}
         </div>
       </div>
       <div className="view-control-group">
         <span className="segment-label">Display</span>
-        <div className="segmented-control" aria-label="Report detail">
-          {[{ value: "summary", label: "Summary" }, { value: "detail", label: "Details" }].map(layout => (
-            <ReportLink key={layout.value} href={reportHref(params, { layout: layout.value })} className={`segment-option${params.layout === layout.value ? " is-active" : ""}`} aria-current={params.layout === layout.value ? "true" : undefined}>{layout.label}</ReportLink>
+        <div className="segmented-control" role="group" aria-label="Report detail">
+          {[{ value: true, label: "Summary" }, { value: false, label: "Details" }].map(item => (
+            <button key={item.label} type="button" onClick={() => onSummary(item.value)} className={`segment-option${summary === item.value ? " is-active" : ""}`} aria-pressed={summary === item.value}>{item.label}</button>
           ))}
         </div>
       </div>

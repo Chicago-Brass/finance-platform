@@ -36,7 +36,10 @@ statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapsh
 exact as-of date below the compact heading. Analytics use compact, right-aligned values.
 
 Report links and GET forms navigate through the Next router. A spinner and table skeleton appear
-immediately while a new view loads; stale controls are inert during the transition. Visited
+immediately while a new view loads; stale controls are inert during the transition. View (Monthly/Quarterly/Annual/As of) and Display
+(Summary/Details) switches on the Income Statement and Balance Sheet rebuild the report in the
+browser from the loaded data and update the URL with a history replace, so they make no request.
+Only the year, month range or as-of date loads data. Visited
 report pages stay in the browser's Next router cache for five minutes (`staleTimes.dynamic` in
 `next.config.mjs`), so returning to a page or a filter combination already seen is instant. The
 server does not cache ledger reads: a browser reload, or the Refresh data button in the top bar
@@ -59,13 +62,16 @@ page overflow. Print media expands the table and hides the sidebar instead of cl
 
 ## Data and periods
 
-- Income Statement reads get_trial_balance for each requested calendar month, quarter or year,
-  plus the prior-year comparison period. Monthly/quarterly Total columns sum disjoint periods.
+- Income Statement reads get_trial_balance once per calendar month in the selected range, plus the
+  prior-year comparison period. Quarterly and annual columns, and the Total column, are sums of those
+  disjoint months in integer cents, built in the browser (`lib/reports/statement-data.ts`).
 - The default is the current Chicago calendar year, January through the current calendar month.
   Month selections include the whole selected month. Past/future years and different ranges are explicit choices.
 - Every amount is a posted ledger actual. There is no September cutoff or implied forecast.
-- Balance Sheet reads cumulative trial balances at the as-of date, or each selected year-to-date
-  month/quarter end, ending exactly on the selected date. Its default as-of date is today in Chicago.
+- Balance Sheet reads, once per as-of date, every cumulative snapshot any View needs: year-to-date
+  month ends, the selected date, the three prior December 31 baselines and the analytics comparison
+  and trend dates. Each View then selects its columns from that set in the browser. Columns end
+  exactly on the selected date. Its default as-of date is today in Chicago.
 - Annual Balance Sheet displays the preceding two December 31 snapshots and the exact selected
   as-of date. Columns are independent balances, never summed. Each column uses its own previous
   December 31 earnings baseline, so annual comparisons do not share an incorrect current-year baseline.

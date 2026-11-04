@@ -258,6 +258,7 @@ label { font-weight: 600; font-size: 13px; }
 .view-control-group { display: inline-flex; align-items: center; gap: 9px; }
 .segmented-control { display: inline-flex; padding: 2px; border: 1px solid #cfd6df; border-radius: var(--control-radius); background: white; }
 .segment-option { min-height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 3px 9px; border-radius: var(--inner-radius); color: var(--ink); text-decoration: none; font-size: 12px; white-space: nowrap; }
+button.segment-option { border: 0; background: transparent; font: inherit; cursor: pointer; }
 .segment-option:hover { background: var(--surface-2); }
 .segment-option.is-active { color: white; background: var(--navy); }
 .report-account-search { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 9px; border: 1px solid #cfd6df; border-radius: var(--control-radius); color: var(--ink-2); }

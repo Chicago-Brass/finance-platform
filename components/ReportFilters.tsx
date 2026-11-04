@@ -2,7 +2,7 @@ import { ReportLink, ReportForm } from "./ReportNavigation";
 import type { IncomeStatementOptions } from "@/lib/reports/income-statement";
 import { formatDate, monthEnd, monthStart } from "@/lib/reports/report-utils";
 import { incomeDatePresets, reportHref } from "@/lib/reports/filter-options";
-import { CalendarMark, ReportViewControls } from "./ReportViewControls";
+import { CalendarMark } from "./ReportViewControls";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -36,8 +36,4 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
       <ReportLink className="filter-reset" href={reportHref(params, { year: String(presets[0].year), from: "1", to: String(presets[0].to) })}>Reset to current year</ReportLink>
     </div>
   );
-}
-
-export function IncomeStatementViewControls({ options }: { options: IncomeStatementOptions }) {
-  return <ReportViewControls params={{ year: String(options.year), from: String(options.from), to: String(options.to), grain: options.grain, layout: options.summary ? "summary" : "detail" }} grains={[{ value: "month", label: "Monthly" }, { value: "quarter", label: "Quarterly" }, { value: "year", label: "Annual" }]} />;
 }
