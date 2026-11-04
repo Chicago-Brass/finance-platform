@@ -30,6 +30,31 @@ The dark sidebar has Position and Movement tabs:
   Income Statement Movement compares revenue, operating expenses and net income with the same
   selected months in the previous year. Trends use the report's dated snapshots or periods.
 
+## Account drill-down drawer
+
+Clicking an account row on the Income Statement, Balance Sheet or General Ledger opens a
+slide-over drawer above the page. It is separate from the analytics sidebar and closes with
+Escape, its close button or a click on the dimmed backdrop; focus returns to the row. The drawer
+holds no URL state, so View/Display parameters are unaffected. Statement drawers step to the
+previous or next account in report order.
+
+The `loadAccountActivity` server action (`app/(reports)/account-activity-action.ts`) runs as the
+signed-in user. It validates the account code and dates, then reads `get_trial_balance` for the
+range totals and pages `v_ledger` filtered by account for the lines, up to 2,000 lines. Totals
+always come from the trial balance; a capped list says so. Ranges and comparisons:
+
+- Income Statement and General Ledger use the selected dates (`period` mode). The comparison is
+  the same dates one year earlier.
+- Balance Sheet uses January 1 of the as-of year through the as-of date (`balance` mode), with the
+  cumulative opening balance at the previous day and the resulting closing balance.
+
+Amounts in the drawer follow the account's normal balance (debit-normal accounts count debits as
+positive), with debits and credits shown separately. A statement can present the same account
+with a different sign, such as interest below operating income. The analytics show the monthly net and
+the offsetting-account mix. Search, month, offsetting-account and debit/credit filters apply to the
+loaded lines, and the footer totals the filtered lines. "Lines tie to the trial balance" appears
+only when the unfiltered lines add up to the trial-balance debits and credits.
+
 All report headings use one row for the title, divider and entity description. Date filters carry
 the dates without duplicate Trial Balance or General Ledger captions. Monthly/quarterly/annual
 statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapshots retain their

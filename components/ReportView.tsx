@@ -7,6 +7,9 @@ import type { ReportAnalytics as AnalyticsData } from "@/lib/reports/analytics";
 import { formatReportAmount, formatPercent } from "@/lib/format";
 import { downloadExcel } from "@/lib/reports/export-excel";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
+import type { DrillRange } from "@/lib/reports/account-activity";
+import { AccountDrawer } from "./AccountDrawer";
+import type { DrillTarget } from "./AccountDrawer";
 import { ReportAnalytics } from "./ReportAnalytics";
 import { ReportIcon } from "./ReportIcons";
 
@@ -44,12 +47,27 @@ export function filterReportLines(lines: ReportLine[], query: string, hideZero: 
   });
 }
 
-export function ReportView({ report, analytics, filters, viewControls }: {
+/** Account rows in report order, each labeled with its report section, for the drill-down drawer. */
+export function drillTargets(report: Report): DrillTarget[] {
+  let section = "";
+  const targets: DrillTarget[] = [];
+  for (const line of report.lines) {
+    if (line.kind === "section") section = line.label;
+    else if (line.accountCode) targets.push({ code: line.accountCode, label: line.label, context: section ? `${report.title} · ${section}` : report.title });
+  }
+  return targets;
+}
+
+export function ReportView({ report, analytics, filters, viewControls, drill }: {
   report: Report;
   analytics?: AnalyticsData;
   filters?: ReactNode;
   viewControls?: ReactNode;
+  /** When set, account rows open the drill-down drawer for this date range. */
+  drill?: DrillRange;
 }) {
+  const [drillTarget, setDrillTarget] = useState<DrillTarget | null>(null);
+  const targets = useMemo(() => drill ? drillTargets(report) : [], [drill, report]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [hideZero, setHideZero] = useState(false);
@@ -113,9 +131,13 @@ export function ReportView({ report, analytics, filters, viewControls }: {
                 {displayFiltered && hasAccounts && matchingAccounts === 0 && <tr><td colSpan={report.columns.length + 1} className="report-no-matches">No accounts match the display filters. Financial totals remain below.</td></tr>}
                 {rows.map(line => {
                   const isToggle = canCollapse.has(line.id), isCollapsed = collapsed.has(line.id);
-                  return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}`} data-account={line.accountCode}>
+                  const target = drill && line.accountCode && !isToggle ? targets.find(item => item.code === line.accountCode) : undefined;
+                  const drilled = !!target && drillTarget?.code === target.code;
+                  return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}${drilled ? " is-drilled" : ""}`} data-account={line.accountCode}>
                     <th scope="row" className="label-cell" style={{ paddingLeft: `${14 + line.depth * 14}px` }}>
-                      {isToggle ? <button type="button" className="row-toggle" aria-expanded={!isCollapsed} onClick={() => toggle(line.id)}><ReportIcon name={isCollapsed ? "chevronRight" : "chevronDown"} className="row-caret no-print" />{line.label}</button> : line.label}
+                      {isToggle ? <button type="button" className="row-toggle" aria-expanded={!isCollapsed} onClick={() => toggle(line.id)}><ReportIcon name={isCollapsed ? "chevronRight" : "chevronDown"} className="row-caret no-print" />{line.label}</button>
+                        : target ? <button type="button" className="drill-trigger" aria-haspopup="dialog" aria-expanded={drilled} title={`Open ${target.code} details`} onClick={() => setDrillTarget(target)}><span className="drill-trigger-label">{line.label}</span></button>
+                        : line.label}
                     </th>
                     {report.columns.map(column => {
                       const value = line.values[column.key];
@@ -134,6 +156,7 @@ export function ReportView({ report, analytics, filters, viewControls }: {
         </section>
         {analytics && <ReportAnalytics analytics={analytics} />}
       </div>
+      {drill && drillTarget && <AccountDrawer target={drillTarget} range={drill} accounts={targets} onSelect={setDrillTarget} onClose={() => setDrillTarget(null)} />}
     </article>
   );
 }

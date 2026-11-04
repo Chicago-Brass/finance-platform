@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import type { LedgerRow, TbRow } from "@/lib/reports/ledger";
 import { formatReportAmount } from "@/lib/format";
 import { formatDate } from "@/lib/reports/report-utils";
+import { AccountDrawer } from "./AccountDrawer";
+import type { DrillTarget } from "./AccountDrawer";
 import { AccountPill } from "./AccountPill";
 import { ReportIcon } from "./ReportIcons";
 import { ReportLink } from "./ReportNavigation";
@@ -51,6 +53,8 @@ export function TrialBalanceTable({ rows, asOf }: { rows: TbRow[]; asOf?: string
 export function GeneralLedgerTable({ rows, from, to, page, pageSize, hasNext, account, offset }: { rows: LedgerRow[]; from: string; to: string; page: number; pageSize: number; hasNext: boolean; account?: string; offset?: string }) {
   const [query, setQuery] = useState("");
   const [side, setSide] = useState("all");
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
+  const drillRange = useMemo(() => ({ mode: "period" as const, from, to }), [from, to]);
   const visible = useMemo(() => filterLedgerRecords(rows, query, side), [rows, query, side]);
   const debit = moneyTotal(rows.map(row => row.debit));
   const credit = moneyTotal(rows.map(row => row.credit));
@@ -70,12 +74,14 @@ export function GeneralLedgerTable({ rows, from, to, page, pageSize, hasNext, ac
           <thead><tr><th scope="col" className="label-cell">Date</th><th scope="col" className="label-cell">Account</th><th scope="col" className="label-cell">Offsetting account</th><th scope="col" className="num-cell">Debit</th><th scope="col" className="num-cell">Credit</th><th scope="col" className="label-cell">Notes</th><th scope="col" className="label-cell">Audit link</th></tr></thead>
           <tbody>{visible.length === 0 ? <tr><td colSpan={7} className="ledger-empty">{rows.length ? "No records match the display filters on this page." : account || offset ? "No posted journal lines match these accounts for the selected dates." : "No posted journal lines on this page for the selected dates."}</td></tr> : visible.map(row => {
             const auditLink = safeAuditLink(row.audit_link);
-            return <tr key={row.line_id} className="row-account"><td className="label-cell ledger-date-cell"><time dateTime={row.date}>{formatDate(row.date)}</time><small>Entry {row.entry_number}</small></td><th scope="row" className="label-cell"><AccountPill code={row.account_number} name={row.account_name} /></th><td className="label-cell">{row.offset_is_split ? <span className="ledger-split-pill" title="This journal entry includes multiple offsetting accounts.">Split / multiple accounts</span> : <AccountPill code={row.offsetting_account_number} name={row.offsetting_account_name} />}</td><td className="num-cell">{formatReportAmount(Number(row.debit))}</td><td className="num-cell">{formatReportAmount(Number(row.credit))}</td><td className="label-cell ledger-notes-cell">{row.notes || <span className="ledger-muted">-</span>}</td><td className="label-cell">{auditLink ? <a href={auditLink} target="_blank" rel="noopener noreferrer" className="ledger-audit-link">Open<ReportIcon name="arrowUp" /></a> : <span className="ledger-muted">{row.audit_link || "-"}</span>}</td></tr>;
+            const drilled = drill?.lineId === row.line_id;
+            return <tr key={row.line_id} className={`row-account${drilled ? " is-drilled" : ""}`}><td className="label-cell ledger-date-cell"><time dateTime={row.date}>{formatDate(row.date)}</time><small>Entry {row.entry_number}</small></td><th scope="row" className="label-cell"><button type="button" className="drill-trigger" aria-haspopup="dialog" aria-expanded={drilled} title={`Open ${row.account_number} details`} onClick={() => setDrill({ code: row.account_number, label: `${row.account_number} ${row.account_name}`, context: "General Ledger", lineId: row.line_id })}><span className="drill-trigger-label"><AccountPill code={row.account_number} name={row.account_name} /></span></button></th><td className="label-cell">{row.offset_is_split ? <span className="ledger-split-pill" title="This journal entry includes multiple offsetting accounts.">Split / multiple accounts</span> : <AccountPill code={row.offsetting_account_number} name={row.offsetting_account_name} />}</td><td className="num-cell">{formatReportAmount(Number(row.debit))}</td><td className="num-cell">{formatReportAmount(Number(row.credit))}</td><td className="label-cell ledger-notes-cell">{row.notes || <span className="ledger-muted">-</span>}</td><td className="label-cell">{auditLink ? <a href={auditLink} target="_blank" rel="noopener noreferrer" className="ledger-audit-link">Open<ReportIcon name="arrowUp" /></a> : <span className="ledger-muted">{row.audit_link || "-"}</span>}</td></tr>;
           })}</tbody>
           <tfoot><tr><th colSpan={3} scope="row" className="label-cell">Current page totals</th><td className="num-cell">{formatReportAmount(debit)}</td><td className="num-cell">{formatReportAmount(credit)}</td><td colSpan={2} /></tr></tfoot>
         </table>
       </div>
       <footer className="ledger-pagination"><div className="ledger-page-status"><span>{rows.length ? `Records ${first}-${first + rows.length - 1}` : "0 records on this page"}</span><small>{pageSize} records per page / Posted entries only</small></div><nav className="ledger-page-links" aria-label="Ledger pagination">{page > 1 ? <ReportLink className="btn btn-quiet" href={ledgerHref({ from, to, account, offset, page: page - 1 })} rel="prev"><ReportIcon name="chevronRight" className="ledger-previous-icon" />Previous</ReportLink> : <button className="btn btn-quiet" disabled type="button"><ReportIcon name="chevronRight" className="ledger-previous-icon" />Previous</button>}<span className="ledger-page-number" aria-current="page">Page {page}</span>{hasNext ? <ReportLink className="btn btn-quiet" href={ledgerHref({ from, to, account, offset, page: page + 1 })} rel="next">Next<ReportIcon name="chevronRight" /></ReportLink> : <button className="btn btn-quiet" disabled type="button">Next<ReportIcon name="chevronRight" /></button>}</nav></footer>
+      {drill && <AccountDrawer target={drill} range={drillRange} onSelect={setDrill} onClose={() => setDrill(null)} />}
     </section>
   );
 }

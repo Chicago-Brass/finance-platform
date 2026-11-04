@@ -35,6 +35,9 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `components/ReportView.tsx` | Shared report table, account display filters, collapse controls and exports |
 | `components/ReportAnalytics.tsx` | Accessible Position/Movement tabs and compact signed-value charts |
 | `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables, account-to-ledger links |
+| `components/AccountDrawer.tsx`, `components/account-drawer.css` | Slide-over account drill-down: summary, filters and posted lines |
+| `lib/reports/account-activity.ts` | Drill-down summaries, natural-sign amounts and line filters (cents) |
+| `app/(reports)/account-activity-action.ts` | Server action that loads one account's totals and lines as the signed-in user |
 | `components/LedgerAccountFilter.tsx` | General Ledger account and offsetting-account query filters |
 | `components/PostingRulesTable.tsx` | T-Chart posting-rule table |
 | `components/ReportNavigation.tsx` | Client navigation, GET forms, immediate spinner/skeleton feedback |
@@ -94,6 +97,11 @@ bar's Refresh data button reads the latest postings. One Auth check per request 
 layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
 from data loaded once per year/month range or as-of date, so they make no request. Batching those
 trial-balance reads into one database call is the planned next step.
+
+Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
+above the page with that account's summary, filters and posted lines. It loads through a server
+action on each open, without a cache, and keeps no URL state. See
+[the drawer contract](../docs/ledger-reporting.md#account-drill-down-drawer).
 
 ## Local setup
 

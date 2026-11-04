@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { startOfYear } from "@/lib/dates";
+import { monthEnd, monthStart } from "@/lib/reports/report-utils";
 import { buildBalanceSheetView, buildIncomeStatementView } from "@/lib/reports/statement-data";
 import type { BalanceGrain, BalanceSheetData, IncomeGrain, IncomeStatementData } from "@/lib/reports/statement-data";
 import { BalanceSheetFilters } from "./BalanceSheetFilters";
@@ -31,11 +33,13 @@ function useStatementView<G extends string>(initialGrain: G, initialSummary: boo
 export function IncomeStatementWorkspace({ data, grain, summary }: { data: IncomeStatementData; grain: IncomeGrain; summary: boolean }) {
   const view = useStatementView(grain, summary);
   const { options, report, analytics } = useMemo(() => buildIncomeStatementView(data, view.grain, view.summary), [data, view.grain, view.summary]);
-  return <ReportView report={report} analytics={analytics} filters={<ReportFilters options={options} />} viewControls={<ReportViewControls grains={INCOME_GRAINS} {...view} />} />;
+  const drill = useMemo(() => ({ mode: "period" as const, from: monthStart(data.year, data.from), to: monthEnd(data.year, data.to) }), [data.year, data.from, data.to]);
+  return <ReportView report={report} analytics={analytics} filters={<ReportFilters options={options} />} viewControls={<ReportViewControls grains={INCOME_GRAINS} {...view} />} drill={drill} />;
 }
 
 export function BalanceSheetWorkspace({ data, grain, summary }: { data: BalanceSheetData; grain: BalanceGrain; summary: boolean }) {
   const view = useStatementView(grain, summary);
   const { options, report, analytics } = useMemo(() => buildBalanceSheetView(data, view.grain, view.summary), [data, view.grain, view.summary]);
-  return <ReportView report={report} analytics={analytics} filters={<BalanceSheetFilters options={options} />} viewControls={<ReportViewControls grains={BALANCE_GRAINS} {...view} />} />;
+  const drill = useMemo(() => ({ mode: "balance" as const, from: startOfYear(data.asOf), to: data.asOf }), [data.asOf]);
+  return <ReportView report={report} analytics={analytics} filters={<BalanceSheetFilters options={options} />} viewControls={<ReportViewControls grains={BALANCE_GRAINS} {...view} />} drill={drill} />;
 }

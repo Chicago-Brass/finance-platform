@@ -93,3 +93,19 @@ test('Sidebar renders signed funding and shares over 100% without clipping them 
   assert.match(html,/aria-selected="true"/);
   assert.match(html,/N\/A/);
 });
+
+test('Drill-down targets follow report order and name each account section', () => {
+  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual', isSample: false, columns: [{ key: 'a', label: 'A', kind: 'amount' }], lines, checks: [] };
+  assert.deepEqual(view.drillTargets(report), [
+    { code: '004.001', label: 'Zero', context: 'Income Statement · Revenue' },
+    { code: '004.002', label: 'Unavailable', context: 'Income Statement · Revenue' },
+    { code: '004.006', label: 'Returns', context: 'Income Statement · Revenue' },
+    { code: '005.002', label: 'Salary', context: 'Income Statement · Personnel' },
+  ]);
+  const plain = renderToStaticMarkup(React.createElement(view.ReportView, { report }));
+  assert.doesNotMatch(plain, /drill-trigger/);
+  const drill = renderToStaticMarkup(React.createElement(view.ReportView, { report, drill: { mode: 'period', from: '2026-01-01', to: '2026-12-31' } }));
+  assert.equal((drill.match(/class="drill-trigger"/g) || []).length, 4);
+  assert.match(drill, /title="Open 005\.002 details"/);
+  assert.doesNotMatch(drill, /role="dialog"/);
+});
