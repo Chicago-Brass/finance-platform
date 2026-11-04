@@ -111,9 +111,9 @@ async function checkBehavior() {
     });
     await check("Invoice and source-credit names select the primary field", async () => {
         const h = await harness(); h.ready();
-        h.add(h.T.invoices, "invoice", { [h.I.paymentStatus]: select("Fully Paid"), [h.I.creditsApplied]: -20, [h.I.sourceCredits]: [link("credit")] }, "INV - 2032368 - Invoice from Ashley Norton");
+        h.add(h.T.invoices, "invoice", { [h.I.paymentStatus]: select("Fully Paid"), [h.I.creditsApplied]: -20, [h.I.sourceCredits]: [link("credit")] }, "INV - 1000001 - Invoice from Sample Vendor");
         await h.main("payment");
-        assert.equal(h.calls[0].body.source.recordName, "INV - 2032368 - Invoice from Ashley Norton");
+        assert.equal(h.calls[0].body.source.recordName, "INV - 1000001 - Invoice from Sample Vendor");
         assert.ok(h.reads.filter(read => read.table === h.T.invoices).every(read => read.fields.includes("fldMZyzqDidRujeZS")));
         assert.ok(h.logs.some(log => log.includes("Source credit name: Credit credit")));
     });

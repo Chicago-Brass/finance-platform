@@ -53,7 +53,7 @@ or any guard merely because they are outside the current path.
 
 ## Browser and live changes
 
-- On Jeric's device, use Chrome's Jeric profile, `jericnarte912@gmail.com`; enumerate profiles first.
+- On Jeric's device, use Chrome's Jeric profile (Jeric's personal Google account); enumerate profiles first.
   Never click Request access. Recheck the account instead.
 - Use browser tooling, reuse one working tab, close completed agent-created task tabs and preserve
   pre-existing user tabs. Restore temporary viewport overrides.

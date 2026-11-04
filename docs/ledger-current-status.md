@@ -193,8 +193,8 @@ balance and null notes. An invoice-owned credit correctly deduplicated across sa
 | PAY-13 Vendor refund | 2 | 2 |
 | PAY-16 Loan principal/interest | 3 | 3 |
 
-Ashley Norton's payment rec4pItWiy8vpw9IO matched PAY-07 and PAY-11. It posted $1,115.73 of bank
-settlement and separate credits of $29.33 and $48.79, without another bank movement for those credits.
+One sampled vendor payment matched both PAY-07 and PAY-11. It posted the bank settlement and two
+separate vendor credits, without another bank movement for those credits.
 
 These tests preceded the invoice-name selection fix. The name fix has a separate native read-only
 probe and mock regression coverage; it did not retrigger payments or rewrite the 27 posted journals.

@@ -61,7 +61,7 @@ that may be connected to a different repo's MCP configuration.
 
 ## Browser and local development
 
-Use Google Chrome's Jeric profile, associated with `jericnarte912@gmail.com`. Enumerate browser
+Use Google Chrome's Jeric profile, associated with Jeric's personal Google account. Enumerate browser
 profiles/tabs; connection IDs change. BriarBear is the wrong account for this work. Never click
 Request access in Airtable; select the correct signed-in profile instead.
 
