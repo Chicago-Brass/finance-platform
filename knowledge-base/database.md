@@ -46,6 +46,11 @@ writer does not populate it and the reports have no branch filter.
 - `get_trial_balance(p_as_of date, p_from date default null)` returns account metadata and posted
   debit/credit/balance aggregates. Income Statement uses period ranges; Balance Sheet and Trial
   Balance use cumulative snapshots.
+- `get_trial_balances(p_as_of date[], p_from date[])` (migration `20261105120000`) answers up to 100
+  (as-of, from) pairs in one call, one row per pair with that pair's accounts as JSON. It calls
+  `get_trial_balance` for each pair, runs as SECURITY INVOKER and is executable only by
+  `authenticated`. Income Statement and Balance Sheet loaders use it; until it is applied, the
+  app falls back to one `get_trial_balance` call per pair.
 - `v_journal_entries` supplies posted-entry counts.
 - `v_ledger` supplies General Ledger records, including `entry_number`, `line_no`, `line_id`,
   account names/numbers, offset data, notes and audit URLs. Pagination is stable by date/entry/line.

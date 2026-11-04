@@ -39,3 +39,17 @@ references and payment-targeted audit URLs. They verify payment, bill or credit 
 conflicts, rejection of an unrelated invoice source and preservation of legacy shared references.
 One complete invoice packet also posts PAY-10 and PAY-11 together, rolls back both for invalid
 data, deduplicates them together across payment triggers and rejects an incomplete replay.
+
+# Report read checks
+
+```sh
+sh supabase/tests/check-report-reads.sh
+```
+
+Same disposable, loopback-only container pattern. It loads `fixtures/ledger-baseline.sql`, then
+`fixtures/get-trial-balance.sql` (the hosted `get_trial_balance` definition read back on 2026-10-30,
+which predates the tracked migrations), then the `add_get_trial_balances` migration. It posts 59
+synthetic balanced journals and one draft, then proves that every `get_trial_balances` set equals a
+single `get_trial_balance` call in request order, that sums match the posted lines independently
+and exclude drafts, that invalid batches fail with SQLSTATE 22023, that `anon` cannot execute it,
+and that it runs as SECURITY INVOKER under the caller's row-level security.

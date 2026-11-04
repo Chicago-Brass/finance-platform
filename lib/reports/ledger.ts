@@ -16,6 +16,25 @@ export async function getTrialBalance(asOf: string, from: string | null) {
   });
 }
 
+export type TrialBalanceRequest = { asOf: string; from: string | null };
+
+/**
+ * Several trial balances in one round trip (public.get_trial_balances), in request order. Each set
+ * equals getTrialBalance(asOf, from): the database function calls get_trial_balance for every pair.
+ */
+export async function getTrialBalances(requests: TrialBalanceRequest[]): Promise<TbRow[][]> {
+  if (requests.length === 0) return [];
+  return ledgerRead(async supabase => {
+    const { data, error } = await supabase.rpc("get_trial_balances", { p_as_of: requests.map(item => item.asOf), p_from: requests.map(item => item.from) });
+    // Until migration 20261105120000 is applied, PostgREST reports the function as missing: read each set separately.
+    if (error?.code === "PGRST202") return Promise.all(requests.map(item => getTrialBalance(item.asOf, item.from)));
+    if (error) throw new Error(`Trial balances query failed: ${error.message}`);
+    const rows = (data ?? []) as { period_index: number; accounts: TbRow[] }[];
+    if (rows.length !== requests.length || rows.some((row, index) => row.period_index !== index + 1)) throw new Error("Trial balances query returned unexpected periods.");
+    return rows.map(row => row.accounts);
+  });
+}
+
 export async function countPostedEntries(asOf: string, from: string | null) {
   return ledgerRead(async supabase => {
     let q = supabase.from("v_journal_entries").select("id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);

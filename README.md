@@ -67,6 +67,7 @@ node airtable/check.cjs
 node airtable/check-invoice-settlement.cjs
 node --test supabase/functions/ledger-payment/handler.test.mjs
 sh supabase/tests/check-payment-posting.sh
+sh supabase/tests/check-report-reads.sh
 npm run typecheck
 ```
 

@@ -38,16 +38,19 @@ Sent source; it is not evidence that a separate Invoice Paid automation still ex
 
 ## Edge/database integration
 
-See [supabase/tests/README.md](../supabase/tests/README.md). The existing runner:
+See [supabase/tests/README.md](../supabase/tests/README.md). The runners:
 
 ```sh
 sh supabase/tests/check-payment-posting.sh
+sh supabase/tests/check-report-reads.sh
 ```
 
-creates and removes its own disposable PostgreSQL container bound to loopback. It uses a core-schema
-fixture plus tracked extensions and synthetic journals, not hosted credentials or a production reset.
-It proves the generic writer works without the legacy posting/reversal RPCs. Use it when changing
-the writer or database financial behavior; it is not required for every presentation-only change.
+each create and remove their own disposable PostgreSQL container bound to loopback. They use a
+core-schema fixture plus tracked extensions and synthetic journals, not hosted credentials or a
+production reset. The payment runner proves the generic writer works without the legacy
+posting/reversal RPCs; the report runner proves `get_trial_balances` equals per-period
+`get_trial_balance` reads and respects grants and RLS. Use them when changing the writer, report
+reads or database financial behavior; they are not required for every presentation-only change.
 
 ## Live state and changes
 
