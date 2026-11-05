@@ -1,6 +1,6 @@
 # Ledger-backed financial reports
 
-Income Statement and Balance Sheet on `develop` use authenticated server-side Supabase reads.
+Income Statement and Balance Sheet on `main` use authenticated server-side Supabase reads.
 The existing Report/ReportLine contract, report renderer and exports remain shared. They no longer
 import PL_2026 or BS_BALANCES. Those historical workbook files are retained as references, not runtime sources.
 
@@ -78,7 +78,7 @@ and parentheses for negative amounts. Missing values remain distinct from zero. 
 and Trial Balance use the same cents formatter and combine account codes/names in pills. Exports use the currently visible
 rows; print hides the navigation, filters, view controls and analytics sidebar.
 
-The UI changes are consolidated on develop and were verified locally. This work does not establish
+The UI changes are consolidated on main and were verified locally. This work does not establish
 a hosted frontend deployment. These UI changes make no database, schema, ledger-data
 or Airtable changes. Browser comparison against the approved design is complete in the Jeric
 Chrome profile. Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
@@ -88,7 +88,7 @@ page overflow. Print media expands the table and hides the sidebar instead of cl
 ## Data and periods
 
 Statement loaders (`lib/reports/statement-loaders.ts`) make one batched trial-balance call and one
-posted-entry count per data window. `get_trial_balances` (migration `20261105120000`) runs
+posted-entry count per data window. `get_trial_balances` (included in the initial baseline) runs
 `get_trial_balance` for each requested range inside the database, so each set is identical to a
 single call. Until that migration is applied to a database, the app falls back to one
 `get_trial_balance` call per range.
@@ -160,7 +160,7 @@ reconcile in cents, including the separate prior/current earnings lines.
 
 ## Deferred branch attribution
 
-The live migration 20261103214849_add_journal_line_branch adds nullable text journal_lines.branch,
+The initial baseline includes nullable text journal_lines.branch,
 with no default or backfill. All 192 existing lines remained NULL after application. The Edge
 writer and UI do not assign, filter or populate branches yet. Existing RLS and financial guards
 are unchanged. Report readers include accounts regardless of their active label. Branch metadata

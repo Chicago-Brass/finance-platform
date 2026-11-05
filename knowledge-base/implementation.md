@@ -96,7 +96,7 @@ five minutes, so revisits are instant; the server does not cache ledger reads. A
 bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
 layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
 from data loaded once per year/month range or as-of date, so they make no request. That data comes
-from one `get_trial_balances` call (migration `20261105120000`); without the migration the app falls
+from one `get_trial_balances` call (included in the initial baseline); on older databases the app falls
 back to one `get_trial_balance` call per range.
 
 Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer

@@ -90,17 +90,33 @@ test("only signed-in users may call it, and it runs under the caller's row-level
     }).catch(error => { if (error.message !== "rollback") throw error; });
   };
   await asRole("anon", [], async tx => assert.rejects(() => batch(["2026-01-31"], [null], tx), error => error.code === "42501"));
-  const grants = ["grant usage on schema public to authenticated", "grant select on public.accounts, public.journal_entries, public.journal_lines to authenticated"];
-  await asRole("authenticated", grants, async tx => {
+  await asRole("authenticated", [], async tx => {
     const [row] = await batch(["2026-11-04"], [null], tx);
-    assert.deepEqual(row.accounts, [], "without an RLS policy the caller sees no rows: the function does not bypass RLS");
+    assert.deepEqual(row.accounts, [], "a signed-in user outside the allowlist sees no rows");
   });
-  const policies = ["create policy report_test_accounts on public.accounts for select to authenticated using (true)", "create policy report_test_entries on public.journal_entries for select to authenticated using (true)", "create policy report_test_lines on public.journal_lines for select to authenticated using (true)"];
+  const member = ["insert into public.app_users (email, role) values ('viewer@example.com', 'viewer')", `set local request.jwt.claims = '{"email":"viewer@example.com"}'`];
   const expected = await single("2026-11-04", null);
-  await asRole("authenticated", [...grants, ...policies], async tx => {
+  await asRole("authenticated", member, async tx => {
     const [row] = await batch(["2026-11-04"], [null], tx);
     assert.deepEqual(row.accounts, expected);
+    await assert.rejects(() => tx`insert into public.journal_entries (entry_date, description) values ('2026-11-04', 'Viewer cannot post')`, error => error.code === "42501");
   });
   const [{ definer }] = await sql`select prosecdef as definer from pg_proc where proname = 'get_trial_balances'`;
   assert.equal(definer, false);
+});
+
+test("the baseline keeps RLS, invoker views and restricted default privileges", async () => {
+  const tables = await sql`select relname, relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r'`;
+  assert.equal(tables.length, 9);
+  assert.ok(tables.every(table => table.relrowsecurity));
+  const views = await sql`select relname, reloptions from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'v'`;
+  assert.equal(views.length, 6);
+  assert.ok(views.every(view => view.reloptions.includes('security_invoker=true')));
+  await sql.begin(async tx => {
+    await tx`create table public.default_privilege_check (id integer)`;
+    await tx`create function public.default_privilege_check() returns integer language sql as 'select 1'`;
+    const [rights] = await tx`select has_table_privilege('anon', 'public.default_privilege_check', 'select') as anon_read, has_table_privilege('authenticated', 'public.default_privilege_check', 'select') as user_read, has_function_privilege('anon', 'public.default_privilege_check()', 'execute') as anon_execute, has_function_privilege('authenticated', 'public.default_privilege_check()', 'execute') as user_execute`;
+    assert.deepEqual({ ...rights }, { anon_read: false, user_read: false, anon_execute: false, user_execute: false });
+    throw new Error("rollback");
+  }).catch(error => { if (error.message !== "rollback") throw error; });
 });

@@ -26,7 +26,7 @@ export async function getTrialBalances(requests: TrialBalanceRequest[]): Promise
   if (requests.length === 0) return [];
   return ledgerRead(async supabase => {
     const { data, error } = await supabase.rpc("get_trial_balances", { p_as_of: requests.map(item => item.asOf), p_from: requests.map(item => item.from) });
-    // Until migration 20261105120000 is applied, PostgREST reports the function as missing: read each set separately.
+    // Older databases without the baseline's batched function can still read each set separately.
     if (error?.code === "PGRST202") return Promise.all(requests.map(item => getTrialBalance(item.asOf, item.from)));
     if (error) throw new Error(`Trial balances query failed: ${error.message}`);
     const rows = (data ?? []) as { period_index: number; accounts: TbRow[] }[];

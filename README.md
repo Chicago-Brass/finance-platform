@@ -6,11 +6,11 @@ Agents: start with [AGENTS.md](AGENTS.md) and the [knowledge base](knowledge-bas
 The [conversation summary](knowledge-base/conversation-context.md) records design decisions;
 [session handoff](knowledge-base/session-handoff.md) locates the full conversation on Jeric's device.
 
-**Status:** On `develop`, Income Statement and Balance Sheet read posted Supabase ledger data.
+**Status:** On `main`, Income Statement and Balance Sheet read posted Supabase ledger data.
 The local app uses the DUAL ENTRY project. Current testing verifies page queries, field mappings,
 account groupings and filters against the existing database records. The report redesign adds a
 full-viewport workspace, compact controls and a dark Position/Movement sidebar. These UI changes
-are consolidated on `develop`; verification was local and does not establish a hosted frontend
+are consolidated on `main`; verification was local and does not establish a hosted frontend
 deployment. Branch reporting is deferred.
 
 ## How it works
@@ -42,8 +42,17 @@ Run `node --test app/landing.test.cjs` for routing, access and form checks. Visu
 signed-out `http://127.0.0.1:3010/` and signed-in `http://localhost:3010/` hosts independently.
 
 ## Change process
-All changes go through a pull request. Vercel posts a preview link on every PR. Only Ram merges to `main`.
+New changes use task branches and pull requests. Vercel posts a preview link on every PR. Ram normally
+owns releases; Jeric authorized the Nov 5 baseline merge and retirement of `develop`.
 See `CLAUDE.md` for the rules Claude follows in this repo.
+
+## Database baseline
+
+[One initial migration](supabase/migrations/20261105141013_initial_ledger.sql) contains the complete
+public schema, including reporting functions, RLS, guards and permissions. [Reference seed](supabase/seed.sql)
+contains accounts and rule catalogs only. Users and journals are deliberately excluded.
+The existing DUAL ENTRY database is baselined in migration history without recreating its objects.
+Never run a hosted reset. See [migration and release guide](docs/database-baseline.md).
 
 ## Airtable payment posting
 
@@ -52,8 +61,8 @@ The posting source is in [airtable/](airtable/README.md) and
 Airtable qualifies categories, calculates amounts and sends final debit/credit posting pairs.
 The Edge Function authenticates, resolves account references and saves the supplied pairs generically
 in one database transaction. Transaction types are metadata; there is no PAY/category accounting router
-or database posting function. A migration adds `transaction_type` and `source_event_type` to journal
-headers. See the
+or database posting function. The initial schema includes `transaction_type` and `source_event_type`
+on journal headers. See the
 [webhook contract](docs/ledger-webhook-contract.md). Report reads are documented separately in
 [ledger reporting](docs/ledger-reporting.md).
 Current deployment and live-test scope: [ledger status](docs/ledger-current-status.md).

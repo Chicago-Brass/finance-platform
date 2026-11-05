@@ -1,8 +1,9 @@
 # Database and reporting schema
 
 Project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj).
-The metadata below was verified read-only on 2026-11-04. This documents structure, not the completeness
-or business correctness of the current journal dataset. No data or schema was changed for this handoff.
+The schema was compared with a fresh baseline restore on 2026-11-05. This documents structure,
+not the completeness or business correctness of the current journal dataset. The missing batched
+reporting function and restricted future-function default were aligned without changing journals.
 
 ## Tables
 
@@ -46,11 +47,11 @@ writer does not populate it and the reports have no branch filter.
 - `get_trial_balance(p_as_of date, p_from date default null)` returns account metadata and posted
   debit/credit/balance aggregates. Income Statement uses period ranges; Balance Sheet and Trial
   Balance use cumulative snapshots.
-- `get_trial_balances(p_as_of date[], p_from date[])` (migration `20261105120000`) answers up to 100
+- `get_trial_balances(p_as_of date[], p_from date[])` (included in the initial baseline) answers up to 100
   (as-of, from) pairs in one call, one row per pair with that pair's accounts as JSON. It calls
-  `get_trial_balance` for each pair, runs as SECURITY INVOKER and is executable only by
-  `authenticated`. Income Statement and Balance Sheet loaders use it; until it is applied, the
-  app falls back to one `get_trial_balance` call per pair.
+  `get_trial_balance` for each pair, runs as SECURITY INVOKER and grants report access to
+  `authenticated`. Income Statement and Balance Sheet loaders use it. A missing-function fallback
+  remains for databases that have not adopted this baseline; DUAL ENTRY has the function.
 - `v_journal_entries` supplies posted-entry counts.
 - `v_ledger` supplies General Ledger records, including `entry_number`, `line_no`, `line_id`,
   account names/numbers, offset data, notes and audit URLs. Pagination is stable by date/entry/line.
@@ -63,15 +64,15 @@ silently delete them, alter their grants or replace the current direct-SQL imple
 
 ## Tracked migrations and truth limits
 
-Local migrations include app-user allowlisting, invoker permissions, default privilege restrictions,
-`20261029182556_add_journal_transaction_type.sql`, and
-`20261103214849_add_journal_line_branch.sql`. The latest hosted migration metadata was verified as
-`20261103214849 / add_journal_line_branch` during this handoff.
+`20261105141013_initial_ledger.sql` is the complete public-schema starting point. The six partial
+local migrations were consolidated with the hosted-only original schema. Their history remains in Git.
+Hosted history is replaced by the applied baseline marker after schema equivalence is verified;
+the initial CREATE statements are never replayed against the existing project.
 
-The test fixture is an older core-schema/catalog snapshot, not a complete current migration history.
-Use the migration ledger and live metadata when changing schema. Existing posting guard functions
-are allowed infrastructure; the design decision was to keep new accounting/posting logic in Edge,
-not to remove every database function.
+`supabase/seed.sql` holds reference accounts, selectors and rules. It excludes users, periods and
+journals. Both database test runners now restore the actual initial migration and this seed, rather
+than a historical schema fixture. Only the Supabase platform auth dependencies are mocked locally.
+See [baseline procedures and verification](../docs/database-baseline.md).
 
 See [the generic webhook contract](../docs/ledger-webhook-contract.md) for envelopes, references,
 replay behavior and HTTP errors, and [report mappings](../docs/ledger-reporting.md) for signs/grouping.

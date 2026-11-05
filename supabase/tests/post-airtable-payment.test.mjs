@@ -119,13 +119,8 @@ test("Create Entry posts expense pairs alongside a separate creation event on th
 before(async () => {
   const [database] = await sql`select current_database() as name`;
   assert.equal(database.name, "ledger_check");
-  // These catalog identities also exist in DUAL ENTRY; the older fixture contains payment rules only.
-  await sql`insert into public.ledger_rules (rule_code, category, sort_order, trigger_name) values
-    ('INV-04', 'invoice_entry', 4, 'Vendor invoice for inbound freight / handling on a PO'),
-    ('INV-06', 'invoice_entry', 6, 'Sales tax remittance invoice (paying the state)'),
-    ('INV-07', 'invoice_entry', 7, 'Fixed asset purchase invoice (vehicle, fixtures, software)'),
-    ('INV-08', 'invoice_entry', 8, 'Vendor CREDIT MEMO - returned goods (RGA return for credit)'),
-    ('INV-10', 'invoice_entry', 10, 'Customer invoice for a NON-product charge')`;
+  const rules = await sql`select rule_code from public.ledger_rules where rule_code in ('INV-04', 'INV-06', 'INV-07', 'INV-08', 'INV-10')`;
+  assert.equal(rules.length, 5, "reference seed includes the invoice rules");
   const [functions] = await sql`
     select to_regprocedure('public.post_airtable_payment(jsonb)') as mapper,
       to_regprocedure('public.resolve_airtable_ledger_account(jsonb,text)') as resolver,

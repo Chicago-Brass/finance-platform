@@ -3,12 +3,11 @@ set -eu
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$test_dir/../.." && pwd)
-set -- "$project_dir"/supabase/migrations/*_add_journal_transaction_type.sql
-if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-  printf '%s\n' 'Expected one add_journal_transaction_type migration.' >&2
+set -- "$project_dir"/supabase/migrations/*.sql
+if [ ! -f "$1" ]; then
+  printf '%s\n' 'Expected ledger migrations.' >&2
   exit 1
 fi
-migration_file=$1
 container_name="cb-ledger-payment-check-$$"
 cleanup() {
   docker rm -f -v "$container_name" >/dev/null 2>&1 || true
@@ -30,8 +29,9 @@ until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | gre
   sleep 1
 done
 docker exec "$container_name" createdb -U postgres ledger_check
-docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$test_dir/fixtures/ledger-baseline.sql"
-docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$migration_file"
+for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
+  docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$file"
+done
 # Prove the Edge code writes tables directly; the existing financial trigger guards remain active.
 docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check \
   -c 'drop function public.create_journal_entry(jsonb,jsonb,boolean); drop function public.reverse_journal_entry(uuid,date,text);'

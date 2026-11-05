@@ -103,9 +103,10 @@ Known unresolved functions throw Not yet implemented rather than disappearing fr
 ## 7. Git and frontend integration
 
 The repository is Chicago-Brass/finance-platform. Work originally used feature/data-upload, then
-branches were consolidated into develop. The user now wants current work committed there and the
-merged feature branch removed. Preserve mae/testing, the separate UI/testing branch, and leave
-main for Ram's eventual release. Repository visibility was found public during the final handoff;
+branches were consolidated into develop. The Nov 4 request committed current work there and removed
+the merged feature branch. On Nov 5, Jeric authorized consolidating the latest develop into main,
+aligning Supabase with one verified initial migration, and deleting develop. Preserve mae/testing,
+the separate UI/testing branch. Repository visibility was found public during the final handoff;
 the user clarified that only a summary and local conversation path should be committed.
 
 The frontend objective changed explicitly to validating pages against the existing database.

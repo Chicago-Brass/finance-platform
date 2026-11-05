@@ -8,7 +8,7 @@ npm run typecheck
 git diff --check
 ```
 
-The 2026-11-04 cohort has 49 passing focused checks. Coverage includes report amounts/signs,
+The 2026-11-05 release check has 75 frontend/HTTP tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
@@ -46,10 +46,10 @@ sh supabase/tests/check-report-reads.sh
 ```
 
 each create and remove their own disposable PostgreSQL container bound to loopback. They use a
-core-schema fixture plus tracked extensions and synthetic journals, not hosted credentials or a
-production reset. The payment runner proves the generic writer works without the legacy
+complete initial migration, reference seed and synthetic journals, not hosted credentials or a
+production reset. The payment runner has 26 tests and proves the generic writer works without the legacy
 posting/reversal RPCs; the report runner proves `get_trial_balances` equals per-period
-`get_trial_balance` reads and respects grants and RLS. Use them when changing the writer, report
+`get_trial_balance` reads and respects grants, RLS and future-object defaults (5 tests). Use them when changing the writer, report
 reads or database financial behavior; they are not required for every presentation-only change.
 
 ## Live state and changes

@@ -3,12 +3,11 @@ set -eu
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$test_dir/../.." && pwd)
-set -- "$project_dir"/supabase/migrations/*_add_get_trial_balances.sql
-if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-  printf '%s\n' 'Expected one add_get_trial_balances migration.' >&2
+set -- "$project_dir"/supabase/migrations/*.sql
+if [ ! -f "$1" ]; then
+  printf '%s\n' 'Expected ledger migrations.' >&2
   exit 1
 fi
-migration_file=$1
 container_name="cb-report-reads-check-$$"
 cleanup() {
   docker rm -f -v "$container_name" >/dev/null 2>&1 || true
@@ -30,7 +29,7 @@ until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | gre
   sleep 1
 done
 docker exec "$container_name" createdb -U postgres report_check
-for file in "$test_dir/fixtures/ledger-baseline.sql" "$test_dir/fixtures/get-trial-balance.sql" "$migration_file"; do
+for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
   docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d report_check < "$file"
 done
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')

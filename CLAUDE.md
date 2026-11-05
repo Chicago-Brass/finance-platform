@@ -4,12 +4,13 @@ Replacing Airtable financial reporting with Next.js on Vercel and a double-entry
 Go-live: Dec 15, 2026, on live Supabase ledger data.
 
 ## People
-- Ram (ramses.fernandez@): dev lead. The only person who merges to `main`.
+- Ram (ramses.fernandez@): dev lead. Normally owns release merges; Jeric may explicitly authorize one.
 - Jerrick (jeric.narte@): developer.
 - Mae (mae.porras@): finance. Requests changes in plain English and does not code.
 
 ## Branches
-- `main` is the live app: https://finance-platform-iota-bice.vercel.app. Only Ram merges into it.
+- `main` is the consolidated baseline and live-app branch: https://finance-platform-iota-bice.vercel.app.
+  `develop` was retired with Jeric's authorization on Nov 5, 2026. New development uses task branches.
 - `mae/testing` is Mae's testing branch, a copy of `main`. Its preview is
   https://finance-platform-git-mae-testing-chicago-brass1.vercel.app
   and it uses the same login and the same approved-users list as the live app.
