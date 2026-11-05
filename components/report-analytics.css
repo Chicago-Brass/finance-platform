@@ -4,8 +4,7 @@
   border-radius: var(--panel-radius); font-variant-numeric: tabular-nums;
 }
 .report-analytics .analytics-panel:not([hidden]) {
-  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  scrollbar-width: thin; scrollbar-color: #8096ac transparent;
+  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: none; scrollbar-width: none;
 }
 .report-analytics .analytics-tabs {
   display: grid; flex-shrink: 0; grid-template-columns: 1fr 1fr; gap: 3px;
@@ -29,7 +28,7 @@
 .report-analytics .analytics-module h3 { margin: 0 0 8px; color: white; font-size: 12px; line-height: 18px; font-weight: 600; }
 .report-analytics .analytics-module-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
 .report-analytics .analytics-module-header h3 { margin: 0; }
-.report-analytics .analytics-composition-layout { display: grid; gap: 10px; }
+.report-analytics .analytics-composition-layout { display: grid; gap: 10px; grid-template-columns: 84px minmax(0, 1fr); align-items: center; min-height: 84px; }
 .report-analytics .analytics-composition-layout.has-chart { grid-template-columns: 84px minmax(0, 1fr); align-items: center; }
 .report-analytics .analytics-donut { display: block; width: 84px; height: 84px; margin: 0; }
 .report-analytics .analytics-legend { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
@@ -56,10 +55,18 @@
 .report-analytics .analytics-change svg { width: 12px; height: 12px; }
 .report-analytics .analytics-change small { font-size: 10px; white-space: nowrap; }
 .report-analytics .analytics-panel .analytics-trend-value { margin: 0; color: white; font-size: 13px; line-height: 18px; font-weight: 600; text-align: right; }
-.report-analytics .analytics-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.report-analytics .analytics-chart { display: block; width: 100%; height: 120px; overflow: visible; }
 .report-analytics .analytics-gridline { stroke: #ffffff26; stroke-width: 0.8; }
 .report-analytics .analytics-trend-line { stroke: #f4f7fa; stroke-width: 1.6; }
 .report-analytics .analytics-trend-dot { fill: #f4f7fa; stroke: var(--navy); stroke-width: 1; }
-.report-analytics .analytics-axis { fill: #ccd7e2; font-size: 10px; font-family: inherit; }
-.report-analytics .analytics-note { margin: 0 0 7px; }
+.report-analytics .analytics-axis { fill: #ccd7e2; font-size: 9px; font-family: inherit; }
+.report-analytics .analytics-note { min-height: 16px; margin: 0 0 7px; }
+.report-analytics .analytics-empty-plot { display: grid; place-items: center; width: 84px; height: 84px; padding: 10px; border: 1px dashed #ffffff44; border-radius: 50%; color: #ccd7e2; font-size: 10px; text-align: center; }
+.report-analytics .analytics-empty-trend { height: 120px; display: grid; place-items: center; color: #ccd7e2; font-size: 11px; }
+.report-analytics .analytics-heading h2 { font-size: 12px; }
+.report-analytics .analytics-module h3,.report-analytics .analytics-headline > span,.report-analytics .analytics-tabs button { font-size: 11px; }
+.report-analytics .analytics-value { font-size: 17px; }
+.report-analytics .analytics-legend li,.report-analytics .analytics-legend-value strong { font-size: 10px; }
+.report-analytics .analytics-legend-value small { font-size: 9px; }
 @media print { .report-analytics { display: none !important; } }
+.report-analytics .analytics-legend-value { min-height: 30px; }

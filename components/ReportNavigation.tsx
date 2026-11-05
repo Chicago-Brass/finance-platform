@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useState, useTransition } from "react";
+import { Component, createContext, useContext, useState, useTransition } from "react";
 import type { AnchorHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
 import { ReportIcon } from "./ReportIcons";
 
@@ -23,6 +23,16 @@ export function ReportNavigationProvider({ children }: { children: ReactNode }) 
 export function useReportPath() {
   const path = usePathname(), navigation = useContext(Navigation);
   return navigation?.pending && navigation.destination ? navigation.destination : path;
+}
+
+export function useReportNavigate() {
+  const navigation = useContext(Navigation);
+  if (!navigation) throw new Error("Report navigation provider is missing.");
+  return navigation.navigate;
+}
+
+export function useReportPending() {
+  return useContext(Navigation)?.pending ?? false;
 }
 
 export function RefreshDataButton() {
@@ -59,19 +69,52 @@ export function ReportLoading() {
   const analytics = path === "/income-statement" || path === "/balance-sheet";
   return <article className="report-page report-skeleton" aria-busy="true" aria-label="Loading report">
     <header className="report-header"><div className="report-heading"><h1 className="report-title">{titles[path] || "Report"}</h1><p className="report-entity loading-message" role="status"><span className="report-spinner" aria-hidden="true" />Loading report...</p></div></header>
-    <div className="report-filters skeleton-filter" aria-hidden="true"><span className="skeleton-bar" /><span className="skeleton-bar" /></div>
-    <div className={`report-workspace${analytics ? " has-analytics" : ""}`} aria-hidden="true">
-      <section className="statement-panel skeleton-table"><div className="skeleton-table-head" />{Array.from({ length: 12 }, (_, index) => <div className="skeleton-table-row" key={index}><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></div>)}</section>
-      {analytics && <aside className="skeleton-sidebar"><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></aside>}
-    </div>
+    <div className="dashboard-control-bar report-controls-placeholder" aria-hidden="true" />
+    <ReportDataLoading analytics={analytics} />
   </article>;
 }
 
 export function ReportContent({ children }: { children: ReactNode }) {
-  const navigation = useContext(Navigation);
-  const pending = navigation?.pending ?? false;
-  return <main className="content" aria-busy={pending}>
-    <div className="report-content" inert={pending || undefined} aria-hidden={pending || undefined}>{children}</div>
-    {pending && <div className="report-loading-overlay"><ReportLoading /></div>}
+  const pending = useReportPending();
+  return <main className="content" id="report-content" tabIndex={-1}>
+    {pending && <div className="report-request-progress" role="status"><span className="sr-only">Updating report data...</span></div>}
+    <div className="report-content">{children}</div>
   </main>;
+}
+
+export function ReportDataLoading({ analytics = false, label = "Loading report data..." }: { analytics?: boolean; label?: string }) {
+  return <div className={`report-workspace report-data-loading${analytics ? " has-analytics" : ""}`} aria-busy="true">
+    <section className="statement-panel report-panel-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>{label}</span></section>
+    {analytics && <aside className="report-analytics report-panel-loading" role="status" aria-label="Loading analytics"><span className="report-spinner" aria-hidden="true" /><span>Loading analytics...</span></aside>}
+  </div>;
+}
+
+/** Keep controls usable and preserve mounted chart state while only the data region waits. */
+export function ReportDataRegion({ children, analytics = false }: { children: ReactNode; analytics?: boolean }) {
+  const pending = useReportPending();
+  return <div className="report-data-region" aria-busy={pending}>
+    <div className="report-data-content" inert={pending || undefined} aria-hidden={pending || undefined} style={pending ? { visibility: "hidden" } : undefined}>{children}</div>
+    {pending && <div className="report-data-pending"><ReportDataLoading analytics={analytics} /></div>}
+  </div>;
+}
+
+class DataBoundary extends Component<{ children: ReactNode; resetKey: unknown; onRetry: () => void; pending: boolean; fallback?: ReactNode; analytics?: boolean }, { failed: boolean; resetKey: unknown }> {
+  state = { failed: false, resetKey: this.props.resetKey };
+  static getDerivedStateFromError() { return { failed: true }; }
+  static getDerivedStateFromProps(props: { resetKey: unknown }, state: { resetKey: unknown }) {
+    return props.resetKey !== state.resetKey ? { failed: false, resetKey: props.resetKey } : null;
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
+    return <div className={`report-workspace${this.props.analytics ? " has-analytics" : ""}`}>
+      <section className="statement-panel report-panel-loading" role="alert"><p>Report data could not be loaded.</p><button className="btn btn-quiet" type="button" disabled={this.props.pending} onClick={this.props.onRetry}>Try again</button></section>
+      {this.props.analytics && <aside className="report-analytics report-panel-loading"><span>Analytics unavailable</span></aside>}
+    </div>;
+  }
+}
+
+export function ReportDataBoundary({ children, resetKey, fallback, analytics = false }: { children: ReactNode; resetKey: unknown; fallback?: ReactNode; analytics?: boolean }) {
+  const navigation = useContext(Navigation);
+  return <DataBoundary resetKey={resetKey} analytics={analytics} fallback={fallback} pending={navigation?.pending ?? false} onRetry={() => navigation?.refresh()}>{children}</DataBoundary>;
 }

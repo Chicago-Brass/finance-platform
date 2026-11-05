@@ -8,14 +8,14 @@ npm run typecheck
 git diff --check
 ```
 
-The 2026-11-05 performance check has 81 frontend/HTTP tests passing. Coverage includes report amounts/signs,
+The 2026-11-05 dashboard-controls check has 98 frontend/HTTP tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
 
 The performance cohort also checks parallel drawer sections, report-scoped cache reuse, abort/error
 handling, input validation, metadata-only dropdown reads, immediate route Suspense boundaries and
-separate drawer skeletons. Native browser verification is pending: the browser access host remained
+data-only loading, independent errors, static controls and modal dropdown keyboard behavior. Native browser verification is pending: the browser access host remained
 unavailable after Jeric reconnected and the browser runtime was reset. Do not claim measured
 end-to-end navigation or visual validation from these unit checks.
 
@@ -75,3 +75,13 @@ from this long conversation as though they authorize a new financial test run.
 When test samples are authorized, search with filters and use Payment Date, not Created Time. Do not
 change old source data merely to obtain samples. Report missing/untested categories separately from
 implemented failures and expected Not yet implemented blockers.
+
+## Dashboard controls review
+
+The draft PR spec is [dashboard controls](../docs/dashboard-controls-spec.md). Three independent
+source review passes covered correctness, UI/accessibility and loading/print geometry. Confirmed
+pending-filter, modal-popup, loader-size and print/legend issues were fixed and regression-tested.
+The read database runner also includes two global ledger-search tests: search before pagination,
+literal punctuation, all scope filters, draft exclusion and caller RLS. There are eight database
+read tests. Browser interaction and computed responsive geometry remain unverified because the
+browser-access host is unavailable.

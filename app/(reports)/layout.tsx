@@ -12,6 +12,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
 
   return (
     <ReportNavigationProvider><div className="app-shell reports-shell">
+      <a className="report-skip-link" href="#report-content">Skip to report</a>
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">

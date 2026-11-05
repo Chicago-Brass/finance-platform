@@ -87,3 +87,8 @@ Performance work on `develop` streams destination-page skeletons, loads account 
 parallel, reuses successful drawer sections within a report, and colocates server functions with
 the Oregon database. The read-query migration is applied to DUAL ENTRY and preserves existing
 financial results. See [reporting and performance details](docs/ledger-reporting.md).
+
+The dashboard-controls PR adds persistent headers and one compact control bar to all five report
+pages, searchable keyboard-accessible selects, data-only loading and ledger-wide search.
+See [implementation spec and review results](docs/dashboard-controls-spec.md). Visual/browser
+verification is still pending because browser access is unavailable in the current session.

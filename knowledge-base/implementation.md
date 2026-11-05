@@ -28,11 +28,13 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
 | `lib/reports/statement-loaders.ts` | One batched `get_trial_balances` read plus the posted count per statement data window |
 | `lib/reports/statement-data.ts` | Builds every IS/BS View and Display from one data window; runs in the browser |
-| `components/StatementWorkspace.tsx` | IS/BS client state for View/Display switches without a request |
+| `components/StatementWorkspace.tsx` | Persistent IS/BS header/controls; data-only Suspense, local View/Display and export readiness |
+| `components/LedgerWorkspaces.tsx` | Persistent TB/GL/T-Chart controls; optimistic ledger filter scope and independent account options |
+| `components/SearchableSelect.tsx` | Searchable single-select with keyboard interaction and dialog-aware popup placement |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
 | `lib/reports/analytics.ts` | Position/Movement data derived from the report and comparison periods |
-| `components/ReportView.tsx` | Shared report table, account display filters, collapse controls and exports |
+| `components/ReportView.tsx` | Shared data panels plus controlled account display/collapse/export helpers; no inner toolbar |
 | `components/ReportAnalytics.tsx` | Accessible Position/Movement tabs and compact signed-value charts |
 | `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables, account-to-ledger links |
 | `components/AccountDrawer.tsx`, `components/account-drawer.css` | Slide-over account drill-down: summary, filters and posted lines |
@@ -42,7 +44,7 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `lib/reports/account-activity-client.ts` | Aborts abandoned requests and caches successful sections within one report snapshot |
 | `components/LedgerAccountFilter.tsx` | General Ledger account and offsetting-account query filters |
 | `components/PostingRulesTable.tsx` | T-Chart posting-rule table |
-| `components/ReportNavigation.tsx` | Client navigation, GET forms, immediate spinner/skeleton feedback |
+| `components/ReportNavigation.tsx` | Client navigation, persistent controls and data-only pending/error regions |
 | `app/page.tsx`, `components/LoginForm.tsx`, `app/landing.css` | Public landing and existing sign-in flow |
 | `middleware.ts`, `lib/supabase/` | Session validation, approved-user gate and user-scoped database clients |
 
@@ -73,8 +75,9 @@ access to the landing does not expose reports. Report clients use the signed-in 
 - Trial Balance: cumulative account debit, credit and natural-balance fields, with full-account totals.
 - General Ledger: posted `v_ledger` records, 100 per page plus one lookahead. Stable order is date,
   entry number and line number. Date changes reset page one. Account and offsetting-account filters
-  run in the query and survive date and page changes. Search/side controls apply to the current
-  page, whose totals are explicitly labeled as page totals.
+  run in the query and survive date and page changes. Search and side filters run before pagination
+  across all matching records. Search commits on Enter, Search or blur; typing alone sends no query.
+  Each page's totals remain explicitly labeled as page totals.
 - T-Chart page: database rule/catalog metadata in one grouped table. It does not execute Airtable
   category filters.
 
@@ -92,8 +95,10 @@ Headings use one row: title, vertical divider and description. Dates are not rep
 Balance/General Ledger headings because their filters already show them. Statement columns use
 month names, Q1-Q4 or years, with exact partial-snapshot dates retained where needed.
 
-Next client navigation replaces full-page filter reloads. A spinner/skeleton appears during a
-transition and stale controls become inert. Visited pages stay in the browser router cache for
+Next client navigation replaces full-page filter reloads. Persistent page shells render URL-based
+headers and one compact control bar before financial promises resolve. Only data panels become
+inert during a transition, under loading indicators that preserve their geometry. Controls remain
+available; exports stay disabled until their current data is ready. Visited pages stay in the browser router cache for
 five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
 bar's Refresh data button reads the latest postings. One verified-JWT check per request is shared by the
 layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
@@ -107,7 +112,10 @@ parallel GET requests, each with its own skeleton/error/retry state. Totals use 
 lines use up to four 500-line reads with the existing 2,000-line cap. The main ledger remains
 100 rows per page. Successful sections are cached in the owning report's memory until its data
 or range changes or it unmounts. No financial data is cached globally or in local storage.
-Switching accounts/closing aborts old requests. Stale responses cannot replace the current account. See
+Switching accounts/closing aborts old requests. Stale responses cannot replace the current account.
+Drawer summary/chart areas reserve space for loading and loaded content. Custom searchable selects
+support keyboard selection and place popups inside the modal's accessible subtree. Scrollbar chrome
+is hidden, while labeled focusable table/analytics regions retain scrolling with overscroll disabled. See
 [the drawer contract](../docs/ledger-reporting.md#account-drill-down-drawer).
 
 ## Local setup

@@ -1,6 +1,6 @@
 # Dashboard controls and stable loading
 
-Status: implementation and review in progress. Base: `develop`.
+Status: implemented and independently source-reviewed. Base: `develop`. Browser verification pending.
 
 ## Outcome
 
@@ -70,3 +70,19 @@ Table totals / pagination                             Fixed-height analytics
 - Use Jeric's Chrome profile for desktop/narrow checks, keyboard paths, slow-response loading and
   ledger search beyond page one. Report a connection blocker honestly if browser access fails.
 - No Airtable changes, live posting tests, journal edits, auth weakening or automatic main merge.
+
+## Review results
+
+| Review | Confirmed issue | Resolution |
+| --- | --- | --- |
+| Correctness | Rapid pending account/side/date changes could overwrite earlier filters | Latest requested scope is merged optimistically; stale responses and browser Back are covered |
+| UI and accessibility | Combobox popup was outside the drawer's modal subtree | Popup targets the nearest dialog; keyboard and portal regression tests added |
+| UI and loading | Drawer and statement error states changed panel geometry | Fixed summary space and two-column statement errors preserve the surrounding layout |
+| Layout and print | Screen typography overrode print sizes; short loading panes and signed chart legends changed height | Screen-only font rules, flexible data loaders and reserved legend slots |
+
+The new `20261105150253_add_ledger_search.sql` migration adds an invoker read function. It is applied
+to DUAL ENTRY; the applied initial migration remains unchanged. Disposable database checks cover
+search beyond page one, literal punctuation, filters, pagination, exact rows and caller RLS.
+
+Native browser checks could not run because the browser-access host is unavailable. The PR remains
+a draft for desktop/narrow visual and interactive verification. No browser screenshots were created.

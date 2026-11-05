@@ -72,21 +72,36 @@ export type LedgerRow = {
 };
 
 export const LEDGER_PAGE_SIZE = 100;
+const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no";
 
-export type LedgerAccountFilters = { account?: string; offset?: string };
+export type LedgerSide = "all" | "debit" | "credit";
+export type LedgerAccountFilters = { account?: string; offset?: string; query?: string; side?: LedgerSide };
 
 export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}, pageSize = LEDGER_PAGE_SIZE) {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / pageSize) ? requestedPage : 1;
   const offset = (page - 1) * pageSize;
   const { account, offset: offsetAccount } = filters;
+  const search = filters.query?.trim().slice(0, 200) || "";
+  const side = filters.side === "debit" || filters.side === "credit" ? filters.side : "all";
   return ledgerRead(async supabase => {
+    if (search) {
+      const { data, error } = await supabase.rpc("search_ledger", {
+        p_from: from, p_to: to, p_query: search,
+        p_account: account ?? null, p_offset: offsetAccount ?? null, p_side: side,
+        p_skip: offset, p_take: pageSize + 1,
+      }).select(LEDGER_COLUMNS);
+      if (error) throw new Error(`Ledger search failed: ${error.message}`);
+      const rows = (data ?? []) as LedgerRow[];
+      return { rows: rows.slice(0, pageSize), hasNext: rows.length > pageSize, page, pageSize };
+    }
     let query = supabase
       .from("v_ledger")
-      .select("date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no")
+      .select(LEDGER_COLUMNS)
       .gte("date", from)
       .lte("date", to);
     if (account) query = query.eq("account_number", account);
     if (offsetAccount) query = query.eq("offsetting_account_number", offsetAccount);
+    if (side !== "all") query = query.gt(side, 0);
     const { data, error } = await query
       .order("date", { ascending: true })
       .order("entry_number", { ascending: true })

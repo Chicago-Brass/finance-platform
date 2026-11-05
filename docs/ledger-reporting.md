@@ -41,7 +41,7 @@ previous or next account in report order.
 The `/api/reports/account-activity` GET endpoint runs as the signed-in user. The browser requests
 `section=summary` and `section=lines` concurrently; either can render before the other. Totals use
 one batched trial-balance call for current/prior dates. Lines read account-filtered `v_ledger` in
-500-row pages, up to the existing 2,000-line cap. Each section has its own skeleton and retry.
+500-row pages, up to the existing 2,000-line cap. Each section has its own loading indicator and retry.
 The owning report caches successful sections until refresh/data or range changes; errors and
 aborted results are not cached. Totals always cover every line; a capped list says so. Ranges:
 
@@ -62,8 +62,10 @@ the dates without duplicate Trial Balance or General Ledger captions. Monthly/qu
 statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapshots retain their
 exact as-of date below the compact heading. Analytics use compact, right-aligned values.
 
-Report links and GET forms navigate through the Next router. A spinner and table skeleton appear
-immediately while a new view loads; stale controls are inert during the transition. View (Monthly/Quarterly/Annual/As of) and Display
+Report links and GET forms navigate through the Next router. The persistent shell keeps the header
+and consolidated date/view/display/search controls available while only data panels show loading.
+Stale data is inert during the transition; exports remain disabled until the new data is ready.
+View (Monthly/Quarterly/Annual/As of) and Display
 (Summary/Details) switches on the Income Statement and Balance Sheet rebuild the report in the
 browser from the loaded data and update the URL with a history replace, so they make no request.
 Only the year, month range or as-of date loads data. Visited
@@ -204,11 +206,13 @@ currency formats are covered by the export test. The native PDF dialog was not e
 General Ledger reads posted lines from v_ledger within the inclusive selected date range,
 100 records per page with a single lookahead record to determine Next availability. Sorting by
 date, entry number and line number gives stable page ordering. Date changes reset to page one.
-Account and offsetting-account filters are URL parameters (`account`, `offset`) applied in the
-database query, so they cover every page; date changes and pagination keep them. The offsetting
-filter excludes lines whose entry is split across several offsetting accounts, and the page says so.
-Search and debit/credit display filters apply to the current page; its totals include all
-loaded rows, not the entire date range. Trial Balance reads cumulative get_trial_balance
+Account, offset, search and side filters are URL parameters (`account`, `offset`, `q`, `side`)
+applied before pagination. Search commits on Enter, Search or blur, rather than every keystroke.
+`search_ledger` uses bound literal substring matching, including punctuation; `%` and `_` are not
+wildcards. Date changes and pagination preserve scope. Rapid changes merge with the latest pending
+scope, so an earlier response cannot discard a newer selection. The offsetting filter excludes
+entries split across several offsetting accounts. Totals include the loaded page, not the whole
+date range. Trial Balance reads cumulative get_trial_balance
 through the selected as-of date. T-Chart displays v_t_chart rule metadata rather than journal activity: one table grouped by
 category, with client-side category and text filters. An exact `Name (000.000)` debit/credit
 reference becomes an account link into the General Ledger; alternatives and descriptions stay

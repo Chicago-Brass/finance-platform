@@ -62,6 +62,10 @@ writer does not populate it and the reports have no branch filter.
   account names/numbers, offset data, notes and audit URLs. Pagination is stable by date/entry/line.
 - `v_t_chart` supplies displayed catalog rules; it is not the runtime category router.
 - `current_app_role()` supports the existing approved-user gate.
+- `search_ledger` (migration `20261105150253`) applies literal substring search and account/offset/
+  side/date scope before stable pagination. It runs as SECURITY INVOKER, with no anon/PUBLIC execute.
+  The empty-search path still uses the optimized ledger view directly. No posting function or
+  financial amount behavior was changed for dashboard search.
 
 Legacy `create_journal_entry`, `post_journal_entry` and `reverse_journal_entry` functions still exist
 in the hosted schema. The new Edge writer does not call them. Their existence is not a reason to

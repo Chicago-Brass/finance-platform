@@ -1,4 +1,4 @@
-import type { LedgerAccountFilters, LedgerRow, TbRow } from "@/lib/reports/ledger";
+import type { LedgerAccountFilters, LedgerSide, TbRow } from "@/lib/reports/ledger";
 import { cents } from "@/lib/reports/report-utils";
 import { startOfYear } from "@/lib/dates";
 
@@ -15,12 +15,24 @@ export function ledgerAccountParam(value: string | string[] | undefined) {
   return code && ACCOUNT_CODE.test(code) ? code : undefined;
 }
 
+export function ledgerSearchParam(value: string | string[] | undefined) {
+  return (Array.isArray(value) ? value[0] : value)?.trim().slice(0, 200) || "";
+}
+
+export function ledgerSideParam(value: string | string[] | undefined): LedgerSide {
+  const side = Array.isArray(value) ? value[0] : value;
+  return side === "debit" || side === "credit" ? side : "all";
+}
+
 export type LedgerQuery = LedgerAccountFilters & { from: string; to: string; page?: number };
 
-export function ledgerHref({ from, to, account, offset, page }: LedgerQuery) {
+export function ledgerHref({ from, to, account, offset, query, side, page }: LedgerQuery) {
   const params = new URLSearchParams({ from, to });
   if (account) params.set("account", account);
   if (offset) params.set("offset", offset);
+  const search = ledgerSearchParam(query);
+  if (search) params.set("q", search);
+  if (side && side !== "all") params.set("side", side);
   if (page) params.set("page", String(page));
   return `?${params}`;
 }
@@ -45,15 +57,6 @@ export function filterTrialAccounts(rows: TbRow[], query: string, type: string, 
     if (type !== "all" && row.account_type !== type) return false;
     if (search && !`${row.account_number} ${row.account_name}`.toLowerCase().includes(search)) return false;
     return showZero || [row.total_debit, row.total_credit, row.balance].some(value => Number(value) !== 0);
-  });
-}
-
-export function filterLedgerRecords(rows: LedgerRow[], query: string, side: string) {
-  const search = query.trim().toLowerCase();
-  return rows.filter(row => {
-    if (side === "debit" && Number(row.debit) === 0) return false;
-    if (side === "credit" && Number(row.credit) === 0) return false;
-    return !search || `${row.account_number} ${row.account_name} ${row.offsetting_account_number ?? ""} ${row.offsetting_account_name ?? ""} ${row.notes ?? ""} ${row.offset_is_split ? "split multiple accounts" : ""}`.toLowerCase().includes(search);
   });
 }
 

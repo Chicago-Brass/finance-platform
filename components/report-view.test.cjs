@@ -20,6 +20,8 @@ function load(file) {
 const view = load(path.join(__dirname, 'ReportView.tsx'));
 const analytics = load(path.join(__dirname, 'ReportAnalytics.tsx'));
 const drawer = load(path.join(__dirname, 'AccountDrawer.tsx'));
+const workspace = load(path.join(__dirname, 'StatementWorkspace.tsx'));
+const display = patch => ({ query: '', hideZero: false, collapsed: new Set(), setQuery() {}, setHideZero() {}, setCollapsed() {}, ...patch });
 const format = load(path.join(root, 'lib/format.ts'));
 const line = (id, kind, depth, values = {}, accountCode) => ({ id, label: id, kind, depth, values, accountCode });
 const lines = [
@@ -38,7 +40,7 @@ test('Account drawer opens its header immediately with separate loading areas an
   assert.match(markup, /Operating bank/);
   assert.match(markup, /Loading account totals/);
   assert.match(markup, /Loading ledger lines/);
-  assert.match(markup, /aria-label="Account summary" aria-busy="true"/);
+  assert.match(markup, /aria-label="Account summary"[^>]*aria-busy="true"/);
   assert.doesNotMatch(markup, /No posted lines|\$0\.00/);
 });
 
@@ -115,10 +117,41 @@ test('Drill-down targets follow report order and name each account section', () 
     { code: '004.006', label: 'Returns', context: 'Income Statement · Revenue' },
     { code: '005.002', label: 'Salary', context: 'Income Statement · Personnel' },
   ]);
-  const plain = renderToStaticMarkup(React.createElement(view.ReportView, { report }));
+  const plain = renderToStaticMarkup(React.createElement(view.ReportView, { report, display: display() }));
   assert.doesNotMatch(plain, /drill-trigger/);
-  const drill = renderToStaticMarkup(React.createElement(view.ReportView, { report, drill: { mode: 'period', from: '2026-01-01', to: '2026-12-31' } }));
+  const drill = renderToStaticMarkup(React.createElement(view.ReportView, { report, display: display(), drill: { mode: 'period', from: '2026-01-01', to: '2026-12-31' } }));
   assert.equal((drill.match(/class="drill-trigger"/g) || []).length, 4);
   assert.match(drill, /title="Open 005\.002 details"/);
   assert.doesNotMatch(drill, /role="dialog"/);
+});
+
+
+test('Statement shells keep header, exports and all controls visible before data resolves', () => {
+  const pending = new Promise(() => {});
+  const cases = [
+    [workspace.IncomeStatementWorkspace, { year: 2026, from: 1, to: 11, grain: 'month', summary: false }, 'Income Statement'],
+    [workspace.BalanceSheetWorkspace, { asOf: '2026-11-05', grain: 'single', summary: false }, 'Balance Sheet'],
+  ];
+  for (const [Component, options, title] of cases) {
+    const markup = renderToStaticMarkup(React.createElement(Component, { options, data: pending }));
+    assert.match(markup, new RegExp(`>${title}</h1>`));
+    assert.match(markup, /dashboard-control-bar statement-control-bar/);
+    assert.match(markup, /aria-label="Report columns"/);
+    assert.match(markup, /aria-label="Report detail"/);
+    assert.match(markup, /placeholder="Search accounts"/);
+    assert.match(markup, /Show zero accounts/);
+    assert.match(markup, /Expand all/);
+    assert.match(markup, /Collapse all/);
+    assert.match(markup, /disabled=""[^>]*>.*Export Excel/);
+    assert.match(markup, /Loading report data/);
+    assert.doesNotMatch(markup, /statement-toolbar|\$0\.00/);
+  }
+});
+
+test('Display rows and exported rows use the same account filters and collapse state', () => {
+  const report = { lines };
+  assert.deepEqual(view.reportRows(report, display({ query: '004.006' })).filter(line => line.accountCode).map(line => line.id), ['Returns']);
+  const collapsed = view.reportRows(report, display({ collapsed: 'all' }));
+  assert.deepEqual(collapsed.map(line => line.id), ['Revenue', 'Revenue total', 'Operating expenses', 'Net income']);
+  assert.equal(collapsed.at(-1).values.a, -37.34);
 });

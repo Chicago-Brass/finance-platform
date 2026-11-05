@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { TChartRow } from "@/lib/reports/ledger";
 import { filterRules, groupRules, ruleAccounts } from "@/lib/reports/t-chart";
 import { AccountLedgerLink } from "./LedgerTable";
-import { ReportIcon } from "./ReportIcons";
 import "./ledger-tables.css";
 
 function RuleAccounts({ text, asOf }: { text: string | null; asOf: string }) {
@@ -19,28 +18,12 @@ function RuleAccounts({ text, asOf }: { text: string | null; asOf: string }) {
   );
 }
 
-export function PostingRulesTable({ rules, asOf }: { rules: TChartRow[]; asOf: string }) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const categories = useMemo(() => groupRules(rules), [rules]);
+export function PostingRulesTable({ rules, asOf, query = "", category = "all" }: { rules: TChartRow[]; asOf: string; query?: string; category?: string }) {
   const groups = useMemo(() => groupRules(filterRules(rules, query, category)), [rules, query, category]);
   const shown = groups.reduce((total, group) => total + group.rules.length, 0);
-  const filtered = query.trim() !== "" || category !== "all";
   return (
     <section className="statement-panel ledger-table-panel" aria-label="Posting rules">
-      <div className="statement-toolbar ledger-toolbar no-print">
-        <div className="ledger-view-controls"><span className="segment-label">Category</span>
-          <div className="ledger-side-controls" role="group" aria-label="Rule category">
-            {[{ key: "all", label: "All", count: rules.length }, ...categories.map(group => ({ key: group.key, label: group.label, count: group.rules.length }))].map(item =>
-              <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => setCategory(item.key)}>{item.label}<span className="tchart-count">{item.count}</span></button>)}
-          </div>
-        </div>
-        <div className="statement-tools">
-          <label className="report-account-search"><ReportIcon name="search" /><span className="sr-only">Search rules</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search rules or accounts" /></label>
-          {filtered && <button type="button" className="btn btn-quiet" onClick={() => { setQuery(""); setCategory("all"); }}>Reset display</button>}
-        </div>
-      </div>
-      <div className="table-wrap ledger-scroll">
+      <div className="table-wrap ledger-scroll" tabIndex={0} role="region" aria-label="Posting rules table">
         <table className="fin-table ledger-data-table tchart-table">
           <colgroup><col className="tchart-rule-col" /><col className="tchart-trigger-col" /><col className="tchart-account-col" /><col className="tchart-account-col" /><col className="tchart-when-col" /><col className="tchart-flag-col" /></colgroup>
           <thead><tr><th scope="col" className="label-cell">Rule</th><th scope="col" className="label-cell">Trigger</th><th scope="col" className="label-cell">Debit</th><th scope="col" className="label-cell">Credit</th><th scope="col" className="label-cell">When to post</th><th scope="col" className="label-cell">Reversible</th></tr></thead>

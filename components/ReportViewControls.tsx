@@ -1,4 +1,6 @@
-/** View (columns) and Display (summary/detail) switches. They change state in the browser, not the URL's data. */
+import type { KeyboardEvent } from "react";
+
+/** View (columns) and Display (summary/detail) switches reuse the current data window. */
 export function ReportViewControls<G extends string>({ grains, grain, summary, onGrain, onSummary }: {
   grains: { value: G; label: string }[];
   grain: G;
@@ -26,6 +28,13 @@ export function ReportViewControls<G extends string>({ grains, grain, summary, o
       </div>
     </div>
   );
+}
+
+export function closePopoverOnEscape(event: KeyboardEvent<HTMLDetailsElement>) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.currentTarget.open = false;
+  event.currentTarget.querySelector("summary")?.focus();
 }
 
 export function CalendarMark() {

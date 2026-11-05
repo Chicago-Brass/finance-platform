@@ -9,6 +9,7 @@ import { activityFiltered, dayBefore, filterActivityLines, lineTotals, naturalNe
 import type { AccountActivityParts, ActivityFilters, DrillRange } from "@/lib/reports/account-activity";
 import { formatDate } from "@/lib/reports/report-utils";
 import { ReportLink } from "./ReportNavigation";
+import { SearchableSelect } from "./SearchableSelect";
 import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
 import "./account-drawer.css";
 
@@ -77,7 +78,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   const previousAccount = index > 0 ? accounts[index - 1] : null;
   const nextAccount = index >= 0 && index < accounts.length - 1 ? accounts[index + 1] : null;
   const title = data ? `${data.account.code} ${data.account.name}` : target.label;
-  const lineMonths = rangeMonths(range.from, range.to).filter(month => lines.some(line => line.date.startsWith(month.key)));
+  const lineMonths = rangeMonths(range.from, range.to);
   const offsetOptions = [...new Map(lines.map(line => [offsetKey(line), offsetLabel(line)])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const set = (patch: Partial<ActivityFilters>) => setFilters(previous => ({ ...previous, ...patch }));
 
@@ -108,7 +109,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
           <button ref={closeButton} type="button" className="drill-icon-button drill-close" aria-label="Close account details" onClick={onClose}><Icon path="M6 6l12 12M18 6L6 18" /></button>
         </header>
 
-        <section className="drill-analytics" aria-label="Account summary" aria-busy={!data && !current?.summaryError}>
+        <section className="drill-analytics" aria-label="Account summary" tabIndex={0} aria-busy={!data && !current?.summaryError}>
           {current?.summaryError ? <LoadError label="Account totals" onRetry={() => setAttempt(value => value + 1)} /> : data && summary ? <>
             <div className="drill-tiles">
               {data.mode === "balance" ? <>
@@ -126,23 +127,24 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             {listed ? <div className="drill-charts">
               <MonthlyBars months={summary.months} />
               <OffsetMix offsets={summary.offsets} />
-            </div> : <div className="drill-chart-skeleton" aria-hidden="true"><span className="skeleton-bar" /></div>}
-          </> : <div className="drill-tiles drill-summary-skeleton" role="status"><span className="sr-only">Loading account totals...</span>{Array.from({ length: 4 }, (_, index) => <div className="drill-tile" key={index} aria-hidden="true"><span className="skeleton-bar" /><strong className="skeleton-bar" /></div>)}</div>}
+            </div> : <div className="drill-chart-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading charts...</span></div>}
+          </> : <div className="drill-summary-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading account totals...</span></div>}
         </section>
 
-        {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-line-skeleton" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="sr-only">Loading ledger lines...</span>{Array.from({ length: 8 }, (_, index) => <div key={index} aria-hidden="true"><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></div>)}</section> : <>
           <div className="drill-filters" role="search" aria-label="Filter ledger lines">
             <label className="drill-search"><Icon path="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5" /><span className="sr-only">Search lines</span><input type="search" placeholder="Search entry, offset or notes" value={filters.query} onChange={event => set({ query: event.target.value })} /></label>
-            <select aria-label="Month" value={filters.month} onChange={event => set({ month: event.target.value })}><option value="">All months</option>{lineMonths.map(month => <option key={month.key} value={month.key}>{month.name}</option>)}</select>
-            <select aria-label="Offsetting account" value={filters.offset} onChange={event => set({ offset: event.target.value })}><option value="">All offsetting accounts</option>{offsetOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
+            <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
             <div className="drill-sides" role="group" aria-label="Entry side">{(["all", "debit", "credit"] as const).map(side => <button key={side} type="button" aria-pressed={filters.side === side} onClick={() => set({ side })}>{side === "all" ? "All" : side === "debit" ? "Debit" : "Credit"}</button>)}</div>
           </div>
+
+        {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-lines-loading" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="report-spinner" aria-hidden="true" /><span>Loading ledger lines...</span></section> : <>
           <div className="drill-status" role="status">
             <span><strong>{visible.length} of {lines.length} lines</strong>{filtered ? " match the filters" : ""}</span>
             {filtered && <button type="button" className="drill-link-button" onClick={() => setFilters(NO_ACTIVITY_FILTERS)}>Clear filters</button>}
           </div>
 
-          <div className="drill-lines">
+          <div className="drill-lines" tabIndex={0} role="region" aria-label="Account ledger lines">
             <table className="drill-table">
               <thead><tr><th scope="col">Date</th><th scope="col">Entry</th><th scope="col">Offsetting account</th><th scope="col">Notes</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th><th scope="col"><span className="sr-only">Source record</span></th></tr></thead>
               <tbody>

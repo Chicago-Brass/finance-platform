@@ -5,17 +5,18 @@
 .account-pill-link{display:inline-flex;max-width:100%;color:inherit;text-decoration:none;border-radius:var(--control-radius,6px)}
 .account-pill-link:hover .account-pill{border-color:var(--steel)}
 .account-pill-link:hover .account-pill-name{color:var(--steel);text-decoration:underline;text-underline-offset:2px}
-.ledger-account-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-left:auto}
-.ledger-account-field{display:inline-flex;align-items:center;gap:8px}
-.ledger-account-field select{min-height:30px;width:clamp(140px,12vw,180px);max-width:100%;padding:4px 28px 4px 9px;font:inherit;font-size:12px;border:1px solid #cfd6df;border-radius:var(--control-radius,6px);color:var(--ink);background:white}
+.ledger-account-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-left:0}
 .ledger-range-panel .date-presets{padding-top:12px}
-@media(min-width:1100px){.ledger-date-filters,.ledger-account-filters{flex-wrap:nowrap}}
-@media(max-width:1099px){.ledger-account-filters{margin-left:0}.ledger-account-field select{max-width:230px}}
 .ledger-page .ledger-table-panel{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
-.ledger-page .ledger-scroll{flex:1;min-height:0;margin:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.ledger-page .ledger-toolbar{justify-content:space-between}
-.ledger-view-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ledger-view-controls select{min-height:30px;padding:4px 28px 4px 9px;font:inherit;font-size:12px;border:1px solid #cfd6df;border-radius:var(--control-radius,6px);color:var(--ink);background:white}
+.ledger-page .ledger-scroll{flex:1;min-height:0;margin:0;overflow:auto;overscroll-behavior:none;scrollbar-width:none}
+.ledger-page .ledger-scroll::-webkit-scrollbar{display:none;width:0;height:0}
+.ledger-account-select{width:clamp(150px,12vw,210px)}
+.ledger-global-search{display:flex;align-items:center;gap:6px;min-width:170px;flex:1 1 210px}
+.ledger-global-search .report-account-search{min-width:100px;flex:1}
+.ledger-global-search input{width:100%}
+.ledger-global-search .btn{flex:none}
+.ledger-checkbox{min-height:32px}
+.ledger-side-controls button{min-height:32px}
 .ledger-checkbox{display:inline-flex;align-items:center;gap:7px;margin-left:6px;font-size:12px;font-weight:400;white-space:nowrap;cursor:pointer}
 .ledger-checkbox input{accent-color:var(--navy);margin:0;width:14px;height:14px}
 .ledger-side-controls{display:inline-flex;border:1px solid #cfd6df;border-radius:var(--control-radius,6px);overflow:hidden}
@@ -46,7 +47,7 @@
 .ledger-page .tchart-table .tchart-group-row:hover th{background:#f3f6f9}
 .tchart-group-row span{margin-left:8px;color:var(--ink-2);font-weight:400}
 .tchart-rule-code{display:inline-block;padding:1px 7px;border-radius:var(--inner-radius,4px);background:var(--steel-tint);color:var(--navy);font-size:12px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
-.tchart-trigger{font-size:13px}
+.tchart-trigger{font-size:12px}
 .tchart-accounts{display:grid;gap:5px;margin:0;padding:0;list-style:none}
 .tchart-accounts li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
 .tchart-account-text{font-size:12px;color:var(--ink)}
@@ -81,5 +82,8 @@
 .ledger-date-filters .filter-context{font-size:11px}
 .ledger-date-filters .period-picker-panel.ledger-range-panel{width:310px}
 .ledger-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:760px){.ledger-account-field select{max-width:min(230px,calc(100vw - 150px))}.ledger-pagination{align-items:flex-start;flex-wrap:wrap}.ledger-page-links{margin-left:auto}.ledger-view-controls{gap:7px}.ledger-checkbox{margin-left:0}.ledger-date-fields{grid-template-columns:1fr}.ledger-date-filters .period-picker-panel.ledger-range-panel{width:min(310px,calc(100vw - 52px))}.ledger-page .ledger-data-table{min-width:950px}}
+@media(max-width:760px){.ledger-pagination{align-items:flex-start;flex-wrap:wrap}.ledger-page-links{margin-left:auto}.ledger-checkbox{margin-left:0}.ledger-date-fields{grid-template-columns:1fr}.ledger-date-filters .period-picker-panel.ledger-range-panel{width:min(310px,calc(100vw - 52px))}.ledger-page .ledger-data-table{min-width:950px}}
 @media print{.ledger-page .ledger-table-panel{display:block;overflow:visible}.ledger-page .ledger-scroll{overflow:visible}.ledger-pagination{display:none}.ledger-page .ledger-data-table{min-width:0;table-layout:auto}.ledger-page .ledger-data-table thead,.ledger-page .ledger-data-table tfoot{position:static}.ledger-page .ledger-data-table th,.ledger-page .ledger-data-table td{font-size:9px;padding:4px 6px}.ledger-page .ledger-data-table col{width:auto!important}.account-pill{font-size:9px;border-color:#d9dfe6}.account-pill-code,.account-pill-name{padding:1px 4px}}
+
+@media(max-width:1100px){.ledger-account-filters{flex-wrap:wrap}.ledger-global-search{flex:1 1 190px}.ledger-account-select{width:180px}}
+.ledger-scroll:focus-visible{outline:2px solid var(--steel);outline-offset:-2px}

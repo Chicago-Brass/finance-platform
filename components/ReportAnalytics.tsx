@@ -28,7 +28,7 @@ function Composition({ data }: { data: AnalyticsData["composition"] }) {
   return (
     <section className="analytics-module analytics-composition" aria-label={data.title}>
       <h3>{data.title}</h3>
-      {!chartable && <p className="analytics-note">{data.items.some(item => item.value < 0) ? "Signed balances are shown below." : "No balance in this view."}</p>}
+      {!chartable && <p className="sr-only">{data.items.some(item => item.value < 0) ? "Signed balances are shown below." : "No balance in this view."}</p>}
       <div className={`analytics-composition-layout${chartable ? " has-chart" : ""}`}>
       {chartable && (
         <svg className="analytics-donut" width="84" height="84" viewBox="0 0 142 142" role="img" aria-label={`${data.title}: ${data.items.map(item => `${item.label} ${formatReportAmount(item.value)}`).join(", ")}`}>
@@ -40,6 +40,7 @@ function Composition({ data }: { data: AnalyticsData["composition"] }) {
           })}
         </svg>
       )}
+      {!chartable && <div className="analytics-empty-plot" aria-hidden="true">{data.items.some(item => item.value < 0) ? "Signed balances" : "No balance"}</div>}
       <ul className="analytics-legend">
         {data.items.map((item, index) => (
           <li key={item.label}>
@@ -54,7 +55,7 @@ function Composition({ data }: { data: AnalyticsData["composition"] }) {
 }
 
 function Trend({ title, points }: { title: string; points: AnalyticsData["movement"]["trend"] }) {
-  if (!points.length) return <section className="analytics-module analytics-trend"><h3>{title}</h3><p className="analytics-note">No periods in this view.</p></section>;
+  if (!points.length) return <section className="analytics-module analytics-trend"><div className="analytics-module-header"><h3>{title}</h3></div><div className="analytics-empty-trend">No periods in this view.</div><p className="analytics-note" /></section>;
   const values = points.map(point => point.value);
   const low = Math.min(...values), high = Math.max(...values);
   const span = high - low || Math.max(Math.abs(high) * 0.1, 1);
@@ -71,7 +72,7 @@ function Trend({ title, points }: { title: string; points: AnalyticsData["moveme
         <text x="12" y="112" className="analytics-axis">{points[0].label}</text>
         {points.length > 1 && <text x="288" y="112" textAnchor="end" className="analytics-axis">{points[points.length - 1].label}</text>}
       </svg>
-      {points.length === 1 && <p className="analytics-note">One period in this view.</p>}
+      <p className="analytics-note">{points.length === 1 ? "One period in this view." : ""}</p>
     </section>
   );
 }
