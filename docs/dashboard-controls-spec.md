@@ -1,127 +1,98 @@
-# Dashboard controls and stable loading
+# Dashboard controls and data loading
 
-Status: implemented and independently source-reviewed. Base: `develop`. Browser verification pending.
+Current implementation: 2026-11-06, draft PR #1 against develop.
 
-## Outcome
+## Goal
 
-Keep the approved navy financial-report design. Every report has a stable page header with exports,
-one compact control bar, and data panels below it. Filters remain available during reads; tables
-contain their column headers, rows and totals, without a second toolbar inside the table panel.
+A destination's header and filters appear immediately when navigating. Table/analytics data loads
+separately. The previous report's filters must not remain visible while a server response arrives.
+Shared controls keep label spacing, search, dropdowns, switches and keyboard behavior consistent.
 
-```text
-Logo | report navigation                                      Refresh | Account
-Report title | entity                                         Excel | PDF
-Period | View | Display | Accounts / Category | Search | More / Reset
-Table column headers and rows                         Position / Movement
-Table totals / pagination                             Fixed-height analytics
-```
+## Rendering and request flow
 
-## Design and controls
+1. The shared report layout renders `ReportApplication`. The five financial page files provide
+   metadata and return null; their visible workspace belongs to the layout.
+2. First-load SSR includes the header, URL-based filters and a data indicator, without financial
+   records or streamed financial promises.
+3. Financial links update history using Next's supported native-history integration. URL hooks
+   select the destination immediately. Each destination is keyed by pathname, clearing prior-page
+   local display and drawer state. Non-financial links retain normal Next routing.
+4. `useReportQuery` fetches `/api/reports/data` after mounting. Only the active report is requested.
+   General Ledger account choices use a separate parallel request and do not block the table.
+5. `ReportDataPanel` renders loading, errors, retry or financial content. Controls stay available;
+   exports wait for ready data. There is no duplicate placeholder filter shell.
 
-- Retain navy `#173553`, steel `#31536f`, ink `#253247`, muted `#5d6879`, border `#dce0e5`, white.
-- Preserve the current report font family. Use 12px controls/table text and 10-11px chart labels;
-  keep title hierarchy and money readability. Buttons keep usable hit areas and visible focus rings.
-- Use segmented buttons for two to four mutually exclusive modes. Use a searchable single-select
-  for larger option sets. Keep low-frequency actions together in a small More menu when necessary.
-- Period controls, grain/display modes, search, zero-account toggles, side/category/account filters
-  and collapse/reset actions belong in the control bar. Do not duplicate these inside table panels.
-- Prefer one desktop row. Compact controls adapt at narrower widths; wrapping is preferable to
-  clipped or unreachable controls. Popup menus must not be clipped by scrolling table containers.
-- Searchable selects support labels, selected/active options, grouped choices, disabled state,
-  no matches, Arrow keys, Home/End, Enter, Escape, Tab and outside click. No new UI dependency.
+The URL preserves dates, view, detail level and Ledger account/offset/side/search/page filters.
+Back/Forward restores URL-derived state. Search commits on Enter, Search or blur, not each key.
 
-## Loading and state
+## Shared controls and layout
 
-- Build report shells from URL/options immediately. Place Suspense or loading indicators around
-  financial data only, not around controls or the entire page. Keep query/display state explicit.
-- Date changes reload relevant data panels; mode/display/search-only transformations stay local
-  when all needed data is already loaded. Refresh must invalidate report-scoped drawer caches.
-- Remove the full-page pending overlay that currently obscures and disables controls.
-- Reserve table and analytics geometry during loading. Use a restrained centered loading indicator
-  in sidebar/chart areas instead of replacing the entire layout with differently sized skeletons.
-- Hide scrollbar chrome while preserving wheel, touch and keyboard scrolling. Set overscroll
-  containment/none on the actual scroll containers so scrolling does not bounce beyond panel edges.
-- Preserve accessible pending, error, retry and empty states; never show false zero financial values.
+- `FilterControls.tsx` owns the bar, labeled field, search and segmented switches. SearchableSelect
+  reuses its labeled-field wrapper. All reports and the account drawer use these controls.
+- Labels sit above 32px controls with a 3px gap. Bars have a 64px minimum height and wrap when
+  necessary. Old per-page search/switch styling is removed.
+- Standard text is 13px, section/navigation labels 14px, supporting labels 11-12px and page titles
+  22px. Sidebar headline amounts are 20px. Screen and print typography remain separate.
+- Financial table period/year headings share one thin row. Scrollbar chrome is hidden while
+  named table/sidebar regions retain keyboard, wheel and touch scrolling with contained overscroll.
+- Dropdowns support grouped searchable choices, Arrow/Home/End, Enter, Escape, Tab and disabled
+  states. Popups stay in the nearest modal's accessible subtree when inside the drawer.
 
-## General Ledger search
+## Data contract and cache
 
-- Search applies to all matching posted records in the date/account/side scope before pagination.
-- Commit a search on Enter, Apply/Search, or blur; typing alone must not send a request per key.
-- Search text, dates, side and account/offset filters persist in the URL and through pagination.
-- A changed search/filter resets page one. Display filters must not silently become page-only.
-- Bind database search input as values, escape literal wildcard characters, retain RLS and stable
-  date/entry/line ordering. Keep page totals labeled as page totals.
+- One JSON request loads the active financial data key. Shared `parseReportScreen` normalizes
+  options for both the client shell and the API endpoint.
+- Statement View/Display keys are excluded from the data key: all required aggregates are already
+  loaded for the selected year/month window or as-of date. Display switches make no data request.
+- Income Statement sends only revenue/expense account balances. Balance Sheet retains the
+  snapshots and year baselines needed for every view. Monetary math remains integer cents.
+- Ledger search/side/account/date filters apply before pagination. The server reads 100 rows plus
+  one internal lookahead, returns 100, and retains stable date/entry/line ordering.
+- Successful responses are cached privately in the verified user's mounted layout for five minutes,
+  capped at 32 ready keys. Identical pending requests share one fetch, including StrictMode replay.
+- Refresh invalidates this cache. Old in-flight responses cannot replace newer entries. Failures
+  are not cached. Sign-out/account switches clear the cache; nothing is stored in local storage.
+- Financial API reads verify identity and run through RLS. Middleware checks live user and allowlist
+  concurrently, requiring both. API auth failures return JSON 401/403, followed by client redirect.
+- Server financial reads remain uncached. The existing read RPCs/views are unchanged.
 
-## Work areas
+## Important fixes included
 
-1. Shared controls: reusable searchable select and shared compact control styles.
-2. Statements: persistent IS/BS shells, consolidated controls, table-only ReportView data rendering.
-3. Ledger/rules: persistent TB/GL/T-Chart shells, consolidated controls and server-wide search UI.
-4. Ledger query: validated search/side parameters, paged read query and focused database tests.
-5. Root integration: navigation/loading infrastructure, chart/drawer density, docs and PR.
-6. Independent audit/review: loading geometry, accessibility, correctness and scope checks.
+| Finding | Resolution |
+| --- | --- |
+| Route/filter replacement and retained old filters | Layout-owned client workspace; immediate financial history change; separate JSON requests |
+| Chained catch on a non-chainable React stream promise | No financial promises cross the server/client boundary |
+| Broad input rules adding a second search border | Shared compound search owns its outer border and focus treatment |
+| Pending filter races | Latest requested Ledger scope is merged; stale query responses cannot replace the current key |
+| Modal dropdown popup outside the dialog | Portal targets the nearest dialog |
+| Loader/sidebar/legend and print geometry changes | Reserved geometry, data-only indicators and screen-only typography |
+| Sequential access checks | Both mandatory checks start together |
 
-## Verification and release
+## Verification and measurements
 
-- Run directly affected unit/component tests, TypeScript, production build and database checks for
-  changed read behavior. Compare financial results and preserve the applied initial migration.
-- Review the integrated change in separate correctness and UI/accessibility passes. Fix confirmed
-  issues before marking the PR ready.
-- Use Jeric's Chrome profile for desktop/narrow checks, keyboard paths, slow-response loading and
-  ledger search beyond page one. Report a connection blocker honestly if browser access fails.
-- No Airtable changes, live posting tests, journal edits, auth weakening or automatic main merge.
+126 frontend/HTTP checks, TypeScript and production build passed. Independent source review found
+no remaining confirmed correctness/security defect. Existing database read/search tests remain the
+proof for the unchanged SQL; no schema or journal writes are part of this change.
 
-## Review results
+Authenticated localhost HTTP checks confirmed correct headers/controls on all five initial pages,
+zero financial rows in those SSR responses, successful separate JSON reads, and anonymous API 401.
+For 2026-01-01 through 2026-11-05, Ledger returned 100 lines on page one and 72 on page two.
 
-| Review | Confirmed issue | Resolution |
-| --- | --- | --- |
-| Correctness | Rapid pending account/side/date changes could overwrite earlier filters | Latest requested scope is merged optimistically; stale responses and browser Back are covered |
-| UI and accessibility | Combobox popup was outside the drawer's modal subtree | Popup targets the nearest dialog; keyboard and portal regression tests added |
-| UI and loading | Drawer and statement error states changed panel geometry | Fixed summary space and two-column statement errors preserve the surrounding layout |
-| Layout and print | Screen typography overrode print sizes; short loading panes and signed chart legends changed height | Screen-only font rules, flexible data loaders and reserved legend slots |
-| Screenshot follow-up | A broad input selector added a second border and padding inside search controls and overrode combobox padding | Removed the blanket input decoration; each control owns its border, padding and focus treatment |
+Production-mode localhost:3011 measurements use real authenticated requests, with compilation/HMR
+excluded. They are HTTP/API measurements, not browser render or cache-hit timings:
 
-The follow-up tightens heading/filter spacing, puts period/year labels on one header line and
-groups Trial Balance date controls on the left and display controls on the right. Its zero-activity
-option includes unused accounts; accounts with settled debit/credit activity remain visible.
+| Request | Total response | Report handler timing | Result |
+| --- | --- | --- | --- |
+| Initial Ledger shell | 873ms | n/a | Header/controls, 0 financial rows, 37,252 bytes |
+| First Ledger JSON read | 642ms | 361ms | 100 lines, 48,386 bytes |
+| Three repeated fresh JSON reads | 466-951ms, median 542ms | 239-696ms | 100 lines each; client cache bypassed by the benchmark |
+| Ledger page two | 458ms | 237ms | 72 lines, no next page |
+| Account choices | 455ms | 216ms | 61 account metadata records |
 
-The subsequent runtime review found a client-only General Ledger crash: the RSC-delivered
-account metadata promise has a non-chainable `.then()`, so `.then(...).catch(...)` dereferenced
-`undefined` during hydration. It now subscribes with success and failure callbacks in one `.then()`.
-A regression uses a non-chainable thenable rather than the native Promise used by earlier mocks.
-This explains why the successful authenticated HTTP reads did not catch the failure.
+Earlier paired backend samples measured serial access checks at 444-781ms versus 239-254ms in
+parallel. Filtering the default 12-period income account arrays reduced JSON from 143,482 to
+64,862 bytes without changing any financial view/analytics result.
 
-`FilterControls.tsx` owns the shared bar, labeled field, search and segmented-switch components.
-Dropdowns use the same labeled-field wrapper. Labels sit above controls with a 3px gap. Controls
-are 32px tall, and the labeled bar has a 64px minimum height, wrapping when necessary. Page-specific
-search/switch implementations and their competing style rules have been removed.
-
-The route-level loading page and its temporary filter bar have been removed. Navigation retains
-the mounted page until the destination shell arrives, then its existing data-only Suspense handles
-financial loading. Navbar destination/progress feedback remains immediate; cold URL commits still
-wait for the middleware and lightweight shell response. Navigation links do not prefetch full reports.
-
-Protected middleware now runs live user validation and the allowlist query concurrently and still
-requires both to pass. Financial reads were already parallel. The Income Statement strips unrelated
-asset, liability and equity accounts before streaming data; all six View/Display combinations and
-analytics retain the same financial results.
-
-Live authenticated backend samples on 2026-11-06 measured sequential access checks at 444-781ms
-and parallel checks at 239-254ms (two samples each). The 12-period account JSON was 143,482 bytes
-before filtering and 64,862 afterward. These are backend/payload measurements, not browser render,
-navigation-cache or layout-shift benchmarks. Local authenticated responses rendered all five pages.
-Actual browser console, screenshots, responsive geometry and cache timing remain unverified.
-
-Authenticated HTTP reads on localhost rendered all five pages. General Ledger default, search,
-second-page, account/offset/side filters, literal punctuation and reversed-date empty states all
-returned successfully; its preview default also rendered 100 records. The reported unavailable
-state was not reproduced by these checks, which do not exercise client-side browser interactions.
-
-The new `20261105150253_add_ledger_search.sql` migration adds an invoker read function. It is applied
-to DUAL ENTRY; the applied initial migration remains unchanged. Disposable database checks cover
-search beyond page one, literal punctuation, filters, pagination, exact rows and caller RLS.
-
-Native browser checks could not run because the browser-access host is unavailable. A reconnect
-and runtime reset still failed; native Chrome capture also returned capture-service error -3811.
-The PR remains a draft for desktop/narrow visual and interactive verification. No browser
-screenshots were created.
+Chrome host access is unavailable. Actual browser console, hydration/history behavior, screenshots,
+responsive geometry, cached revisits and end-to-end timing remain pending. Keep the PR draft until
+those checks can run. Earlier visual checks of the baseline do not certify this implementation.

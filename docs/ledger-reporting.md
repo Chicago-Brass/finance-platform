@@ -62,20 +62,21 @@ the dates without duplicate Trial Balance or General Ledger captions. Monthly/qu
 statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapshots retain their
 exact as-of date inline in the compact heading. Analytics use compact, right-aligned values.
 
-Report links and GET forms navigate through the Next router. The persistent shell keeps the header
-and consolidated date/view/display/search controls available while only data panels show loading.
-Stale data is inert during the transition; exports remain disabled until the new data is ready.
-View (Monthly/Quarterly/Annual/As of) and Display
-(Summary/Details) switches on the Income Statement and Balance Sheet rebuild the report in the
-browser from the loaded data and update the URL with a history replace, so they make no request.
-Only the year, month range or as-of date loads data. Visited
-report pages stay in the browser's Next router cache for five minutes (`staleTimes.dynamic` in
-`next.config.mjs`), so returning to a page or a filter combination already seen is instant. The
-server does not cache ledger reads: a browser reload, or the Refresh data button in the top bar
-(`router.refresh()`, which also clears the router cache), reads the latest postings. Authentication
-runs once per request and is shared by the report layout and every read; middleware still checks
-the current application role. Query failures propagate. Router-cached pages belong to that browser
-tab only and are cleared by signing out.
+Financial links and GET filters update the URL through Next's native history integration. One
+persistent client report application selects the destination header and controls immediately,
+then fetches its financial data from `/api/reports/data`. SSR sends controls and a data indicator;
+financial page files contain metadata, not pending financial reads. Non-financial routes continue
+using the Next router. Only table/analytics panels load, and exports wait for ready data.
+
+View (Monthly/Quarterly/Annual/As of) and Display (Summary/Details) switches reuse loaded statement
+data. Their request keys exclude display choices. Dates and Ledger account/offset/side/search/page
+choices change the JSON request key. Search commits on Enter, Search or blur, not per keystroke.
+
+Successful responses live in a private per-user/layout cache for five minutes, up to 32 ready keys.
+In-flight reads are shared. Refresh data invalidates that cache; sign-out or account changes clear
+it. API/ledger reads are not cached on the server, so cache misses read fresh posted data. The
+Ledger account-choice request runs independently in parallel and is reused across filter changes.
+All API reads require session validation, the allowlist and RLS. Failed requests are not cached.
 
 Both reports and their Excel/PDF outputs show currency symbols, two decimal places, `$0.00` zeros
 and parentheses for negative amounts. Missing values remain distinct from zero. General Ledger
@@ -96,10 +97,11 @@ aggregates all requested ranges from it. Its results are regression-checked agai
 `get_trial_balance` calls. On older databases without the batched function, the app falls back to one
 `get_trial_balance` call per range.
 
-Each report uses data-only Suspense. Navigation retains the current shell until the destination
-shell arrives, avoiding a temporary placeholder filter bar. The active tab and progress indicator
-show the pending destination immediately. Navigation/detail/filter links do not prefetch unvisited
-financial datasets. Shared filter components place labels immediately above their controls.
+The report shell and data fetch have separate lifecycles. There is no placeholder route shell
+and no retained previous-page controls. `ReportApplication` keys each destination by pathname;
+`ReportDataPanel` owns loading, error and retry UI. Shared filter components place labels just
+above their controls. Cold financial navigation needs no server route/RSC request; it fetches only
+the active data key if that key is missing from the private cache.
 General Ledger's date/account filters share one desktop row; quick dates are inside its period picker.
 Account dropdown choices read `accounts` metadata without calculating a cumulative trial balance.
 The header uses the tightly cropped 250 x 78 official site logo at 2x display density.

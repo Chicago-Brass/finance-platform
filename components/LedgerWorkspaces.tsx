@@ -1,13 +1,15 @@
 "use client";
 
-import { Suspense, use, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LedgerAccountFilters, LedgerAccountOption, TbRow, TChartRow, getGeneralLedger } from "@/lib/reports/ledger";
 import { DateFilter } from "./DateFilter";
 import { LedgerAccountFilter } from "./LedgerAccountFilter";
 import { GeneralLedgerTable, TrialBalanceTable } from "./LedgerTable";
 import { PostingRulesTable } from "./PostingRulesTable";
 import { ReportPageHeader } from "./ReportPageHeader";
-import { ReportDataBoundary, ReportDataLoading, ReportDataRegion, useReportNavigate } from "./ReportNavigation";
+import { useReportNavigate } from "./ReportNavigation";
+import type { ReportQuery } from "./ReportData";
+import { ReportDataPanel } from "./ReportDataPanel";
 import { ReportIcon } from "./ReportIcons";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
@@ -17,7 +19,7 @@ import "./ledger-tables.css";
 type LedgerData = Awaited<ReturnType<typeof getGeneralLedger>>;
 type LedgerOptions = LedgerAccountFilters & { from: string; to: string; page: number };
 
-export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Promise<TbRow[]> }) {
+export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: ReportQuery<TbRow[]> }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const [showZero, setShowZero] = useState(true);
@@ -32,15 +34,11 @@ export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Prom
         <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
       </div>
     </DateFilter>
-    <ReportDataRegion><ReportDataBoundary resetKey={data}><Suspense fallback={<ReportDataLoading label="Loading trial balance" />}><TrialBalanceData data={data} asOf={asOf} query={query} type={type} showZero={showZero} /></Suspense></ReportDataBoundary></ReportDataRegion>
+    <ReportDataPanel query={data} label="Loading trial balance">{data.data && <TrialBalanceTable rows={data.data} asOf={asOf} query={query} type={type} showZero={showZero} />}</ReportDataPanel>
   </article>;
 }
 
-function TrialBalanceData({ data, ...props }: { data: Promise<TbRow[]>; asOf: string; query: string; type: string; showZero: boolean }) {
-  return <TrialBalanceTable rows={use(data)} {...props} />;
-}
-
-export function GeneralLedgerWorkspace({ options, data, accountData }: { options: LedgerOptions; data: Promise<LedgerData>; accountData: Promise<LedgerAccountOption[]> }) {
+export function GeneralLedgerWorkspace({ options, data, accountData }: { options: LedgerOptions; data: ReportQuery<LedgerData>; accountData: ReportQuery<LedgerAccountOption[]> }) {
   const navigate = useReportNavigate();
   const [scope, setScope] = useState(options);
   const scopeValue = useRef(options);
@@ -52,8 +50,8 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
   const searchFocused = useRef(false);
   const submittedSearch = useRef(options.query ?? "");
   const updateDraft = (value: string) => { draftValue.current = value; setDraft(value); };
-  const [accounts, setAccounts] = useState<LedgerAccountOption[]>([]);
-  const [unavailable, setUnavailable] = useState(false);
+  const accounts = accountData.data ?? [];
+  const unavailable = accountData.error;
   const committed = ledgerHref(options);
   useEffect(() => {
     // An earlier response cannot replace filters that the user has already changed again.
@@ -74,15 +72,6 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, []);
-  useEffect(() => {
-    let current = true;
-    // Streamed React promises support both callbacks, but their .then() is not chainable.
-    accountData.then(
-      rows => { if (current) { setAccounts(rows); setUnavailable(false); } },
-      () => { if (current) setUnavailable(true); },
-    );
-    return () => { current = false; };
-  }, [accountData]);
   const change = (changes: Partial<LedgerOptions>) => {
     const current = scopeValue.current;
     const next = { ...current, page: 1, query: ledgerSearchParam(draftValue.current), ...changes };
@@ -110,18 +99,13 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
       <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { updateDraft(""); change({ account: undefined, offset: undefined, query: undefined, side: "all" }); }}>Reset filters</button>
     </DateFilter>
     {options.from > options.to && <div className="report-alerts" role="status"><p className="check check-bad">Start date is later than end date. Choose a valid date range.</p></div>}
-    <ReportDataRegion><ReportDataBoundary resetKey={data}><Suspense fallback={<ReportDataLoading label="Loading ledger records" />}><GeneralLedgerData data={data} options={options} /></Suspense></ReportDataBoundary></ReportDataRegion>
+    <ReportDataPanel query={data} label="Loading ledger records">{data.data && <GeneralLedgerTable {...options} rows={data.data.rows} hasNext={data.data.hasNext} page={data.data.page} pageSize={data.data.pageSize} />}</ReportDataPanel>
   </article>;
-}
-
-function GeneralLedgerData({ data, options }: { data: Promise<LedgerData>; options: LedgerOptions }) {
-  const result = use(data);
-  return <GeneralLedgerTable {...options} rows={result.rows} hasNext={result.hasNext} page={result.page} pageSize={result.pageSize} />;
 }
 
 const CATEGORIES = [{ value: "all", label: "All categories" }, { value: "expense", label: "Expenses" }, { value: "payment", label: "Payments" }, { value: "invoice_entry", label: "Invoice Entry" }, { value: "other", label: "Other Transactions" }];
 
-export function PostingRulesWorkspace({ asOf, data }: { asOf: string; data: Promise<TChartRow[]> }) {
+export function PostingRulesWorkspace({ asOf, data }: { asOf: string; data: ReportQuery<TChartRow[]> }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   return <article className="report-page ledger-page">
@@ -131,10 +115,6 @@ export function PostingRulesWorkspace({ asOf, data }: { asOf: string; data: Prom
       <SearchField value={query} onChange={setQuery} label="Search rules or accounts" placeholder="Rule, description or account" />
       <button type="button" className="btn btn-quiet control-reset" disabled={!query && category === "all"} onClick={() => { setQuery(""); setCategory("all"); }}>Reset filters</button>
     </FilterBar>
-    <ReportDataRegion><ReportDataBoundary resetKey={data}><Suspense fallback={<ReportDataLoading label="Loading posting rules" />}><PostingRulesData data={data} asOf={asOf} query={query} category={category} /></Suspense></ReportDataBoundary></ReportDataRegion>
+    <ReportDataPanel query={data} label="Loading posting rules">{data.data && <PostingRulesTable rules={data.data} asOf={asOf} query={query} category={category} />}</ReportDataPanel>
   </article>;
-}
-
-function PostingRulesData({ data, ...props }: { data: Promise<TChartRow[]>; asOf: string; query: string; category: string }) {
-  return <PostingRulesTable rules={use(data)} {...props} />;
 }

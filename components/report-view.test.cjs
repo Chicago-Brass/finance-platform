@@ -127,7 +127,7 @@ test('Drill-down targets follow report order and name each account section', () 
 
 
 test('Statement shells keep header, exports and all controls visible before data resolves', () => {
-  const pending = new Promise(() => {});
+  const pending = {data:undefined,pending:true,error:false,retry(){}};
   const cases = [
     [workspace.IncomeStatementWorkspace, { year: 2026, from: 1, to: 11, grain: 'month', summary: false }, 'Income Statement'],
     [workspace.BalanceSheetWorkspace, { asOf: '2026-11-05', grain: 'single', summary: false }, 'Balance Sheet'],

@@ -8,7 +8,7 @@ npm run typecheck
 git diff --check
 ```
 
-The 2026-11-06 shared-controls follow-up has 107 frontend/HTTP tests passing. Coverage includes report amounts/signs,
+The 2026-11-06 shell/data separation check has 126 frontend/HTTP tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
@@ -87,14 +87,17 @@ literal punctuation, all scope filters, draft exclusion and caller RLS. There ar
 read tests. Browser interaction and computed responsive geometry remain unverified because the
 browser-access host is unavailable.
 
-The input/header follow-up also passed TypeScript and a production build. Authenticated localhost
-HTTP reads rendered all five pages; ledger search, second page, account/offset/side filters,
-literal punctuation and reversed-date empty states passed. The preview default ledger rendered
-100 records. These checks did not reproduce the reported unavailable state and are not browser
-interaction proof. Retrying the browser connection/reset failed, as did native Chrome capture
-with capture-service error -3811. Desktop/narrow screenshots remain pending.
+The client report application is checked for immediate destination selection, native-history
+navigation without an RSC request, filter/query normalization, data-only loading and errors,
+request sharing/expiry/refresh, StrictMode replay, sign-out/account-change invalidation, JSON API
+401/403 behavior, every report dispatch and unchanged financial View/Display results.
 
-The latest check covers React stream thenables, shared search/switch keyboard behavior, concurrent
-middleware checks with both authorization conditions required, and Income Statement account-payload
-filtering with unchanged figures across every View/Display combination. Live authenticated backend
-timings and byte counts are recorded in the spec. These do not establish browser/cache timings.
+Authenticated live HTTP checks confirmed all five SSR pages render correct headers and controls
+with zero financial table rows; every data endpoint returns JSON separately, and anonymous reads
+return 401. The Ledger returned 100 rows on page one and 72 on page two for 2026-01-01 through
+2026-11-05. A production-mode build on localhost:3011 measured fresh API reads, not browser cache
+hits. Cold/HMR development requests must not be presented as production query timing.
+
+Browser host access remains unavailable. Actual Chrome console, history/hydration behavior,
+visual transitions, responsive geometry and cached-navigation timing remain pending; keep the PR
+draft. The production-mode HTTP measurements and source tests do not prove those browser checks.

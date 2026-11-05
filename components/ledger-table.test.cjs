@@ -135,17 +135,19 @@ test('Ledger-wide query and side survive date submissions and pagination without
   assert.ok(dates.match(/href="\?[^\"]*"/g).every(href=>href.includes('q=Vendor')&&href.includes('side=credit')));
 });
 
+const pendingQuery = () => ({ data:undefined,pending:true,error:false,retry:()=>{} });
+
 function loadWorkspace(react, navigate=()=>{}) {
   const file=path.join(__dirname,'LedgerWorkspaces.tsx'), module={exports:{}};
   const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const nav={...navigation,useReportNavigate:()=>navigate,ReportDataRegion:({children})=>children,ReportDataBoundary:({children})=>children,ReportDataLoading:({label})=>React.createElement('p',null,label)};
-  const localRequire=name=>name==='react'?react:name.endsWith('ReportNavigation')?nav:name.startsWith('@/')?load(path.join(root,name.slice(2))):name.startsWith('.')?load(path.resolve(path.dirname(file),name)):require(name);
+  const localRequire=name=>name==='react'?react:name.endsWith('ReportDataPanel')?{ReportDataPanel:({query,label,children})=>query.error?React.createElement('div',{role:'alert'},'Read failed'):query.pending?React.createElement('p',null,label):children}:name.endsWith('ReportNavigation')?nav:name.startsWith('@/')?load(path.join(root,name.slice(2))):name.startsWith('.')?load(path.resolve(path.dirname(file),name)):require(name);
   new Function('require','module','exports',code)(localRequire,module,module.exports);
   return module.exports;
 }
 
 test('Ledger, Trial Balance and rules keep their controls visible while data is unresolved',()=>{
-  const workspace=loadWorkspace(React), data=new Promise(()=>{});
+  const workspace=loadWorkspace(React), data=pendingQuery();
   for(const [component,props,expected] of [
     [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-11-03',page:1,query:'Vendor',side:'all'},data,accountData:data},'Search all records'],
     [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'With activity'],
@@ -161,7 +163,7 @@ test('Ledger, Trial Balance and rules keep their controls visible while data is 
 test('Ledger search waits for blur or submit and avoids sending twice for blur plus button click',()=>{
   const calls=[],hooks={...React,useState:initial=>[initial,()=>{}],useRef:value=>({current:value}),useEffect:()=>{}};
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
-  const element=workspace.GeneralLedgerWorkspace({options:{from:'2026-01-01',to:'2026-11-03',page:3,query:'',side:'all'},data:new Promise(()=>{}),accountData:new Promise(()=>{})});
+  const element=workspace.GeneralLedgerWorkspace({options:{from:'2026-01-01',to:'2026-11-03',page:3,query:'',side:'all'},data:pendingQuery(),accountData:pendingQuery()});
   const find=(node,predicate)=>{
     if(!React.isValidElement(node))return undefined;
     if(predicate(node))return node;
@@ -185,7 +187,7 @@ function findControl(node,predicate){
   for(const child of React.Children.toArray(node.props.children)){const found=findControl(child,predicate);if(found)return found;}
 }
 
-function ledgerScopeHarness(initial,accountData=new Promise(()=>{})){
+function ledgerScopeHarness(initial,accountData=pendingQuery()){
   const slots=[],calls=[],pending=[];let cursor=0,dirty=false;
   const hooks={...React,
     useState(initialValue){const index=cursor++;if(!slots[index])slots[index]={value:typeof initialValue==='function'?initialValue():initialValue};return[slots[index].value,value=>{const next=typeof value==='function'?value(slots[index].value):value;if(!Object.is(next,slots[index].value)){slots[index].value=next;dirty=true;}}];},
@@ -193,20 +195,16 @@ function ledgerScopeHarness(initial,accountData=new Promise(()=>{})){
     useEffect(effect,deps){const index=cursor++,previous=slots[index];if(!previous||deps.some((value,i)=>!Object.is(value,previous.deps[i]))){slots[index]={deps,cleanup:previous?.cleanup};pending.push(()=>{slots[index].cleanup?.();slots[index].cleanup=effect();});}},
   };
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
-  const data=new Promise(()=>{});let source=initial,element;
+  const data=pendingQuery();let source=initial,element;
   const render=(options=source)=>{source=options;for(let pass=0;pass<5;pass++){cursor=0;dirty=false;element=workspace.GeneralLedgerWorkspace({options:source,data,accountData});while(pending.length)pending.shift()();if(!dirty)return element;}throw new Error('Workspace did not settle');};
   return{calls,render,find:predicate=>findControl(element,predicate),params:()=>Object.fromEntries(new URLSearchParams(calls.at(-1).slice(1)))};
 }
 
-test('Streamed account metadata accepts non-chainable React thenables and handles rejection',()=>{
+test('Account metadata query data and errors never suspend or remove ledger controls',()=>{
+  const rows=[{account_number:'112.100',account_name:'Bank',account_type:'asset'}];
   for(const failed of [false,true]){
-    let resolve,reject;
-    const streamed={then(onValue,onError){resolve=onValue;reject=onError;}};
-    const fixture=ledgerScopeHarness({from:'2026-01-01',to:'2026-11-03',page:1},streamed);
-    fixture.render();
-    const rows=[{account_number:'112.100',account_name:'Bank',account_type:'asset'}];
-    if(failed)reject(new Error('Unavailable'));else resolve(rows);
-    fixture.render();
+    const query={pending:false,error:failed,data:failed?undefined:rows,retry:()=>{}};
+    const fixture=ledgerScopeHarness({from:'2026-01-01',to:'2026-11-03',page:1},query);fixture.render();
     const picker=fixture.find(node=>node.type.name==='LedgerAccountFilter');
     assert.deepEqual(picker.props.accounts,failed?[]:rows);
     assert.equal(picker.props.unavailable,failed);
@@ -251,4 +249,22 @@ test('A completed request preserves newer focused search edits and Back clears a
     assert.equal(picker().props.offset,undefined,'Back clears the abandoned pending offset');
     fixture.render(initial);assert.equal(picker().props.account,undefined);assert.equal(fixture.find(node=>node.type.name==='SearchField'&&node.props.name==='q').props.value,'vendor');
   }finally{global.window=previousWindow;}
+});
+
+test('Cached ledger query and account metadata render immediately, while read errors leave filters usable',()=>{
+  const workspace=loadWorkspace(React),ready=value=>({data:value,pending:false,error:false,retry:()=>{}});
+  const options={from:'2026-01-01',to:'2026-11-03',page:1,account:'112.300',query:'',side:'all'};
+  const html=renderToStaticMarkup(React.createElement(workspace.GeneralLedgerWorkspace,{
+    options,data:ready({rows:ledger,page:1,pageSize:100,hasNext:false}),accountData:ready(trial),
+  }));
+  assert.match(html,/General Ledger records/);
+  assert.match(html,/112\.300 Bank - Nickel/);
+  assert.match(html,/Current page totals/);
+  assert.doesNotMatch(html,/Loading ledger records|Read failed/);
+  const failed={data:undefined,pending:false,error:true,retry:()=>{}};
+  const error=renderToStaticMarkup(React.createElement(workspace.GeneralLedgerWorkspace,{options,data:failed,accountData:failed}));
+  assert.match(error,/Search all records/);
+  assert.match(error,/Read failed/);
+  assert.match(error,/value="112\.300"/,'selected account remains available when metadata fails');
+  assert.doesNotMatch(error,/Current page totals/);
 });

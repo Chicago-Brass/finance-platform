@@ -24,6 +24,7 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  const isReportApi = path.startsWith("/api/reports/");
 
   // Protected routes require both live session validation and the current allowlist role.
   // Run them together; getSession() alone must never authorize a request.
@@ -34,6 +35,7 @@ export async function middleware(request: NextRequest) {
 
   if (!user) {
     if (isPublic) return response;
+    if (isReportApi) return NextResponse.json({ error: "Sign in to load reports." }, { status: 401 });
     const login = request.nextUrl.clone();
     login.pathname = "/";
     login.search = "";
@@ -44,6 +46,7 @@ export async function middleware(request: NextRequest) {
 
   // Signed in with Microsoft/email is not enough: the user must be on the allowlist.
   if (access?.error || !access?.data) {
+    if (isReportApi) return NextResponse.json({ error: "You do not have access to reports." }, { status: 403 });
     const denied = request.nextUrl.clone();
     denied.pathname = "/not-authorized";
     denied.search = "";

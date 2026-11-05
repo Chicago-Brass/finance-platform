@@ -2,22 +2,40 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Component, createContext, useContext, useState, useTransition } from "react";
+import { Component, createContext, useContext, useMemo, useState, useTransition } from "react";
 import type { AnchorHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
 import { ReportIcon } from "./ReportIcons";
+import { REPORT_PATHS } from "@/lib/reports/report-routes";
+import { useReportFetching, useReportRefresh } from "./ReportData";
 
 const Navigation = createContext<{ pending: boolean; destination: string | null; navigate: (href: string) => void; refresh: () => void } | null>(null);
+
+const isReportPath = (path: string) => Object.values(REPORT_PATHS).some(value => value === path);
 
 export function ReportNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [destination, setDestination] = useState<string | null>(null);
-  return <Navigation.Provider value={{
+  const refreshData = useReportRefresh();
+  const navigation = useMemo(() => ({
     pending, destination,
-    navigate: href => { setDestination(new URL(href, window.location.href).pathname); startTransition(() => router.push(href, { scroll: false })); },
-    // Clears the browser's cached report pages and re-reads the current one from the ledger.
-    refresh: () => { setDestination(window.location.pathname); startTransition(() => router.refresh()); },
-  }}>{children}</Navigation.Provider>;
+    navigate: (href: string) => {
+      const target = new URL(href, window.location.href);
+      if (target.origin === window.location.origin && isReportPath(window.location.pathname) && isReportPath(target.pathname)) {
+        // These routes share one client workspace; Next syncs its URL hooks with native history.
+        if (target.href !== window.location.href) window.history.pushState(null, "", `${target.pathname}${target.search}${target.hash}`);
+        return;
+      }
+      setDestination(target.pathname);
+      startTransition(() => router.push(href, { scroll: false }));
+    },
+    refresh: () => {
+      if (isReportPath(window.location.pathname)) { refreshData(); return; }
+      setDestination(window.location.pathname);
+      startTransition(() => router.refresh());
+    },
+  }), [pending, destination, router, refreshData]);
+  return <Navigation.Provider value={navigation}>{children}</Navigation.Provider>;
 }
 
 export function useReportPath() {
@@ -37,7 +55,8 @@ export function useReportPending() {
 
 export function RefreshDataButton() {
   const navigation = useContext(Navigation);
-  return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={navigation?.pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={navigation?.pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
+  const pending = useReportFetching() || navigation?.pending;
+  return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
 }
 
 export function ReportLink({ href, children, onClick, prefetch = false, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; prefetch?: boolean | null }) {
@@ -64,7 +83,7 @@ export function ReportForm({ children, onSubmit, ...props }: Omit<FormHTMLAttrib
 }
 
 export function ReportContent({ children }: { children: ReactNode }) {
-  const pending = useReportPending();
+  const fetching = useReportFetching(), pending = useReportPending() || fetching;
   return <main className="content" id="report-content" tabIndex={-1}>
     {pending && <div className="report-request-progress" role="status"><span className="sr-only">Updating report data...</span></div>}
     <div className="report-content">{children}</div>
@@ -75,15 +94,6 @@ export function ReportDataLoading({ analytics = false, label = "Loading report d
   return <div className={`report-workspace report-data-loading${analytics ? " has-analytics" : ""}`} aria-busy="true">
     <section className="statement-panel report-panel-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>{label}</span></section>
     {analytics && <aside className="report-analytics report-panel-loading" role="status" aria-label="Loading analytics"><span className="report-spinner" aria-hidden="true" /><span>Loading analytics...</span></aside>}
-  </div>;
-}
-
-/** Keep controls usable and preserve mounted chart state while only the data region waits. */
-export function ReportDataRegion({ children, analytics = false }: { children: ReactNode; analytics?: boolean }) {
-  const pending = useReportPending();
-  return <div className="report-data-region" aria-busy={pending}>
-    <div className="report-data-content" inert={pending || undefined} aria-hidden={pending || undefined} style={pending ? { visibility: "hidden" } : undefined}>{children}</div>
-    {pending && <div className="report-data-pending"><ReportDataLoading analytics={analytics} /></div>}
   </div>;
 }
 

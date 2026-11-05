@@ -6,6 +6,10 @@ Agents: start with [AGENTS.md](AGENTS.md) and the [knowledge base](knowledge-bas
 The [conversation summary](knowledge-base/conversation-context.md) records design decisions;
 [session handoff](knowledge-base/session-handoff.md) locates the full conversation on Jeric's device.
 
+The current [dashboard PR](https://github.com/Chicago-Brass/finance-platform/pull/1) separates the
+immediate report shell from authenticated JSON data reads. See its [implementation spec](docs/dashboard-controls-spec.md)
+for the request/cache design, measurements and outstanding browser verification.
+
 **Status:** On `main`, Income Statement and Balance Sheet read posted Supabase ledger data.
 The local app uses the DUAL ENTRY project. Current testing verifies page queries, field mappings,
 account groupings and filters against the existing database records. The report redesign adds a
@@ -19,7 +23,9 @@ deployment. Branch reporting is deferred.
   callbacks also return to the landing page. Supabase Auth and the approved-user check remain in
   place; Microsoft SSO is still controlled by its existing environment flag.
 - Access: only emails in `public.app_users` with `active = true` can see reports (checked in `middleware.ts`).
-- Reports: authenticated server reads use `get_trial_balance` and the ledger views. The builders under
+- Reports: the header/filters render first; `/api/reports/data` supplies authenticated JSON afterward.
+  Navigation switches the client workspace immediately, with a private five-minute response cache.
+  Server reads use `get_trial_balance` and the ledger views. The builders under
   `lib/reports/` return the existing `Report` / `ReportLine` contract for the UI and Excel/PDF exports.
   Income Statement supports selectable years and monthly/quarterly/annual actuals. Balance Sheet uses
   cumulative as-of, monthly, quarterly or annual snapshots, with prior-year and current-year earnings

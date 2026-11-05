@@ -10,9 +10,6 @@ const securityHeaders = [
 
 const nextConfig = {
   poweredByHeader: false,
-  // Visited report pages stay in the browser's router cache for five minutes, so moving between
-  // reports is instant. A browser reload or the Refresh data button reads the latest postings.
-  experimental: { staleTimes: { dynamic: 300 } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

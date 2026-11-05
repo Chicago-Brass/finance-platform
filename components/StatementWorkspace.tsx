@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { startOfYear } from "@/lib/dates";
 import { formatDate, monthEnd, monthStart } from "@/lib/reports/report-utils";
@@ -14,7 +14,9 @@ import { BalanceSheetFilters } from "./BalanceSheetFilters";
 import { ReportFilters } from "./ReportFilters";
 import { ReportDisplayControls, ReportExportButtons, ReportView, useReportDisplay } from "./ReportView";
 import type { ReportDisplayState } from "./ReportView";
-import { ReportDataBoundary, ReportDataLoading, ReportDataRegion, useReportPending } from "./ReportNavigation";
+import { ReportDataBoundary } from "./ReportNavigation";
+import { ReportDataPanel } from "./ReportDataPanel";
+import type { ReportQuery } from "./ReportData";
 import { ReportIcon } from "./ReportIcons";
 import { ReportViewControls } from "./ReportViewControls";
 import { FilterBar } from "./FilterControls";
@@ -42,20 +44,19 @@ function DisabledExports() {
   return <><button type="button" className="btn btn-quiet" disabled><ReportIcon name="excel" />Export Excel</button><button type="button" className="btn btn-quiet" disabled><ReportIcon name="pdf" />Export PDF</button></>;
 }
 
-function ResolvedExports<T>({ data, build, display }: { data: Promise<T>; build: (data: T) => Report; display: ReportDisplayState }) {
-  const value = use(data);
-  return <ReportExportButtons report={build(value)} display={display} />;
+function ResolvedExports<T>({ data, build, display }: { data: T; build: (data: T) => Report; display: ReportDisplayState }) {
+  const report = useMemo(() => build(data), [data, build]);
+  return <ReportExportButtons report={report} display={display} />;
 }
 
-function ExportArea({ children, resetKey }: { children: ReactNode; resetKey: unknown }) {
-  const pending = useReportPending();
+function ExportArea<T>({ data, build, display }: { data: ReportQuery<T>; build: (data: T) => Report; display: ReportDisplayState }) {
   return <div className="report-exports no-print" aria-label="Export report">
-    {pending ? <DisabledExports /> : <ReportDataBoundary resetKey={resetKey} fallback={<DisabledExports />}><Suspense fallback={<DisabledExports />}>{children}</Suspense></ReportDataBoundary>}
+    {data.pending || data.error || data.data === undefined ? <DisabledExports /> : <ReportDataBoundary resetKey={data.data} fallback={<DisabledExports />}><ResolvedExports data={data.data} build={build} display={display} /></ReportDataBoundary>}
   </div>;
 }
 
-function StatementShell({ title, period, controls, exports, resetKey, children }: {
-  title: string; period: string; controls: ReactNode; exports: ReactNode; resetKey: unknown; children: ReactNode;
+function StatementShell({ title, period, controls, exports, data, children }: {
+  title: string; period: string; controls: ReactNode; exports: ReactNode; data: ReportQuery<unknown>; children: ReactNode;
 }) {
   return <article className="report-page statement-page">
     <header className="report-header">
@@ -65,44 +66,40 @@ function StatementShell({ title, period, controls, exports, resetKey, children }
       {exports}
     </header>
     <FilterBar className="statement-control-bar no-print" label={`${title} controls`}>{controls}</FilterBar>
-    <ReportDataRegion analytics>
-      <ReportDataBoundary resetKey={resetKey} analytics><Suspense fallback={<ReportDataLoading analytics />}>{children}</Suspense></ReportDataBoundary>
-    </ReportDataRegion>
+    <ReportDataPanel query={data} analytics>{children}</ReportDataPanel>
   </article>;
 }
 
-export function IncomeStatementWorkspace({ data, options: initial }: { data: Promise<IncomeStatementData>; options: IncomeStatementOptions }) {
+export function IncomeStatementWorkspace({ data, options: initial }: { data: ReportQuery<IncomeStatementData>; options: IncomeStatementOptions }) {
   const view = useStatementView(initial.grain, initial.summary), display = useReportDisplay();
   const options = { ...initial, grain: view.grain, summary: view.summary };
-  const build = (value: IncomeStatementData) => buildIncomeStatementView(value, view.grain, view.summary).report;
-  return <StatementShell title="Income Statement" period={`${formatDate(monthStart(initial.year, initial.from))} to ${formatDate(monthEnd(initial.year, initial.to))}`} resetKey={data}
+  const build = useCallback((value: IncomeStatementData) => buildIncomeStatementView(value, view.grain, view.summary).report, [view.grain, view.summary]);
+  return <StatementShell title="Income Statement" period={`${formatDate(monthStart(initial.year, initial.from))} to ${formatDate(monthEnd(initial.year, initial.to))}`} data={data}
     controls={<><ReportFilters options={options} /><ReportViewControls grains={INCOME_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
-    exports={<ExportArea resetKey={data}><ResolvedExports data={data} build={build} display={display} /></ExportArea>}>
-    <IncomeData data={data} grain={view.grain} summary={view.summary} display={display} />
+    exports={<ExportArea data={data} build={build} display={display} />}>
+    {data.data && <IncomeData data={data.data} grain={view.grain} summary={view.summary} display={display} />}
   </StatementShell>;
 }
 
-function IncomeData({ data, grain, summary, display }: { data: Promise<IncomeStatementData>; grain: IncomeGrain; summary: boolean; display: ReportDisplayState }) {
-  const value = use(data);
-  const built = useMemo(() => buildIncomeStatementView(value, grain, summary), [value, grain, summary]);
-  const drill = useMemo(() => ({ mode: "period" as const, from: monthStart(value.year, value.from), to: monthEnd(value.year, value.to) }), [value.year, value.from, value.to]);
+function IncomeData({ data, grain, summary, display }: { data: IncomeStatementData; grain: IncomeGrain; summary: boolean; display: ReportDisplayState }) {
+  const built = useMemo(() => buildIncomeStatementView(data, grain, summary), [data, grain, summary]);
+  const drill = useMemo(() => ({ mode: "period" as const, from: monthStart(data.year, data.from), to: monthEnd(data.year, data.to) }), [data.year, data.from, data.to]);
   return <ReportView report={built.report} analytics={built.analytics} drill={drill} display={display} />;
 }
 
-export function BalanceSheetWorkspace({ data, options: initial }: { data: Promise<BalanceSheetData>; options: BalanceSheetOptions }) {
+export function BalanceSheetWorkspace({ data, options: initial }: { data: ReportQuery<BalanceSheetData>; options: BalanceSheetOptions }) {
   const view = useStatementView(initial.grain, initial.summary), display = useReportDisplay();
   const options = { ...initial, grain: view.grain, summary: view.summary };
-  const build = (value: BalanceSheetData) => buildBalanceSheetView(value, view.grain, view.summary).report;
-  return <StatementShell title="Balance Sheet" period={`As of ${formatDate(initial.asOf)}`} resetKey={data}
+  const build = useCallback((value: BalanceSheetData) => buildBalanceSheetView(value, view.grain, view.summary).report, [view.grain, view.summary]);
+  return <StatementShell title="Balance Sheet" period={`As of ${formatDate(initial.asOf)}`} data={data}
     controls={<><BalanceSheetFilters options={options} /><ReportViewControls grains={BALANCE_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
-    exports={<ExportArea resetKey={data}><ResolvedExports data={data} build={build} display={display} /></ExportArea>}>
-    <BalanceData data={data} grain={view.grain} summary={view.summary} display={display} />
+    exports={<ExportArea data={data} build={build} display={display} />}>
+    {data.data && <BalanceData data={data.data} grain={view.grain} summary={view.summary} display={display} />}
   </StatementShell>;
 }
 
-function BalanceData({ data, grain, summary, display }: { data: Promise<BalanceSheetData>; grain: BalanceGrain; summary: boolean; display: ReportDisplayState }) {
-  const value = use(data);
-  const built = useMemo(() => buildBalanceSheetView(value, grain, summary), [value, grain, summary]);
-  const drill = useMemo(() => ({ mode: "balance" as const, from: startOfYear(value.asOf), to: value.asOf }), [value.asOf]);
+function BalanceData({ data, grain, summary, display }: { data: BalanceSheetData; grain: BalanceGrain; summary: boolean; display: ReportDisplayState }) {
+  const built = useMemo(() => buildBalanceSheetView(data, grain, summary), [data, grain, summary]);
+  const drill = useMemo(() => ({ mode: "balance" as const, from: startOfYear(data.asOf), to: data.asOf }), [data.asOf]);
   return <ReportView report={built.report} analytics={built.analytics} drill={drill} display={display} />;
 }

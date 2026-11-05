@@ -39,6 +39,7 @@ function setup(pathname = "/income-statement?year=2026") {
       NextResponse: {
         next: ({ request }) => ({ type: "next", request, cookies: new Map() }),
         redirect: (url) => ({ type: "redirect", url }),
+        json: (body, { status }) => ({ type: "json", body, status }),
       },
     },
     "@/lib/supabase/config": { supabaseConfig: () => ({ url: "https://example.supabase.co", key: "public-key" }) },
@@ -92,6 +93,27 @@ test("public paths still validate sessions without requesting an allowlist role"
       assert.equal((await run.result).type, "next");
     }
   }
+});
+
+test("report API failures return sanitized JSON instead of page redirects", async () => {
+  for (const [user, role, status, error] of [
+    [null, { data: "admin", error: null }, 401, "Sign in to load reports."],
+    [{ id: "user" }, { data: null, error: null }, 403, "You do not have access to reports."],
+    [{ id: "user" }, { data: "admin", error: { message: "private database detail" } }, 403, "You do not have access to reports."],
+  ]) {
+    const run = setup("/api/reports/data?report=income-statement");
+    assert.deepEqual(run.calls, ["user", "current_app_role"]);
+    run.user.resolve({ data: { user } });
+    run.role.resolve(role);
+    assert.deepEqual(await run.result, { type: "json", body: { error }, status });
+  }
+});
+
+test("authorized report API requests continue through middleware", async () => {
+  const run = setup("/api/reports/data");
+  run.user.resolve({ data: { user: { id: "user" } } });
+  run.role.resolve({ data: "admin", error: null });
+  assert.equal((await run.result).type, "next");
 });
 
 test("session refresh cookies still reach the forwarded request and response", async () => {

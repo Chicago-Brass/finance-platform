@@ -16,8 +16,8 @@ export async function reportUser() {
 
 /**
  * Runs a ledger read as the signed-in user, after the request's Auth check. Results are not cached
- * on the server: the browser's router cache makes revisits instant, and a reload or Refresh data
- * always reads the latest postings.
+ * on the server. The client workspace owns a private five-minute JSON cache; each API read here
+ * is fresh, and Refresh data invalidates that client cache.
  */
 export async function ledgerRead<T>(read: (client: Awaited<ReturnType<typeof createClient>>) => Promise<T>): Promise<T> {
   const { client } = await reportContext();
