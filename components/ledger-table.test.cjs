@@ -107,7 +107,7 @@ test('Trial Balance renderer preserves all-account totals and dates submit witho
   assert.ok(!dates.includes('name="page"'));
 });
 
-test('T-Chart renders one grouped table with linked single-account references',()=>{
+test('T-Chart renders grouped reference accounts without Ledger links',()=>{
   const rulesTable=load(path.join(__dirname,'PostingRulesTable.tsx'));
   const rule=(rule_code,category,debit_accounts,credit_accounts,extra={})=>({rule_code,category,sort_order:1,trigger_name:`Trigger ${rule_code}`,debit_accounts,credit_accounts,reversible:true,airtable_sources:null,when_to_post:null,fin_notes:null,audit_trail:null,...extra});
   const rules=[rule('EXP-01','expense','By Vendor (e.g., Utilities 006.002)','AP (211.100)',{reversible:null}),rule('PAY-07','payment','AP (211.100)','Bank (Nickel/Fifth Third)',{when_to_post:'When sent.',audit_trail:'Payment record'})];
@@ -115,7 +115,8 @@ test('T-Chart renders one grouped table with linked single-account references',(
   assert.equal((html.match(/<table/g)||[]).length,1);
   assert.match(html,/Expenses<span>1 rule<\/span>/);
   assert.match(html,/Payments<span>1 rule<\/span>/);
-  assert.match(html,/href="\/general-ledger\?from=2026-01-01&amp;to=2026-11-03&amp;account=211\.100"/);
+  assert.doesNotMatch(html,/href="\/general-ledger/);
+  assert.match(html,/account-pill-code/);
   assert.match(html,/By Vendor \(e\.g\., Utilities 006\.002\)/);
   assert.ok(!html.includes('account=006.002'));
   assert.match(html,/Audit trail: Payment record/);
@@ -156,11 +157,12 @@ test('Ledger, Trial Balance and rules keep their controls visible while data is 
     const html=renderToStaticMarkup(React.createElement(component,props));
     assert.match(html,new RegExp(expected));
     assert.match(html,/Loading (ledger records|trial balance|posting rules)/);
+    assert.doesNotMatch(html,/Apply ledger search|ledger-search-button-label/);
     assert.doesNotMatch(html,/statement-toolbar|<select/);
   }
 });
 
-test('Ledger search waits for blur or submit and avoids sending twice for blur plus button click',()=>{
+test('Ledger search has no button, commits on blur or Enter, and deduplicates both events',()=>{
   const calls=[],hooks={...React,useState:initial=>[initial,()=>{}],useRef:value=>({current:value}),useEffect:()=>{}};
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
   const element=workspace.GeneralLedgerWorkspace({options:{from:'2026-01-01',to:'2026-11-03',page:3,query:'',side:'all'},data:pendingQuery(),accountData:pendingQuery()});
@@ -175,7 +177,7 @@ test('Ledger search waits for blur or submit and avoids sending twice for blur p
   assert.equal(calls.length,0,'typing does not request a new page');
   input.props.onBlur();
   form.props.onSubmit({preventDefault(){}});
-  assert.equal(calls.length,1,'blur plus Search has one navigation');
+  assert.equal(calls.length,1,'blur plus Enter has one navigation');
   const params=new URLSearchParams(calls[0].slice(1));
   assert.equal(params.get('q'),'vendor refund');
   assert.equal(params.get('page'),'1','a changed query resets page one');

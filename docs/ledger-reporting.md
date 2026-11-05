@@ -32,7 +32,7 @@ The dark sidebar has Position and Movement tabs:
 
 ## Account drill-down drawer
 
-Clicking an account row on the Income Statement, Balance Sheet or General Ledger opens a
+Clicking an account row on the Income Statement or Balance Sheet opens a
 slide-over drawer above the page. It is separate from the analytics sidebar and closes with
 Escape, its close button or a click on the dimmed backdrop; focus returns to the row. The drawer
 holds no URL state, so View/Display parameters are unaffected. Statement drawers step to the
@@ -70,7 +70,9 @@ using the Next router. Only table/analytics panels load, and exports wait for re
 
 View (Monthly/Quarterly/Annual/As of) and Display (Summary/Details) switches reuse loaded statement
 data. Their request keys exclude display choices. Dates and Ledger account/offset/side/search/page
-choices change the JSON request key. Search commits on Enter, Search or blur, not per keystroke.
+choices change the JSON request key. Search commits on Enter or blur, not per keystroke; the Ledger has no separate Search button.
+Period, Filters and account menus dismiss on outside pointer or focus and on Escape. Searchable
+popups stay inside their owning menu or drawer so selecting an option does not dismiss its parent.
 
 Successful responses live in a private per-user/layout cache for five minutes, up to 32 ready keys.
 In-flight reads are shared. Refresh data invalidates that cache; sign-out or account changes clear
@@ -151,40 +153,72 @@ Account codes/names come from the live chart of accounts. Accounts are not filte
 | Expense subtype cogs or contra_cogs | Cost of goods sold | Debits minus credits; purchase discounts reduce cost |
 | Expense subtype payroll | Personnel | Debits minus credits |
 | Other operating expense codes 006.* | Occupancy | Debits minus credits |
-| Other operating expense codes 007.*, except 007.003 | Finance and administration | Debits minus credits |
+| Other operating expense codes 007.*, except 007.003 | Finance and administrative | Debits minus credits |
 | Other operating expense codes 008.* | Technology | Debits minus credits |
-| Remaining operating expenses, including depreciation | Other operating expenses | Debits minus credits |
-| Revenue subtype other_income | Other income | Credits minus debits |
-| 007.003 Interest Expense | Interest expense below operating income | Credits minus debits, shown as a reduction |
+| Remaining operating expenses, including depreciation | General operating | Debits minus credits |
+| Revenue subtype other_income | Other income (expense) | Credits minus debits |
+| 007.003 Interest Expense and expense subtype other_expense | Other income (expense), below operating income | Credits minus debits, shown as a reduction |
 | Expense subtype income_tax | Income taxes | Debits minus credits |
 
 Gross profit = net revenue - net COGS. Operating income subtracts operating expenses.
-Pretax income adds other income and signed interest expense. Net income subtracts income taxes.
+Pretax income adds net other income (expense), including signed interest expense. Net income subtracts income taxes.
 Unknown subtypes remain in the relevant broad account-type group rather than being omitted.
 
 ## Balance Sheet mapping
 
 | Live accounts | Report group |
 | --- | --- |
-| Asset subtype bank | Cash and cash equivalents |
-| Asset subtype receivable, plus 121.900 | Receivables, net |
-| Asset subtype inventory | Inventory |
-| Asset subtype prepaid | Prepayments and vendor deposits |
-| Asset subtype fixed_asset, plus 161.000 | Property and equipment, net |
-| Remaining assets, including suspense | Other assets |
-| Liability subtype payable | Accounts payable |
-| Liability subtype customer_funds | Customer deposits and credits |
-| Liability subtype tax_payable | Taxes payable |
-| Liability subtype accrued_payroll | Accrued payroll and benefits |
-| Liability subtype credit_card | Credit card payable |
-| Liability subtype debt | Loans and credit facilities |
-| Remaining liabilities | Other liabilities |
-| All equity accounts | Equity accounts |
+| Asset subtype bank, plus 121.200 payments in transit | Current assets / Cash and cash equivalents |
+| Asset subtype receivable, plus 121.900, excluding 122.* | Current assets / Accounts receivable, net |
+| Asset 122.* | Current assets / Other receivables |
+| Asset subtype inventory | Current assets / Inventory |
+| Asset subtype prepaid | Current assets / Prepaid expenses and deposits |
+| Asset subtype fixed_asset | Property and equipment / At cost |
+| Asset 161.000 | Property and equipment / Accumulated depreciation |
+| Asset 143.200 security deposits | Other assets / Deposits |
+| Remaining assets, including suspense | Other assets / Other asset accounts |
+| Liability subtype payable | Current liabilities / Accounts payable |
+| Liability subtype customer_funds | Current liabilities / Customer deposits and credits |
+| Liability subtype tax_payable, excluding 242.* | Current liabilities / Sales tax payable |
+| Liability subtype accrued_payroll | Current liabilities / Accrued payroll and benefits |
+| Liability subtype credit_card, 231.200 and 242.* | Current liabilities / Other current liabilities |
+| Liability 232.* | Long-term liabilities / Notes and loans payable |
+| Remaining liabilities | Other liabilities, outside the maturity subtotals |
+| All equity accounts | Stockholders' equity / Equity accounts |
 
 Assets use debits minus credits, so allowances/depreciation reduce them. Liabilities/equity use
-credits minus debits, so shareholder distributions reduce equity. Debt maturity is not supplied
-by the schema, so the report does not invent current-versus-long-term allocations. Both sides
+credits minus debits, so shareholder distributions reduce equity. These blocks follow the
+`mae/testing` account-family presentation; 232.* is shown as long-term rather than calculating a
+current portion. Maturity dates are not supplied by the schema. Unrecognized liability families
+stay visible outside the maturity subtotals. Each account is included once, and both sides
 reconcile in cents, including the separate prior/current earnings lines.
+
+See [reference grouping review](statement-grouping-review.md) for the comparison with `mae/testing`.
+
+## Full journal entry drawer
+
+Clicking any General Ledger row opens its complete posted journal entry. Enter and Space on a
+focused row do the same; the audit link opens its source independently. Trial Balance account
+links still navigate to the account-filtered Ledger. T-Chart account pills are plain references.
+
+`/api/reports/journal-entry?entry=<number>` validates a positive safe entry number and uses the
+signed-in user's RLS session. It reads one posted `journal_entries` header and every associated
+`journal_lines` record in line order, in 500-line pages. Account names come from the account FK.
+The query applies no report date, account, side or search filter. No schema change is required.
+
+The drawer uses a single-row header with an icon source link, followed by Entry details, Journal
+lines and Posting information. Entry details contains source system, source table/record, date
+and transaction type. Posting information contains rule, created/posted timestamps and journal ID.
+Event/user labels and separators between sections are hidden. The header divider and table
+borders remain visible. The line table shows only Account, Debit, Credit and an icon source link. Detailed line reference
+fields remain in the read data but are hidden in this view. The journal drawer inherits the same
+640px responsive width as the statement account drawer.
+Long cells clamp to two visible lines with full values retained in text/tooltips. The selected
+line stays highlighted; normal balanced entries have no extra balance caption. Only a real totals
+mismatch shows a warning. Vertical scrolling over the table chains to the drawer; horizontal
+scrolling stays inside the table. The existing private report cache shares successful reads for five
+minutes and clears them on refresh/sign-out/account change. Both journal and account drawers use
+`DetailDrawer` for outside-pointer/Escape dismissal, focus trapping and focus restoration.
 
 ## Deferred branch attribution
 
@@ -209,7 +243,7 @@ General Ledger reads posted lines from v_ledger within the inclusive selected da
 100 records per page with a single lookahead record to determine Next availability. Sorting by
 date, entry number and line number gives stable page ordering. Date changes reset to page one.
 Account, offset, search and side filters are URL parameters (`account`, `offset`, `q`, `side`)
-applied before pagination. Search commits on Enter, Search or blur, rather than every keystroke.
+applied before pagination. Search commits on Enter or blur, rather than every keystroke.
 `search_ledger` uses bound literal substring matching, including punctuation; `%` and `_` are not
 wildcards. Date changes and pagination preserve scope. Rapid changes merge with the latest pending
 scope, so an earlier response cannot discard a newer selection. The offsetting filter excludes

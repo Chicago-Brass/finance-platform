@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from "react";
 import { SegmentedControl } from "./FilterControls";
 
 /** View (columns) and Display (summary/detail) switches reuse the current data window. */
@@ -15,13 +14,6 @@ export function ReportViewControls<G extends string>({ grains, grain, summary, o
       <SegmentedControl label="Display" value={summary} options={[{ value: true, label: "Summary" }, { value: false, label: "Details" }]} onChange={onSummary} />
     </>
   );
-}
-
-export function closePopoverOnEscape(event: KeyboardEvent<HTMLDetailsElement>) {
-  if (event.key !== "Escape") return;
-  event.preventDefault();
-  event.currentTarget.open = false;
-  event.currentTarget.querySelector("summary")?.focus();
 }
 
 export function CalendarMark() {

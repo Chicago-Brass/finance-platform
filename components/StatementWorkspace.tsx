@@ -55,8 +55,8 @@ function ExportArea<T>({ data, build, display }: { data: ReportQuery<T>; build: 
   </div>;
 }
 
-function StatementShell({ title, period, controls, exports, data, children }: {
-  title: string; period: string; controls: ReactNode; exports: ReactNode; data: ReportQuery<unknown>; children: ReactNode;
+function StatementShell({ title, period, controls, exports, data, display, children }: {
+  title: string; period: string; controls: ReactNode; exports: ReactNode; data: ReportQuery<unknown>; display: ReportDisplayState; children: ReactNode;
 }) {
   return <article className="report-page statement-page">
     <header className="report-header">
@@ -65,7 +65,10 @@ function StatementShell({ title, period, controls, exports, data, children }: {
       <div className="report-heading"><h1 className="report-title">{title}</h1><p className="report-entity">Chicago Brass Inc. - Consolidated / Accrual basis / USD</p><p className="report-period">{period}</p></div>
       {exports}
     </header>
-    <FilterBar className="statement-control-bar no-print" label={`${title} controls`}>{controls}</FilterBar>
+    <FilterBar className="statement-control-bar no-print" label={`${title} controls`}>
+      {controls}
+      <button type="button" className="btn btn-quiet control-reset" disabled={!display.query && !display.hideZero && display.collapsed !== "all" && display.collapsed.size === 0} onClick={() => { display.setQuery(""); display.setHideZero(false); display.setCollapsed(new Set()); }}>Reset filters</button>
+    </FilterBar>
     <ReportDataPanel query={data} analytics>{children}</ReportDataPanel>
   </article>;
 }
@@ -74,7 +77,7 @@ export function IncomeStatementWorkspace({ data, options: initial }: { data: Rep
   const view = useStatementView(initial.grain, initial.summary), display = useReportDisplay();
   const options = { ...initial, grain: view.grain, summary: view.summary };
   const build = useCallback((value: IncomeStatementData) => buildIncomeStatementView(value, view.grain, view.summary).report, [view.grain, view.summary]);
-  return <StatementShell title="Income Statement" period={`${formatDate(monthStart(initial.year, initial.from))} to ${formatDate(monthEnd(initial.year, initial.to))}`} data={data}
+  return <StatementShell title="Income Statement" period={`${formatDate(monthStart(initial.year, initial.from))} to ${formatDate(monthEnd(initial.year, initial.to))}`} data={data} display={display}
     controls={<><ReportFilters options={options} /><ReportViewControls grains={INCOME_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
     exports={<ExportArea data={data} build={build} display={display} />}>
     {data.data && <IncomeData data={data.data} grain={view.grain} summary={view.summary} display={display} />}
@@ -91,7 +94,7 @@ export function BalanceSheetWorkspace({ data, options: initial }: { data: Report
   const view = useStatementView(initial.grain, initial.summary), display = useReportDisplay();
   const options = { ...initial, grain: view.grain, summary: view.summary };
   const build = useCallback((value: BalanceSheetData) => buildBalanceSheetView(value, view.grain, view.summary).report, [view.grain, view.summary]);
-  return <StatementShell title="Balance Sheet" period={`As of ${formatDate(initial.asOf)}`} data={data}
+  return <StatementShell title="Balance Sheet" period={`As of ${formatDate(initial.asOf)}`} data={data} display={display}
     controls={<><BalanceSheetFilters options={options} /><ReportViewControls grains={BALANCE_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
     exports={<ExportArea data={data} build={build} display={display} />}>
     {data.data && <BalanceData data={data.data} grain={view.grain} summary={view.summary} display={display} />}

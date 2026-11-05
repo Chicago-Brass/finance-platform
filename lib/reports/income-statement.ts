@@ -42,21 +42,24 @@ export function getIncomeStatement(options: IncomeStatementOptions, snapshots: S
   const group = (id: string, label: string, rows: typeof accounts, creditPositive: boolean, depth = 0) => accountGroup(id, label, rows, snapshots, { creditPositive, summary: options.summary, depth, includeTotal });
   const sales = group("revenue", "Revenue", revenue.filter(row => row.account_subtype !== "other_income"), true);
   const cogs = group("cogs", "Cost of goods sold", expense.filter(row => row.account_number !== "007.003" && ["cogs", "contra_cogs"].includes(row.account_subtype ?? "")), false);
-  const operating = expense.filter(row => !["cogs", "contra_cogs", "income_tax"].includes(row.account_subtype ?? "") && row.account_number !== "007.003");
+  const operating = expense.filter(row => !["cogs", "contra_cogs", "income_tax", "other_expense"].includes(row.account_subtype ?? "") && row.account_number !== "007.003");
   const operatingGroups = [
     group("personnel", "Personnel", operating.filter(row => row.account_subtype === "payroll"), false, 1),
     group("occupancy", "Occupancy", operating.filter(row => row.account_subtype !== "payroll" && row.account_number.startsWith("006.")), false, 1),
-    group("finance", "Finance and administration", operating.filter(row => row.account_subtype !== "payroll" && row.account_number.startsWith("007.")), false, 1),
+    group("finance", "Finance and administrative", operating.filter(row => row.account_subtype !== "payroll" && row.account_number.startsWith("007.")), false, 1),
     group("technology", "Technology", operating.filter(row => row.account_subtype !== "payroll" && row.account_number.startsWith("008.")), false, 1),
-    group("other-operating", "Other operating expenses", operating.filter(row => row.account_subtype !== "payroll" && !["006.", "007.", "008."].some(prefix => row.account_number.startsWith(prefix))), false, 1),
+    group("other-operating", "General operating", operating.filter(row => row.account_subtype !== "payroll" && !["006.", "007.", "008."].some(prefix => row.account_number.startsWith(prefix))), false, 1),
   ];
-  const otherIncome = group("other-income", "Other income", revenue.filter(row => row.account_subtype === "other_income"), true);
-  const interest = group("interest", "Interest expense", expense.filter(row => row.account_number === "007.003"), true);
+  const other = group("other", "Other income (expense)", [
+    ...expense.filter(row => row.account_number === "007.003"),
+    ...revenue.filter(row => row.account_subtype === "other_income"),
+    ...expense.filter(row => row.account_number !== "007.003" && row.account_subtype === "other_expense"),
+  ], true);
   const taxes = group("tax", "Income taxes", expense.filter(row => row.account_number !== "007.003" && row.account_subtype === "income_tax"), false);
   const grossProfit = subtractAmounts(keys, sales.total, cogs.total);
   const operatingExpenses = sumAmounts(keys, ...operatingGroups.map(item => item.total));
   const operatingIncome = subtractAmounts(keys, grossProfit, operatingExpenses);
-  const pretax = sumAmounts(keys, operatingIncome, otherIncome.total, interest.total);
+  const pretax = sumAmounts(keys, operatingIncome, other.total);
   const netIncome = subtractAmounts(keys, pretax, taxes.total);
   const lines: ReportLine[] = [
     ...sales.lines, ...cogs.lines,
@@ -64,7 +67,7 @@ export function getIncomeStatement(options: IncomeStatementOptions, snapshots: S
     section("operating", "Operating expenses"), ...operatingGroups.flatMap(item => item.lines),
     amountLine("total-operating", "Total operating expenses", operatingExpenses, "subtotal"),
     amountLine("operating-income", "Operating income (loss)", operatingIncome, "total", 0, true),
-    ...otherIncome.lines, ...interest.lines,
+    ...other.lines,
     amountLine("pretax", "Income (loss) before income taxes", pretax, "total", 0, true),
     ...taxes.lines, amountLine("net-income", "Net income (loss)", netIncome, "grandTotal", 0, true),
   ];

@@ -1,5 +1,6 @@
 "use client";
 
+import { DismissibleMenu } from "./DismissibleMenu";
 import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Report, ReportLine } from "@/lib/reports/types";
@@ -12,8 +13,7 @@ import { AccountDrawer } from "./AccountDrawer";
 import type { DrillTarget } from "./AccountDrawer";
 import { ReportAnalytics } from "./ReportAnalytics";
 import { ReportIcon } from "./ReportIcons";
-import { closePopoverOnEscape } from "./ReportViewControls";
-import { FilterField, SearchField } from "./FilterControls";
+import { SearchField } from "./FilterControls";
 
 /** A section can collapse when its next row is nested inside it. */
 export function collapsibleIds(lines: ReportLine[]) {
@@ -81,9 +81,8 @@ export function ReportDisplayControls({ display, summary = false }: { display: R
   const { query, hideZero, setQuery, setHideZero, setCollapsed } = display;
   return <>
     <SearchField label="Search accounts" placeholder={summary ? "Search in Details" : "Name or account number"} value={query} disabled={summary} onChange={setQuery} title={summary ? "Choose Details to search individual accounts." : undefined} />
-    <FilterField label="Options">
-    <details className="report-filter-menu" onKeyDown={closePopoverOnEscape}>
-      <summary className="btn btn-quiet"><ReportIcon name="filter" />More{hideZero && <span className="report-filter-count">1</span>}</summary>
+    <DismissibleMenu className="report-filter-menu">
+      <summary className="btn btn-quiet">Filters{hideZero && <span className="report-filter-count">1</span>}</summary>
       <div className="report-filter-popover">
         <h2>Account display</h2>
         <label className="report-zero-option"><input type="checkbox" checked={!hideZero} disabled={summary} onChange={event => setHideZero(!event.target.checked)} />Show zero accounts</label>
@@ -91,7 +90,7 @@ export function ReportDisplayControls({ display, summary = false }: { display: R
         <p>Display filters do not change financial totals.</p>
         {(query || hideZero) && <button type="button" className="report-reset-display" onClick={() => { setQuery(""); setHideZero(false); }}>Reset display</button>}
       </div>
-    </details></FilterField>
+    </DismissibleMenu>
   </>;
 }
 

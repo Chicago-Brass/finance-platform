@@ -8,7 +8,7 @@ npm run typecheck
 git diff --check
 ```
 
-The 2026-11-06 shell/data separation check has 126 frontend/HTTP tests passing. Coverage includes report amounts/signs,
+The 2026-11-06 shell/data separation and journal-detail checks have 137 tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
@@ -101,3 +101,12 @@ hits. Cold/HMR development requests must not be presented as production query ti
 Browser host access remains unavailable. Actual Chrome console, history/hydration behavior,
 visual transitions, responsive geometry and cached-navigation timing remain pending; keep the PR
 draft. The production-mode HTTP measurements and source tests do not prove those browser checks.
+
+## Journal entry detail verification
+
+Focused checks cover full-row pointer/Enter/Space activation, independent audit links, all split
+lines and cents totals, immediate loading/error headers, modal focus/dismissal, API identity/auth
+validation and complete 500-line paging. A read-only DUAL ENTRY sample returned six ordered lines
+with resolved account names and matching totals. That schema/read check used the scoped server
+key; it does not establish viewer RLS behavior. Application reads still use the existing verified
+user session and RLS. Browser host access remains unavailable, so visual interaction is pending.

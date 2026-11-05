@@ -10,7 +10,6 @@ import { ReportPageHeader } from "./ReportPageHeader";
 import { useReportNavigate } from "./ReportNavigation";
 import type { ReportQuery } from "./ReportData";
 import { ReportDataPanel } from "./ReportDataPanel";
-import { ReportIcon } from "./ReportIcons";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
 import { ACCOUNT_TYPES, ledgerHref, ledgerSearchParam } from "./ledger-table-utils";
@@ -27,12 +26,10 @@ export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Repo
   return <article className="report-page ledger-page">
     <ReportPageHeader title="Trial Balance" description="Chicago Brass Inc. / Posted ledger / USD" />
     <DateFilter to={asOf} asOfOnly>
-      <div className="control-bar-actions">
-        <SearchableSelect label="Account type" value={type} options={[{ value: "all", label: "All types" }, ...Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))]} onChange={setType} />
-        <SegmentedControl label="Accounts" value={showZero} options={[{ value: true, label: "All" }, { value: false, label: "With activity" }]} onChange={setShowZero} />
-        <SearchField value={query} onChange={setQuery} label="Search accounts" placeholder="Name or account number" />
-        <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
-      </div>
+      <SearchableSelect label="Account type" value={type} options={[{ value: "all", label: "All types" }, ...Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))]} onChange={setType} />
+      <SegmentedControl label="Accounts" value={showZero} options={[{ value: true, label: "All" }, { value: false, label: "With activity" }]} onChange={setShowZero} />
+      <SearchField value={query} onChange={setQuery} label="Search accounts" placeholder="Name or account number" />
+      <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
     </DateFilter>
     <ReportDataPanel query={data} label="Loading trial balance">{data.data && <TrialBalanceTable rows={data.data} asOf={asOf} query={query} type={type} showZero={showZero} />}</ReportDataPanel>
   </article>;
@@ -94,7 +91,6 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
       <SegmentedControl label="Entry side" value={scope.side ?? "all"} options={[{ value: "all", label: "All" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => change({ side })} />
       <form className="ledger-global-search" role="search" onSubmit={event => { event.preventDefault(); search(); }}>
         <SearchField label="Search all ledger records" name="q" maxLength={200} value={draft} placeholder="Search all records" onChange={updateDraft} onFocus={() => { searchFocused.current = true; }} onBlur={() => { searchFocused.current = false; search(); }} />
-        <button type="submit" className="btn btn-quiet" aria-label="Apply ledger search"><ReportIcon name="search" /><span className="ledger-search-button-label">Search</span></button>
       </form>
       <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { updateDraft(""); change({ account: undefined, offset: undefined, query: undefined, side: "all" }); }}>Reset filters</button>
     </DateFilter>
@@ -115,6 +111,6 @@ export function PostingRulesWorkspace({ asOf, data }: { asOf: string; data: Repo
       <SearchField value={query} onChange={setQuery} label="Search rules or accounts" placeholder="Rule, description or account" />
       <button type="button" className="btn btn-quiet control-reset" disabled={!query && category === "all"} onClick={() => { setQuery(""); setCategory("all"); }}>Reset filters</button>
     </FilterBar>
-    <ReportDataPanel query={data} label="Loading posting rules">{data.data && <PostingRulesTable rules={data.data} asOf={asOf} query={query} category={category} />}</ReportDataPanel>
+    <ReportDataPanel query={data} label="Loading posting rules">{data.data && <PostingRulesTable rules={data.data} query={query} category={category} />}</ReportDataPanel>
   </article>;
 }

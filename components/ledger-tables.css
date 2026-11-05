@@ -13,9 +13,8 @@
 .ledger-account-select{width:clamp(150px,13vw,210px)}
 .ledger-account-select .searchable-select-field{flex:1;min-width:0}
 .ledger-account-select .searchable-select-field input{min-width:0}
-.ledger-global-search{display:flex;align-items:flex-end;gap:6px;min-width:220px;flex:1 1 260px}
+.ledger-global-search{display:flex;align-items:flex-end;gap:6px;min-width:220px;flex:0 1 260px}
 .ledger-global-search .filter-search-field{flex:1;min-width:140px}
-.ledger-global-search .btn{flex:none}
 .ledger-page .ledger-data-table{table-layout:fixed;min-width:1050px}
 .ledger-page .ledger-data-table th,.ledger-page .ledger-data-table td{padding:7px 14px;line-height:20px;vertical-align:middle}
 .ledger-page .ledger-data-table tbody th{position:static}
@@ -79,5 +78,5 @@
 @media(max-width:760px){.ledger-pagination{align-items:flex-start;flex-wrap:wrap}.ledger-page-links{margin-left:auto}.ledger-date-fields{grid-template-columns:1fr}.ledger-date-filters .period-picker-panel.ledger-range-panel{width:min(310px,calc(100vw - 52px))}.ledger-page .ledger-data-table{min-width:950px}}
 @media print{.ledger-page .ledger-table-panel{display:block;overflow:visible}.ledger-page .ledger-scroll{overflow:visible}.ledger-pagination{display:none}.ledger-page .ledger-data-table{min-width:0;table-layout:auto}.ledger-page .ledger-data-table thead,.ledger-page .ledger-data-table tfoot{position:static}.ledger-page .ledger-data-table th,.ledger-page .ledger-data-table td{font-size:9px;padding:4px 6px}.ledger-page .ledger-data-table col{width:auto!important}.account-pill{font-size:9px;border-color:#d9dfe6}.account-pill-code,.account-pill-name{padding:1px 4px}}
 
-@media(max-width:1100px){.ledger-account-filters{flex-wrap:wrap}.ledger-global-search{flex:1 1 260px}.ledger-account-select{width:170px}}
+@media(max-width:1100px){.ledger-account-filters{flex-wrap:wrap}.ledger-global-search{flex:0 1 260px}.ledger-account-select{width:170px}}
 .ledger-scroll:focus-visible{outline:2px solid var(--steel);outline-offset:-2px}

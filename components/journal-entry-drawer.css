@@ -1,0 +1,36 @@
+.journal-drawer .drill-header{align-items:center;padding:12px 18px}
+.journal-drawer .drill-close{font-size:22px;line-height:1}
+.journal-drawer .drill-heading h2{font-size:20px;line-height:26px;margin:0;white-space:nowrap}
+.journal-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:none;scrollbar-width:none}
+.journal-content::-webkit-scrollbar{display:none}
+.journal-section{padding:14px 18px}
+.journal-section h3{margin:0 0 10px;color:var(--navy);font-size:15px;line-height:21px;font-weight:650}
+.journal-description{margin:0 0 12px;color:var(--ink);font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.journal-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 18px;margin:0}
+.journal-fields>div{min-width:0}
+.journal-fields dt,.journal-notes h4{margin:0 0 2px;color:var(--ink-2);font-size:11px;font-weight:500}
+.journal-fields dd{margin:0;color:var(--ink);font-size:13px;line-height:18px;overflow-wrap:anywhere;white-space:pre-wrap}
+.journal-notes{margin-top:10px;padding:8px 10px;border-radius:var(--control-radius);background:var(--surface-2)}
+.journal-notes p{margin:0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
+.journal-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.journal-section-heading>span{font-size:12px;color:var(--ink-2)}
+/* Vertical wheel movement must reach the drawer when the table only overflows horizontally. */
+.journal-lines-scroll{overflow:auto;border:1px solid var(--rule);border-radius:var(--control-radius);overscroll-behavior-x:contain;overscroll-behavior-y:auto}
+.journal-lines{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.journal-lines thead th{padding:8px 10px;background:var(--navy);color:white;font-weight:500;font-size:12px;text-align:left;white-space:nowrap}
+.journal-lines tbody th,.journal-lines tbody td{padding:8px 10px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--rule);font-weight:400}
+.journal-lines .journal-money{text-align:right;white-space:nowrap}
+.journal-account{min-width:200px;max-width:260px}
+.journal-lines .account-pill{max-width:240px}
+.journal-lines .account-pill-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:17px}
+.journal-source-cell{width:32px}
+.journal-source-link{display:inline-flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--rule);border-radius:var(--control-radius);color:var(--steel);background:white}
+.journal-source-link:hover{background:var(--surface-2);border-color:var(--steel)}
+.journal-source-link:focus-visible{outline:2px solid var(--steel);outline-offset:2px}
+.journal-selected-line{background:var(--steel-tint)}
+.journal-lines tfoot th,.journal-lines tfoot td{padding:9px 10px;background:var(--surface-2);font-weight:650}
+.journal-warning{margin:10px 0 0;color:#a62b25;font-size:12px;font-weight:600}
+.general-ledger-table .ledger-entry-row{cursor:pointer}
+.general-ledger-table .ledger-entry-row:focus-visible{outline:2px solid var(--steel);outline-offset:-2px}
+@media(max-width:640px){.journal-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.journal-section{padding:12px}.journal-drawer .drill-header{padding:10px 12px}.journal-drawer .drill-heading h2{font-size:18px}.journal-fields{grid-template-columns:1fr}}

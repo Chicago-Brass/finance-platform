@@ -248,3 +248,22 @@ notes remain unchanged. Evidence: scripts/outputs/prepaid-expense-implementation
 
 The separate ON Invoice Entry created automation still has its unresolved row 6 freight-cost handler
 matching AP expense invoices. That independent handler was not changed by this prepaid installation.
+
+## Bank-fee invoice entry - 5 November 2026
+
+Expense | Invoice Create Entry (wfljsMLxiID5vnmsg, wac4oanK56ColQUF7) is ON with the published
+expense-entry.js. Row 12 / EXP-11 keeps Create Entry + AP + invoice account 007.002. It uses the full
+Invoice Amount and Invoice Date, Dr 007.002 / Cr the bank selected through Linked Payments ->
+Account to Pay/Receive. FIN 112.100 maps to ledger 112.100; FIN 0747 maps to ledger 112.300.
+All linked payments must identify the same supported bank; missing/mixed bank sources stop before
+posting. The amount is posted once, independently of the linked payment amounts or Sent flags.
+
+Row 2's generic placeholder skips a matched bank-fee category. No other category was implemented,
+and existing blockers still abort the complete invoice run. Existing native invoiceRecordId input,
+webhook URL and Dual Ledger Webhook Secret were retained. No receiver, schema or catalog change.
+
+Nineteen native mocked behavior checks passed, including both bank mappings, same-bank multiple
+payments, cents/no-op behavior, missing/ambiguous bank failures and existing category regressions.
+Chart row 12 retains its primary filters, mapping is updated, resolved clarification is cleared,
+and Done? is Fully. The final downloaded workbook is on Desktop. Evidence is in
+scripts/outputs/expense-bank-fees-implementation-2026-11-05/. No live financial test was triggered.

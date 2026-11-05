@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { readAccountActivity } from "@/lib/reports/account-activity-client";
 import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { formatReportAmount } from "@/lib/format";
@@ -12,14 +11,13 @@ import { ReportLink } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
 import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
-import "./account-drawer.css";
+import { DetailDrawer } from "./DetailDrawer";
 
 /** The row a drill-down opens from. `lineId` highlights one ledger line in the list. */
 export type DrillTarget = { code: string; label: string; context?: string; lineId?: string };
 
 const money = (amountCents: number) => formatReportAmount(amountCents / 100);
 const percent = (value: number | null) => value == null ? "N/A" : `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
-const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 function Icon({ path }: { path: string }) {
   return <svg className="drill-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>;
@@ -40,8 +38,6 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   onClose: () => void;
 }) {
   const id = useId();
-  const panel = useRef<HTMLElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
   const [load, setLoad] = useState<Load | null>(null);
   const [filters, setFilters] = useState<ActivityFilters>(NO_ACTIVITY_FILTERS);
   const [attempt, setAttempt] = useState(0);
@@ -60,13 +56,6 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
     return () => controller.abort();
   }, [key, target.code, mode, from, to, cache]);
 
-  // Focus moves into the drawer and returns to the row that opened it.
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    closeButton.current?.focus();
-    return () => { if (opener?.isConnected) opener.focus(); };
-  }, []);
-
   const current = load?.key === key && load.cache === cache ? load : null;
   const listed = current?.lines;
   const lines = listed?.lines ?? [];
@@ -83,20 +72,8 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   const offsetOptions = [...new Map(lines.map(line => [offsetKey(line), offsetLabel(line)])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const set = (patch: Partial<ActivityFilters>) => setFilters(previous => ({ ...previous, ...patch }));
 
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") { event.stopPropagation(); onClose(); return; }
-    if (event.key !== "Tab" || !panel.current) return;
-    const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(item => item.offsetParent !== null);
-    if (!items.length) return;
-    const first = items[0], last = items[items.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  };
-
   return (
-    <div className="drill-layer no-print">
-      <div className="drill-scrim" aria-hidden="true" onClick={onClose} />
-      <aside ref={panel} className="drill-drawer" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-range`} onKeyDown={onKeyDown}>
+    <DetailDrawer titleId={`${id}-title`} descriptionId={`${id}-range`} onClose={onClose}>
         <header className="drill-header">
           <div className="drill-heading">
             {target.context && <p className="drill-eyebrow">{target.context}</p>}
@@ -107,7 +84,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <button type="button" className="drill-icon-button" aria-label={previousAccount ? `Previous account: ${previousAccount.label}` : "No previous account"} disabled={!previousAccount} onClick={() => previousAccount && onSelect(previousAccount)}><Icon path="M18 15l-6-6-6 6" /></button>
             <button type="button" className="drill-icon-button" aria-label={nextAccount ? `Next account: ${nextAccount.label}` : "No next account"} disabled={!nextAccount} onClick={() => nextAccount && onSelect(nextAccount)}><Icon path="M6 9l6 6 6-6" /></button>
           </>}
-          <button ref={closeButton} type="button" className="drill-icon-button drill-close" aria-label="Close account details" onClick={onClose}><Icon path="M6 6l12 12M18 6L6 18" /></button>
+          <button data-drawer-close type="button" className="drill-icon-button drill-close" aria-label="Close account details" onClick={onClose}><Icon path="M6 6l12 12M18 6L6 18" /></button>
         </header>
 
         <section className="drill-analytics" aria-label="Account summary" tabIndex={0} aria-busy={!data && !current?.summaryError}>
@@ -174,8 +151,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <ReportLink className="btn btn-quiet drill-ledger-link" href={`/general-ledger${ledgerHref({ from, to, account: target.code })}`} onClick={onClose}>Open in General Ledger</ReportLink>
           </footer>
         </>}
-      </aside>
-    </div>
+    </DetailDrawer>
   );
 }
 

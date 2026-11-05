@@ -69,7 +69,7 @@ export function getBalanceAnalytics(report: Report, asOf: string, previousAccoun
 
 export function getIncomeAnalytics(report: Report, previousReport: Report): ReportAnalytics {
   const revenue = reportAmount(report, "t-revenue"), operating = reportAmount(report, "total-operating"), net = reportAmount(report, "net-income");
-  const groups = [{ id: "t-personnel", label: "Personnel" }, { id: "t-occupancy", label: "Occupancy" }, { id: "t-finance", label: "Finance and administration" }, { id: "t-technology", label: "Technology" }, { id: "t-other-operating", label: "Other operating expenses" }];
+  const groups = [{ id: "t-personnel", label: "Personnel" }, { id: "t-occupancy", label: "Occupancy" }, { id: "t-finance", label: "Finance and administrative" }, { id: "t-technology", label: "Technology" }, { id: "t-other-operating", label: "General operating" }];
   return {
     kind: "income", asOf: report.periodLabel,
     headline: { label: "Revenue", value: revenue },

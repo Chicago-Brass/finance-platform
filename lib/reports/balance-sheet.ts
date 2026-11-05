@@ -27,20 +27,54 @@ export function balanceSheetPeriods(options: BalanceSheetOptions): Period[] {
 
 export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapshot[], priorYear: AccountBalance[], posted: number, priorYears: ReadonlyMap<number, AccountBalance[]> = new Map([[Number(options.asOf.slice(0, 4)), priorYear]])): Report {
   const accounts = snapshots[snapshots.length - 1].accounts, keys = snapshots.map(snapshot => snapshot.period.key);
-  const group = (id: string, label: string, rows: AccountBalance[], creditPositive: boolean) => accountGroup(id, label, rows, snapshots, { creditPositive, summary: options.summary, depth: 1 });
+  const group = (id: string, label: string, rows: AccountBalance[], creditPositive: boolean, depth = 2) => accountGroup(id, label, rows, snapshots, { creditPositive, summary: options.summary, depth });
   const assets = accounts.filter(row => row.account_type === "asset"), liabilities = accounts.filter(row => row.account_type === "liability");
-  const assetGroup = (row: AccountBalance) => row.account_number === "121.900" ? "receivable" : row.account_number === "161.000" ? "fixed_asset" : row.account_subtype;
-  const assetGroups = [
+  // Follow mae/testing's account families while keeping the live catalog's account types authoritative.
+  const assetGroup = (row: AccountBalance) => {
+    if (row.account_number === "121.200") return "bank";
+    if (row.account_number === "121.900") return "receivable";
+    if (row.account_number.startsWith("122.")) return "other-receivable";
+    if (row.account_number === "161.000") return "depreciation";
+    if (row.account_number === "143.200") return "deposit";
+    return row.account_subtype;
+  };
+  const currentAssetGroups = [
     group("cash", "Cash and cash equivalents", assets.filter(row => assetGroup(row) === "bank"), false),
-    group("receivables", "Receivables, net", assets.filter(row => assetGroup(row) === "receivable"), false),
+    group("receivables", "Accounts receivable, net", assets.filter(row => assetGroup(row) === "receivable"), false),
+    group("other-receivables", "Other receivables", assets.filter(row => assetGroup(row) === "other-receivable"), false),
     group("inventory", "Inventory", assets.filter(row => assetGroup(row) === "inventory"), false),
-    group("prepaid", "Prepayments and vendor deposits", assets.filter(row => assetGroup(row) === "prepaid"), false),
-    group("fixed", "Property and equipment, net", assets.filter(row => assetGroup(row) === "fixed_asset"), false),
-    group("other-assets", "Other assets", assets.filter(row => !["bank", "receivable", "inventory", "prepaid", "fixed_asset"].includes(assetGroup(row) ?? "")), false),
+    group("prepaid", "Prepaid expenses and deposits", assets.filter(row => assetGroup(row) === "prepaid"), false),
   ];
-  const liabilityLabels: Record<string, string> = { payable: "Accounts payable", customer_funds: "Customer deposits and credits", tax_payable: "Taxes payable", accrued_payroll: "Accrued payroll and benefits", credit_card: "Credit card payable", debt: "Loans and credit facilities" };
-  const liabilityGroups = Object.entries(liabilityLabels).map(([subtype, label]) => group(subtype, label, liabilities.filter(row => row.account_subtype === subtype), true));
-  liabilityGroups.push(group("other-liabilities", "Other liabilities", liabilities.filter(row => !Object.hasOwn(liabilityLabels, row.account_subtype ?? "")), true));
+  const fixedGroups = [
+    group("property", "Property and equipment, at cost", assets.filter(row => assetGroup(row) === "fixed_asset"), false),
+    group("depreciation", "Accumulated depreciation", assets.filter(row => assetGroup(row) === "depreciation"), false),
+  ];
+  const otherAssetGroups = [
+    group("deposits", "Deposits", assets.filter(row => assetGroup(row) === "deposit"), false),
+    group("other-assets", "Other asset accounts", assets.filter(row => !["bank", "receivable", "other-receivable", "inventory", "prepaid", "fixed_asset", "depreciation", "deposit"].includes(assetGroup(row) ?? "")), false),
+  ];
+  const liabilityGroup = (row: AccountBalance) => {
+    if (row.account_number.startsWith("232.")) return "long-term";
+    if (row.account_number.startsWith("242.") || row.account_subtype === "credit_card" || row.account_number === "231.200") return "other-current";
+    return row.account_subtype;
+  };
+  const currentLiabilityLabels = { payable: "Accounts payable", customer_funds: "Customer deposits and credits", tax_payable: "Sales tax payable", accrued_payroll: "Accrued payroll and benefits", "other-current": "Other current liabilities" };
+  const currentLiabilityGroups = Object.entries(currentLiabilityLabels).map(([subtype, label]) => group(subtype, label, liabilities.filter(row => liabilityGroup(row) === subtype), true, 3));
+  const longTermGroups = [group("long-term-debt", "Notes and loans payable", liabilities.filter(row => liabilityGroup(row) === "long-term"), true, 3)];
+  const otherLiabilities = group("other-liabilities", "Other liabilities", liabilities.filter(row => liabilityGroup(row) !== "long-term" && !Object.hasOwn(currentLiabilityLabels, liabilityGroup(row) ?? "")), true, 2);
+  const block = (id: string, label: string, totalLabel: string, groups: ReturnType<typeof group>[], depth = 1) => {
+    const total = sumAmounts(keys, ...groups.map(item => item.total));
+    return { total, lines: [section(`s-${id}`, label, depth), ...groups.flatMap(item => item.lines), amountLine(`t-${id}`, totalLabel, total, "subtotal", depth)] };
+  };
+  const assetBlocks = [
+    block("current-assets", "Current assets", "Total current assets", currentAssetGroups),
+    block("fixed", "Property and equipment", "Property and equipment, net", fixedGroups),
+    block("other-asset-block", "Other assets", "Total other assets", otherAssetGroups),
+  ];
+  const liabilityBlocks = [
+    block("current-liabilities", "Current liabilities", "Total current liabilities", currentLiabilityGroups, 2),
+    block("long-term-liabilities", "Long-term liabilities", "Total long-term liabilities", longTermGroups, 2),
+  ];
   const equity = group("equity", "Equity accounts", accounts.filter(row => row.account_type === "equity"), true);
   const netEarnings = (rows: AccountBalance[]) => rows.filter(row => row.account_type === "revenue" || row.account_type === "expense").reduce((sum, row) => sum + accountCents(row, true), 0);
   const priorEarnings = Object.fromEntries(snapshots.map(snapshot => {
@@ -49,7 +83,7 @@ export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapsho
     return [snapshot.period.key, netEarnings(rows)];
   }));
   const currentEarnings = Object.fromEntries(snapshots.map(snapshot => [snapshot.period.key, netEarnings(snapshot.accounts) - priorEarnings[snapshot.period.key]]));
-  const assetTotals = sumAmounts(keys, ...assetGroups.map(item => item.total)), liabilityTotals = sumAmounts(keys, ...liabilityGroups.map(item => item.total));
+  const assetTotals = sumAmounts(keys, ...assetBlocks.map(item => item.total)), liabilityTotals = sumAmounts(keys, ...liabilityBlocks.map(item => item.total), otherLiabilities.total);
   const equityTotals = sumAmounts(keys, equity.total, priorEarnings, currentEarnings), totalLE = sumAmounts(keys, liabilityTotals, equityTotals);
   const differences = subtractAmounts(keys, assetTotals, totalLE), balanced = Object.values(differences).every(value => value === 0);
   return {
@@ -65,12 +99,13 @@ export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapsho
       return { key: period.key, label: periodHeading(period.to, options.grain), sublabel, kind: "amount" as const };
     }),
     lines: [
-      section("assets", "Assets", 0, false), ...assetGroups.flatMap(item => item.lines), amountLine("total-assets", "Total assets", assetTotals, "grandTotal", 0, true),
-      section("liabilities", "Liabilities"), ...liabilityGroups.flatMap(item => item.lines), amountLine("total-liabilities", "Total liabilities", liabilityTotals, "subtotal"),
-      section("equity-heading", "Stockholders' equity"), ...equity.lines,
-      amountLine("prior-earnings", "Prior-year earnings not closed to equity", priorEarnings, "account", 1),
-      amountLine("current-earnings", "Current-year earnings (net income)", currentEarnings, "account", 1),
-      amountLine("total-equity", "Total stockholders' equity", equityTotals, "subtotal"), amountLine("total-le", "Total liabilities and stockholders' equity", totalLE, "grandTotal", 0, true),
+      section("assets", "Assets", 0, false), ...assetBlocks.flatMap(item => item.lines), amountLine("total-assets", "Total assets", assetTotals, "grandTotal", 0, true),
+      section("liabilities-equity", "Liabilities and stockholders' equity"),
+      section("liabilities", "Liabilities", 1), ...liabilityBlocks.flatMap(item => item.lines), ...otherLiabilities.lines, amountLine("total-liabilities", "Total liabilities", liabilityTotals, "subtotal", 1),
+      section("equity-heading", "Stockholders' equity", 1), ...equity.lines,
+      amountLine("prior-earnings", "Prior-year earnings not closed to equity", priorEarnings, "account", 2),
+      amountLine("current-earnings", "Current-year earnings (net income)", currentEarnings, "account", 2),
+      amountLine("total-equity", "Total stockholders' equity", equityTotals, "subtotal", 1), amountLine("total-le", "Total liabilities and stockholders' equity", totalLE, "grandTotal", 0, true),
     ],
     checks: [
       { label: "Balances", ok: balanced, detail: balanced ? "Assets = Liabilities + Equity" : snapshots.filter(snapshot => differences[snapshot.period.key] !== 0).map(snapshot => `${snapshot.period.label}: out by $${(Math.abs(differences[snapshot.period.key]) / 100).toFixed(2)}`).join("; ") },
