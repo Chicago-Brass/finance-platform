@@ -1,6 +1,6 @@
 # Dashboard controls and data loading
 
-Current implementation: 2026-11-06, draft PR #1 against develop.
+Implementation reference: the shared report controls and client-first loading on `main`.
 
 ## Goal
 
@@ -94,5 +94,5 @@ parallel. Filtering the default 12-period income account arrays reduced JSON fro
 64,862 bytes without changing any financial view/analytics result.
 
 Chrome host access is unavailable. Actual browser console, hydration/history behavior, screenshots,
-responsive geometry, cached revisits and end-to-end timing remain pending. Keep the PR draft until
-those checks can run. Earlier visual checks of the baseline do not certify this implementation.
+responsive geometry, cached revisits and end-to-end timing require independent browser review.
+Earlier visual checks of the baseline do not certify this implementation.

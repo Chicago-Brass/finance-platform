@@ -1,85 +1,66 @@
 # Design patterns and invariants
 
-## Responsibility split
+## Layer boundaries
 
-| Layer | Owns | Does not own |
-| --- | --- | --- |
-| Airtable native automation | Primary event and trigger record ID | Database journal persistence |
-| Airtable CORE handlers | Category filters, amount components, account pairs, relevant references | Generic SQL persistence |
-| Airtable UTILS | ID-based linked reads, caching/batching, cents/date helpers, webhook sender | New accounting assumptions |
-| Airtable HELPER | Human-readable logs | Filters, amounts, posting behavior |
-| Edge HTTP handler | Shared-secret authentication, JSON boundary, safe HTTP results | Category matching |
-| Edge posting service | Validation, account identity resolution, replay checks, one SQL transaction | T-Chart-specific allocation or inferred splits |
-| Report frontend | Authorized reads, mapping/grouping, display and interaction | Source-record migration or financial corrections |
+| Layer | Responsibility |
+| --- | --- |
+| Native Airtable trigger | Primary event and owning source record ID |
+| Airtable CORE | Category filters, component amounts, final debit/credit pairs and results |
+| Airtable UTILS | ID-based reads, batching/cache, dates/cents and HTTP transport |
+| Airtable HELPER | Relevant, readable logs only |
+| Edge HTTP handler | Shared-secret authentication, JSON boundary and safe HTTP errors |
+| Edge posting service | Validation, account resolution, replay checks and one SQL transaction |
+| Report application | Authorized reads, grouping, presentation and interactions |
 
-## Airtable category structure
+Each category has a named handler that checks its own filters and loads required data on demand.
+Evaluate every eligible category; do not use an exclusive first-match router. A matching unresolved
+handler fails before its prepared packet is sent. Keep business intent visible instead of building
+a generic predicate engine or wrapping every one-line expression in a helper.
 
-Keep a readable `main()` and named category handlers. A handler checks its own category filters,
-loads additional data when required, calculates its actual posting pairs and pushes a result.
-Main evaluates all eligible handlers. A payment can legitimately create several categories.
+## Accounting contracts
 
-Do not restore the discarded generic descriptor/predicate engine or an exclusive first-match
-`if/else` router. Do not split every one-line expression into a wrapper. Reuse substantive shared
-reads and helpers while keeping each category's business intent visible.
+- Keep `Report` and `ReportLine` in `lib/reports/types.ts` stable.
+- Calculate in integer cents. Store database money as `numeric(18,2)` and send positive posting
+  amounts as decimal strings. Account direction determines debit versus credit.
+- Display USD with two decimals, explicit `$0.00`, and parentheses for negative values. Missing
+  data is distinct from zero; display rounding never changes financial totals.
+- Allocation without explicit per-invoice amounts is proportional to Invoice Amount To Pay,
+  deterministic in cents and conservative of the payment total.
+- Never repeat a complete amount for every account in an unspecified split. Missing mappings fail
+  explicitly. Zero components are no-ops; invalid required values fail.
+- Report display/search/collapse filters do not recompute financial totals. Ledger footer totals
+  are explicitly page totals. Balance Sheet columns are snapshots, not additive periods.
+- Account `active` is a label; `is_postable`, valid identities, balanced lines, period guards,
+  authentication and approved-user access remain functional checks.
 
-Prepare all categories before the first webhook. A matching unresolved handler throws before
-posting that run's prepared packet. Several source packets still mean separate transactions:
-a later network failure can occur after an earlier acknowledgement. Log every acknowledgement
-immediately and retry only with the same identity and financial payload.
+## Identity and replay
 
-## Financial decisions
+Record IDs establish identity; names are labels. Source system, table, record and rule identify a
+journal. Exact replays return existing entries; changed financial payloads conflict instead of
+editing posted data. Event type scopes event-category checks and is metadata, not a way to create
+another journal for the same source/rule.
 
-- Use actual single-select/rollup values and stable FIN IDs, not approximate wording from old notes.
-- In payment classification, read Invoice Type and Vendor Type from Payments. Multiple distinct
-  vendor types are an error rather than an invented normalization path.
-- For a payment shared across invoices without explicit allocation, weight by Invoice Amount To Pay.
-  Allocate integer cents deterministically and conserve the payment total.
-- Do not duplicate a whole invoice or line amount across multiple linked accounts. Missing split
-  definitions remain blocked. Legacy records are not automatically retrofitted into a new schema.
-- Blank first-shipment date or Payment Date on/before first shipment is a customer deposit. A later
-  payment is post-shipment settlement. Equal dates mean deposit. Clear to Purchase is not required.
-- Cancellation and return categories create their supplied actual entries. There is no automatic
-  search/reversal/deletion of the original journal in this implementation.
-- Zero posting amounts are no-ops. Invalid/missing required amounts fail. Display rounding and
-  historical Airtable status tolerances are not permission to change ledger amounts.
+Invoice-owned postings retain invoice identity even when a payment triggers them. Audit links for
+payment-triggered packets point to the triggering payment; invoice events point to the invoice.
+Singular references populate the defined line columns; plural references remain structured context.
+Airtable does not generate notes, while the receiver retains optional notes support.
 
-## Source identity, retries and references
+Cancellation/return handlers post their supplied actual pairs. They do not automatically locate,
+reverse or delete an earlier journal. Existing database reversal support is a separate capability.
 
-The durable source/rule identity uses source system, source table, source record ID and rule code.
-Exact retries return existing entries. Changed dates, amounts, accounts, references or category sets
-conflict instead of editing posted records. `eventType` is metadata and scopes complete event-category
-checks; it is not an extra uniqueness dimension that permits duplicate source/rule journals.
+## Backend and security
 
-Payment-owned and invoice-owned packets are separate even inside the consolidated Sent script.
-Vendor credits/rebates use invoice ownership so a later triggering payment does not repost an
-invoice total. A bill and its applied credit can have different invoice references on each leg.
+`index.ts` configures the runtime and verified-TLS connection. `handler.ts` authenticates and
+returns safe responses. `ledger.ts` validates and persists generic pairs. `errors.ts` defines owned
+errors. Use parameterized SQL and existing database guards. Do not add category-specific backend
+accounting logic, disable TLS verification, bypass RLS or expose a server key to the frontend.
 
-Payment-triggered audit URLs point to the triggering FIN payment. Invoice-created/Create Entry
-events have no payment and point to the source invoice. Invoice labels and references are separate
-from audit-link ownership. Renaming a source does not rewrite an old posted description.
+## UI and maintainability
 
-Airtable no longer constructs or sends notes. The receiver retains optional notes support for a
-future defined implementation. Structured singular references populate the current columns; plural
-reference arrays and branch can remain payload context without being converted into notes.
+Reuse shared controls, formatters, icons, drawers and request caches. Keep filter shells independent
+of data loading. Preserve keyboard access, focus restoration, accessible names and reduced-motion
+support. Render signed/negative analytics honestly; undefined ratios show N/A rather than invented
+percentages. Use the navy/white/neutral palette and semantic type sizes, not blanket font changes.
 
-## Backend layout
-
-`index.ts` configures the runtime and verified-TLS database connection. `handler.ts` authorizes and
-returns safe errors. `ledger.ts` validates and persists generic pairs in a transaction. `errors.ts`
-defines safe owned errors. Fixed account references and FIN source-number aliases are resolved
-there; names and free-text category titles do not choose account identities.
-
-Do not add a stored accounting router or one Edge Function per category. Database constraints,
-posting-period checks and guard triggers remain defense in depth. Authentication/validation is
-not removed merely because the caller is an Airtable script with typed inputs.
-
-## Presentation patterns
-
-Use the shared report contract, renderers, formatters and icons. Keep the navy/white/neutral palette,
-compact desktop text, aligned numeric columns and consistent radius hierarchy. Charts must respect
-signed values: negative composition values render as a signed list rather than misleading slices.
-Zero denominators show N/A; shares above 100% remain truthful and are not clipped into a normal gauge.
-
-The full-screen landing uses a background image only for artwork. Brand copy, inputs, errors, button
-states and password visibility are live accessible elements. Preserve keyboard focus and reduce
-animation for reduced-motion users. Do not bake text or form controls into a screenshot background.
+Prefer a small readable `main()` and substantive functions. Remove unused code, preserve errors at
+trust boundaries and add focused regression checks for new branching, money or security behavior.

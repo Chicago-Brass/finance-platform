@@ -1,35 +1,38 @@
-# Focused testing and publication boundaries
+# Verification and release workflow
 
-## Frontend and access
+## Application checks
 
 ```sh
 node --test app/landing.test.cjs components/*.test.cjs lib/reports/*.test.cjs middleware.test.cjs supabase/functions/ledger-payment/handler.test.mjs
 npm run typecheck
 git diff --check
+npm run build
 ```
 
-The 2026-11-06 shell/data separation and journal-detail checks have 137 tests passing. Coverage includes report amounts/signs,
-per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
-pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
-not hosted accounting data reconciliation.
+Use focused subsets during implementation; run the relevant release cohort before publication.
+Tests cover cents/signs, grouping, earnings baselines, period modes, exports, auth gates, private
+cache isolation, stale requests, pagination/search, control behavior and drawer interaction.
+Mocked/component checks do not prove browser geometry or deployed permissions.
 
-The performance cohort also checks parallel drawer sections, report-scoped cache reuse, abort/error
-handling, input validation, metadata-only dropdown reads, persistent controls and
-data-only loading, independent errors, static controls and modal dropdown keyboard behavior. Native browser verification is pending: the browser access host remained
-unavailable after Jeric reconnected and the browser runtime was reset. Do not claim measured
-end-to-end navigation or visual validation from these unit checks.
+Build in an isolated directory when a dev server owns the same checkout's `.next`. Keep local
+source, test outputs, preview deployment and production deployment evidence distinct.
 
-Earlier baseline browser review used Jeric Chrome for desktop and narrow layouts, native date filters, display filters,
-independent table/sidebar scrolling, analytics tabs, General Ledger first/final pages, landing input
-behavior and authenticated root redirect. An anonymous loopback host allowed visual review without
-clearing the normal signed-in browser session. Preserve user sessions and tabs.
-Those earlier checks do not verify the current shared-control implementation.
+## Browser review
 
-The native PDF dialog and a fresh live password submission were not exercised in the final landing
-pass. The browser Excel download timed out during report work; raw workbook values/formats were
-validated by the export test. Do not turn those limited checks into an end-to-end claim.
+Use the requested signed-in Chrome profile and preserve its session. Reuse one task tab and close
+agent-created tabs when done; preserve pre-existing tabs. Never request website access.
 
-## Airtable native script checks
+Check desktop and narrow layouts: immediate destination headers/filters, data-only loading and
+errors, Back/Forward, cached revisits, search on blur/Enter, keyboard controls, outside-click and
+Escape dismissal, focus trapping/restoration, and independent table/sidebar scrolling. In the
+journal drawer, test vertical wheel scrolling with the pointer over the table, not only blank
+space. Verify the shared drawer width, compact header, source links and section/table borders.
+
+Review console/network errors and measure warm reads separately from dev compilation and browser
+rendering. Restore viewport/print overrides. If browser access is unavailable, state the limit;
+do not present source tests, HTTP timings or screenshots from another build as current visual proof.
+
+## Native Airtable checks
 
 ```sh
 node airtable/check.cjs
@@ -39,74 +42,37 @@ node airtable/check-expense-entry.cjs
 node airtable/check-expense-created.cjs
 ```
 
-These run mocked native record reads and HTTP calls. They do not toggle Sent/Create Entry, mutate
-Airtable records or post to the hosted ledger. The settlement check now targets the consolidated
-Sent source; it is not evidence that a separate Invoice Paid automation still exists.
+These mock native records and webhook fetches. They do not publish scripts or create hosted
+journals. Use the checks for affected handlers; expense-entry includes bank mapping, shared-bank
+payments, cents/no-op behavior and failure-before-post regressions.
 
-## Edge/database integration
+Airtable Test can run actual actions. Retriggering Sent/Create Entry or sending a webhook needs
+explicit task authorization even when the script does not write back to Airtable. Search historical
+samples by Payment Date; never change legacy records to fit a test case.
 
-See [supabase/tests/README.md](../supabase/tests/README.md). The runners:
+## Database checks
+
+[Integration-test guide](../supabase/tests/README.md) documents disposable loopback PostgreSQL tests:
 
 ```sh
 sh supabase/tests/check-payment-posting.sh
 sh supabase/tests/check-report-reads.sh
 ```
 
-each create and remove their own disposable PostgreSQL container bound to loopback. They use a
-complete initial migration, reference seed and synthetic journals, not hosted credentials or a
-production reset. The payment runner has 26 tests and proves the generic writer works without the legacy
-posting/reversal RPCs; the report runner proves `get_trial_balances` equals per-period
-`get_trial_balance` reads and respects grants, RLS and future-object defaults. A sixth test compares
-the optimized ledger view to the initial view for full rows, account/date/offset filters, split
-entries and explicit offsets. Use them when changing the writer, report
-reads or database financial behavior; they are not required for every presentation-only change.
+They restore the tracked migration/seed and use synthetic data. Run them for relevant writer,
+financial query or schema changes. Never reset a hosted database as routine frontend QA. A
+service-key schema read does not prove signed-in viewer RLS access; test that context separately.
 
-## Live state and changes
+## Publication
 
-A local source hash, a saved Airtable editor, a published automation and a deployed Edge version
-are distinct. Before changing a live script, read its native trigger, inputs, secret and saved source.
-After an authorized publication, read back the deployed source/configuration. Recheck current ON/OFF
-state rather than inheriting a dated report.
+1. Inspect Git status and the entire authorized change set. Preserve concurrent work and keep
+   credentials, private extracts, raw logs and temporary artifacts out of commits.
+2. Validate affected behavior and update its repository documentation.
+3. Push a feature branch and open a PR to `main`. Publish/merge only when task authorization permits.
+4. Confirm the merged commit and Vercel's Production environment/status; a successful Preview is
+   not production proof. Verify the production URL and relevant auth/error behavior.
+5. For Airtable/Edge publication, read back the saved/published code and configuration separately.
+   A frontend deployment does not publish automation scripts or apply database migrations.
 
-Airtable Test can execute real actions. Checkbox retriggers and webhook tests create financial effects
-even if the script does not write back into Airtable. Hosted journal deletion, live sample toggles,
-email sends, schema changes and releases need explicit task scope. Do not repeat earlier approvals
-from this long conversation as though they authorize a new financial test run.
-
-When test samples are authorized, search with filters and use Payment Date, not Created Time. Do not
-change old source data merely to obtain samples. Report missing/untested categories separately from
-implemented failures and expected Not yet implemented blockers.
-
-## Dashboard controls review
-
-The draft PR spec is [dashboard controls](../docs/dashboard-controls-spec.md). Three independent
-source review passes covered correctness, UI/accessibility and loading/print geometry. Confirmed
-pending-filter, modal-popup, loader-size and print/legend issues were fixed and regression-tested.
-The read database runner also includes two global ledger-search tests: search before pagination,
-literal punctuation, all scope filters, draft exclusion and caller RLS. There are eight database
-read tests. Browser interaction and computed responsive geometry remain unverified because the
-browser-access host is unavailable.
-
-The client report application is checked for immediate destination selection, native-history
-navigation without an RSC request, filter/query normalization, data-only loading and errors,
-request sharing/expiry/refresh, StrictMode replay, sign-out/account-change invalidation, JSON API
-401/403 behavior, every report dispatch and unchanged financial View/Display results.
-
-Authenticated live HTTP checks confirmed all five SSR pages render correct headers and controls
-with zero financial table rows; every data endpoint returns JSON separately, and anonymous reads
-return 401. The Ledger returned 100 rows on page one and 72 on page two for 2026-01-01 through
-2026-11-05. A production-mode build on localhost:3011 measured fresh API reads, not browser cache
-hits. Cold/HMR development requests must not be presented as production query timing.
-
-Browser host access remains unavailable. Actual Chrome console, history/hydration behavior,
-visual transitions, responsive geometry and cached-navigation timing remain pending; keep the PR
-draft. The production-mode HTTP measurements and source tests do not prove those browser checks.
-
-## Journal entry detail verification
-
-Focused checks cover full-row pointer/Enter/Space activation, independent audit links, all split
-lines and cents totals, immediate loading/error headers, modal focus/dismissal, API identity/auth
-validation and complete 500-line paging. A read-only DUAL ENTRY sample returned six ordered lines
-with resolved account names and matching totals. That schema/read check used the scoped server
-key; it does not establish viewer RLS behavior. Application reads still use the existing verified
-user session and RLS. Browser host access remains unavailable, so visual interaction is pending.
+Production journal cleanup, financial repairs, schema/grant changes and live posting tests require
+explicit scope. No test or release command implies permission for adjacent financial mutations.
