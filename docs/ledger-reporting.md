@@ -60,7 +60,7 @@ only when the unfiltered lines add up to the trial-balance debits and credits.
 All report headings use one row for the title, divider and entity description. Date filters carry
 the dates without duplicate Trial Balance or General Ledger captions. Monthly/quarterly/annual
 statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapshots retain their
-exact as-of date below the compact heading. Analytics use compact, right-aligned values.
+exact as-of date inline in the compact heading. Analytics use compact, right-aligned values.
 
 Report links and GET forms navigate through the Next router. The persistent shell keeps the header
 and consolidated date/view/display/search controls available while only data panels show loading.
@@ -82,10 +82,9 @@ and parentheses for negative amounts. Missing values remain distinct from zero. 
 and Trial Balance use the same cents formatter and combine account codes/names in pills. Exports use the currently visible
 rows; print hides the navigation, filters, view controls and analytics sidebar.
 
-The UI changes are consolidated on main and were verified locally. This work does not establish
-a hosted frontend deployment. These UI changes make no database, schema, ledger-data
-or Airtable changes. Browser comparison against the approved design is complete in the Jeric
-Chrome profile. Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
+The earlier UI baseline was consolidated on main and visually reviewed in the Jeric Chrome profile.
+Those checks precede the current shared-control changes, whose browser verification is pending.
+Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
 independent table/sidebar scrolling. A 390x844 check verified the stacked narrow layout without
 page overflow. Print media expands the table and hides the sidebar instead of clipping content.
 
@@ -97,15 +96,16 @@ aggregates all requested ranges from it. Its results are regression-checked agai
 `get_trial_balance` calls. On older databases without the batched function, the app falls back to one
 `get_trial_balance` call per range.
 
-Navigation tabs prefetch their loading boundary, and each report streams through Suspense so the
-destination route/skeleton can commit while data loads. The active tab and skeleton title use the
-pending destination immediately. Detail/filter links do not prefetch every possible financial query.
+Each report uses data-only Suspense. Navigation retains the current shell until the destination
+shell arrives, avoiding a temporary placeholder filter bar. The active tab and progress indicator
+show the pending destination immediately. Navigation/detail/filter links do not prefetch unvisited
+financial datasets. Shared filter components place labels immediately above their controls.
 General Ledger's date/account filters share one desktop row; quick dates are inside its period picker.
 Account dropdown choices read `accounts` metadata without calculating a cumulative trial balance.
 The header uses the tightly cropped 250 x 78 official site logo at 2x display density.
 
 `vercel.json` places server functions in `pdx1`, matching the database's Oregon (`us-west-2`) region.
-Middleware retains live `getUser` and allowlist validation. Report reads verify the JWT using
+Middleware runs live `getUser` and allowlist validation concurrently and requires both. Report reads verify the JWT using
 `getClaims`, whose signing-key cache avoids the duplicate Auth lookup. RLS remains active.
 
 Read-only `EXPLAIN ANALYZE` samples as an approved authenticated user on 2026-11-05:

@@ -31,6 +31,7 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `components/StatementWorkspace.tsx` | Persistent IS/BS header/controls; data-only Suspense, local View/Display and export readiness |
 | `components/LedgerWorkspaces.tsx` | Persistent TB/GL/T-Chart controls; optimistic ledger filter scope and independent account options |
 | `components/SearchableSelect.tsx` | Searchable single-select with keyboard interaction and dialog-aware popup placement |
+| `components/FilterControls.tsx`, `components/filter-controls.css` | Shared filter bar, top label, search field and keyboard-operated segmented switch across reports and drawer |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
 | `lib/reports/analytics.ts` | Position/Movement data derived from the report and comparison periods |
@@ -97,6 +98,9 @@ month names, Q1-Q4 or years, with year/date context inline in the same thin head
 partial-snapshot dates retained where needed. Search wrappers own their outer border and focus
 treatment; their text inputs stay borderless. Avoid broad toolbar input rules that override search
 or combobox padding. Trial Balance groups its date controls left and display controls right.
+Filter labels sit above 32px controls with a 3px gap in the shared 64px-minimum bar. Screen typography uses `--report-text-size` (13px) for regular table/control text, 14px section
+headings and navigation, 11-12px supporting labels, and 22px page headings. Sidebar headline
+amounts are 20px. Sizes follow these roles rather than a uniform increment on every element.
 
 Next client navigation replaces full-page filter reloads. Persistent page shells render URL-based
 headers and one compact control bar before financial promises resolve. Only data panels become
@@ -108,6 +112,16 @@ layout and reads. Income Statement and Balance Sheet View/Display switches are b
 from data loaded once per year/month range or as-of date, so they make no request. That data comes
 from one `get_trial_balances` call (included in the initial baseline); on older databases the app falls
 back to one `get_trial_balance` call per range.
+
+There is no temporary route-level loading bar. A transition retains the current page until the
+destination shell arrives, while the navbar and progress indicator show the pending destination.
+Navigation links do not prefetch unvisited financial datasets. Middleware runs live `getUser()`
+and `current_app_role` concurrently; both must succeed. The Income Statement streams only revenue
+and expense account balances, leaving its figures and analytics unchanged.
+
+Promises passed from server pages to client workspaces are React stream thenables. Subscribe to
+account metadata with `.then(success, failure)`; their `.then()` does not return a chainable promise.
+HTTP-only page checks do not exercise this client effect or prove hydration succeeds.
 
 Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
 above the page with that account's summary, filters and posted lines. Totals and lines start as

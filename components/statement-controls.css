@@ -1,26 +1,13 @@
-.statement-control-bar { gap: 10px; }
-.statement-control-bar .statement-period-controls { display: inline-flex; align-items: center; flex: 0 1 auto; gap: 8px; min-width: 0; }
-.statement-control-bar .period-picker-trigger { max-width: 250px; min-height: 32px; }
+.statement-control-bar .period-picker-trigger { max-width: 250px; }
 .statement-control-bar .period-picker-trigger > span:not(:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.statement-control-bar .report-segments { flex-wrap: nowrap; gap: 10px; }
-.statement-control-bar .view-control-group { gap: 6px; }
-.statement-control-bar .segment-option { padding-left: 7px; padding-right: 7px; font-size: 12px; }
-.statement-control-bar .report-account-search { margin-left: auto; min-width: 140px; flex: 0 1 180px; }
-.statement-control-bar .report-account-search input { width: 100%; }
+.statement-control-bar .filter-search-field { margin-left: auto; flex: 0 1 180px; }
 .statement-control-bar .report-filter-menu { flex-shrink: 0; }
 .statement-control-bar .period-picker-panel .date-presets { margin-bottom: 14px; }
 .statement-results { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
 .statement-results > .report-workspace { min-height: 0; flex: 1; }
-.statement-control-bar .report-filter-menu > summary:focus-visible,
-.statement-control-bar .segment-option:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
-@media (max-width: 1180px) {
-  .statement-control-bar .report-segments { flex-wrap: wrap; }
-  .statement-control-bar .view-control-group > .segment-label { display: none; }
-}
 @media (max-width: 720px) {
-  .statement-control-bar .report-account-search { margin-left: 0; flex: 1 1 180px; }
+  .statement-control-bar .filter-search-field { margin-left: 0; flex: 1 1 180px; }
   .statement-control-bar .period-picker-trigger { max-width: 100%; }
-  .statement-control-bar .report-segments { gap: 6px; }
 }
 @media print {
   .statement-results, .statement-results > .report-workspace { display: block; height: auto; min-height: 0; }

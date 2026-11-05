@@ -10,6 +10,7 @@ import type { AccountActivityParts, ActivityFilters, DrillRange } from "@/lib/re
 import { formatDate } from "@/lib/reports/report-utils";
 import { ReportLink } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
+import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
 import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
 import "./account-drawer.css";
 
@@ -131,12 +132,12 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
           </> : <div className="drill-summary-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading account totals...</span></div>}
         </section>
 
-          <div className="drill-filters" role="search" aria-label="Filter ledger lines">
-            <label className="drill-search"><Icon path="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5" /><span className="sr-only">Search lines</span><input type="search" placeholder="Search entry, offset or notes" value={filters.query} onChange={event => set({ query: event.target.value })} /></label>
+          <FilterBar className="drill-filters" role="search" label="Filter ledger lines">
+            <SearchField label="Search lines" placeholder="Entry, offset or notes" value={filters.query} onChange={query => set({ query })} />
             <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
             <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
-            <div className="drill-sides" role="group" aria-label="Entry side">{(["all", "debit", "credit"] as const).map(side => <button key={side} type="button" aria-pressed={filters.side === side} onClick={() => set({ side })}>{side === "all" ? "All" : side === "debit" ? "Debit" : "Credit"}</button>)}</div>
-          </div>
+            <SegmentedControl label="Entry side" value={filters.side} options={[{ value: "all", label: "All" }, { value: "debit", label: "Debit" }, { value: "credit", label: "Credit" }]} onChange={side => set({ side })} />
+          </FilterBar>
 
         {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-lines-loading" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="report-spinner" aria-hidden="true" /><span>Loading ledger lines...</span></section> : <>
           <div className="drill-status" role="status">

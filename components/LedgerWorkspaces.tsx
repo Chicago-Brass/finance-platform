@@ -10,15 +10,12 @@ import { ReportPageHeader } from "./ReportPageHeader";
 import { ReportDataBoundary, ReportDataLoading, ReportDataRegion, useReportNavigate } from "./ReportNavigation";
 import { ReportIcon } from "./ReportIcons";
 import { SearchableSelect } from "./SearchableSelect";
+import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
 import { ACCOUNT_TYPES, ledgerHref, ledgerSearchParam } from "./ledger-table-utils";
 import "./ledger-tables.css";
 
 type LedgerData = Awaited<ReturnType<typeof getGeneralLedger>>;
 type LedgerOptions = LedgerAccountFilters & { from: string; to: string; page: number };
-
-function SearchField({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
-  return <label className="report-account-search"><ReportIcon name="search" /><span className="sr-only">{label}</span><input type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={label} /></label>;
-}
 
 export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Promise<TbRow[]> }) {
   const [query, setQuery] = useState("");
@@ -30,8 +27,8 @@ export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Prom
     <DateFilter to={asOf} asOfOnly>
       <div className="control-bar-actions">
         <SearchableSelect label="Account type" value={type} options={[{ value: "all", label: "All types" }, ...Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))]} onChange={setType} />
-        <label className="ledger-checkbox" title="Include accounts with no debit, credit or balance."><input type="checkbox" checked={showZero} onChange={event => setShowZero(event.target.checked)} />Include zero activity</label>
-        <SearchField value={query} onChange={setQuery} label="Search accounts" />
+        <SegmentedControl label="Accounts" value={showZero} options={[{ value: true, label: "All" }, { value: false, label: "With activity" }]} onChange={setShowZero} />
+        <SearchField value={query} onChange={setQuery} label="Search accounts" placeholder="Name or account number" />
         <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
       </div>
     </DateFilter>
@@ -79,7 +76,11 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
   }, []);
   useEffect(() => {
     let current = true;
-    accountData.then(rows => { if (current) { setAccounts(rows); setUnavailable(false); } }).catch(() => { if (current) setUnavailable(true); });
+    // Streamed React promises support both callbacks, but their .then() is not chainable.
+    accountData.then(
+      rows => { if (current) { setAccounts(rows); setUnavailable(false); } },
+      () => { if (current) setUnavailable(true); },
+    );
     return () => { current = false; };
   }, [accountData]);
   const change = (changes: Partial<LedgerOptions>) => {
@@ -101,11 +102,9 @@ export function GeneralLedgerWorkspace({ options, data, accountData }: { options
     <ReportPageHeader title="General Ledger" description="Chicago Brass Inc. / Posted ledger / USD" />
     <DateFilter from={scope.from} to={scope.to} preserve={preserve} onRangeChange={range => change({ from: range.from ?? scopeValue.current.from, to: range.to })}>
       <LedgerAccountFilter from={scope.from} to={scope.to} account={scope.account} offset={scope.offset} query={scope.query} side={scope.side} accounts={accounts} unavailable={unavailable} onChange={change} />
-      <div className="ledger-side-controls" role="group" aria-label="Entry side">
-        {[{ value: "all", label: "All" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }].map(item => <button key={item.value} type="button" aria-pressed={(scope.side ?? "all") === item.value} onClick={() => change({ side: item.value as "all" | "debit" | "credit" })}>{item.label}</button>)}
-      </div>
+      <SegmentedControl label="Entry side" value={scope.side ?? "all"} options={[{ value: "all", label: "All" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => change({ side })} />
       <form className="ledger-global-search" role="search" onSubmit={event => { event.preventDefault(); search(); }}>
-        <label className="report-account-search"><ReportIcon name="search" /><span className="sr-only">Search all ledger records</span><input name="q" type="search" maxLength={200} value={draft} placeholder="Search all records" onChange={event => updateDraft(event.target.value)} onFocus={() => { searchFocused.current = true; }} onBlur={() => { searchFocused.current = false; search(); }} /></label>
+        <SearchField label="Search all ledger records" name="q" maxLength={200} value={draft} placeholder="Search all records" onChange={updateDraft} onFocus={() => { searchFocused.current = true; }} onBlur={() => { searchFocused.current = false; search(); }} />
         <button type="submit" className="btn btn-quiet" aria-label="Apply ledger search"><ReportIcon name="search" /><span className="ledger-search-button-label">Search</span></button>
       </form>
       <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { updateDraft(""); change({ account: undefined, offset: undefined, query: undefined, side: "all" }); }}>Reset filters</button>
@@ -127,11 +126,11 @@ export function PostingRulesWorkspace({ asOf, data }: { asOf: string; data: Prom
   const [category, setCategory] = useState("all");
   return <article className="report-page ledger-page">
     <ReportPageHeader title="T-Chart" description="Chicago Brass Inc. / Posting rules" />
-    <div className="report-filters dashboard-control-bar no-print" aria-label="Posting rule filters">
+    <FilterBar className="no-print" label="Posting rule filters">
       <SearchableSelect label="Category" value={category} options={CATEGORIES} onChange={setCategory} />
-      <SearchField value={query} onChange={setQuery} label="Search rules or accounts" />
+      <SearchField value={query} onChange={setQuery} label="Search rules or accounts" placeholder="Rule, description or account" />
       <button type="button" className="btn btn-quiet control-reset" disabled={!query && category === "all"} onClick={() => { setQuery(""); setCategory("all"); }}>Reset filters</button>
-    </div>
+    </FilterBar>
     <ReportDataRegion><ReportDataBoundary resetKey={data}><Suspense fallback={<ReportDataLoading label="Loading posting rules" />}><PostingRulesData data={data} asOf={asOf} query={query} category={category} /></Suspense></ReportDataBoundary></ReportDataRegion>
   </article>;
 }

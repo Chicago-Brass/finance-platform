@@ -49,13 +49,14 @@ test('Landing stays public while report authorization and the app allowlist rema
   }).middleware;
   const request=pathname=>({nextUrl:{pathname,clone:()=>new URL('http://localhost:3010'+pathname)},cookies:{getAll:()=>[]}});
   assert.equal(await middleware(request('/')),response);
-  assert.equal((await middleware(request('/general-ledger'))).destination,'http://localhost:3010/');
   assert.equal(roleChecks,0);
+  assert.equal((await middleware(request('/general-ledger'))).destination,'http://localhost:3010/');
+  assert.equal(roleChecks,1);
   user={id:'unapproved'};
   assert.equal((await middleware(request('/income-statement'))).destination,'http://localhost:3010/not-authorized');
   role='viewer';
   assert.equal(await middleware(request('/income-statement')),response);
-  assert.equal(roleChecks,2);
+  assert.equal(roleChecks,3);
 });
 
 test('Callback failures and signout return to the new landing instead of the old screen',async()=>{

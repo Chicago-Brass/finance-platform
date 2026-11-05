@@ -13,6 +13,7 @@ import type { DrillTarget } from "./AccountDrawer";
 import { ReportAnalytics } from "./ReportAnalytics";
 import { ReportIcon } from "./ReportIcons";
 import { closePopoverOnEscape } from "./ReportViewControls";
+import { FilterField, SearchField } from "./FilterControls";
 
 /** A section can collapse when its next row is nested inside it. */
 export function collapsibleIds(lines: ReportLine[]) {
@@ -79,7 +80,8 @@ export function useReportDisplay(): ReportDisplayState {
 export function ReportDisplayControls({ display, summary = false }: { display: ReportDisplayState; summary?: boolean }) {
   const { query, hideZero, setQuery, setHideZero, setCollapsed } = display;
   return <>
-    <label className="report-account-search" title={summary ? "Choose Details to search individual accounts." : undefined}><ReportIcon name="search" /><span className="sr-only">Search accounts</span><input type="search" placeholder={summary ? "Search in Details" : "Search accounts"} value={query} disabled={summary} onChange={event => setQuery(event.target.value)} /></label>
+    <SearchField label="Search accounts" placeholder={summary ? "Search in Details" : "Name or account number"} value={query} disabled={summary} onChange={setQuery} title={summary ? "Choose Details to search individual accounts." : undefined} />
+    <FilterField label="Options">
     <details className="report-filter-menu" onKeyDown={closePopoverOnEscape}>
       <summary className="btn btn-quiet"><ReportIcon name="filter" />More{hideZero && <span className="report-filter-count">1</span>}</summary>
       <div className="report-filter-popover">
@@ -89,7 +91,7 @@ export function ReportDisplayControls({ display, summary = false }: { display: R
         <p>Display filters do not change financial totals.</p>
         {(query || hideZero) && <button type="button" className="report-reset-display" onClick={() => { setQuery(""); setHideZero(false); }}>Reset display</button>}
       </div>
-    </details>
+    </details></FilterField>
   </>;
 }
 

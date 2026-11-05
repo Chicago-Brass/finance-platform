@@ -17,6 +17,7 @@ import type { ReportDisplayState } from "./ReportView";
 import { ReportDataBoundary, ReportDataLoading, ReportDataRegion, useReportPending } from "./ReportNavigation";
 import { ReportIcon } from "./ReportIcons";
 import { ReportViewControls } from "./ReportViewControls";
+import { FilterBar } from "./FilterControls";
 import "./statement-controls.css";
 
 const INCOME_GRAINS: { value: IncomeGrain; label: string }[] = [{ value: "month", label: "Monthly" }, { value: "quarter", label: "Quarterly" }, { value: "year", label: "Annual" }];
@@ -63,7 +64,7 @@ function StatementShell({ title, period, controls, exports, resetKey, children }
       <div className="report-heading"><h1 className="report-title">{title}</h1><p className="report-entity">Chicago Brass Inc. - Consolidated / Accrual basis / USD</p><p className="report-period">{period}</p></div>
       {exports}
     </header>
-    <div className="dashboard-control-bar statement-control-bar no-print" aria-label={`${title} controls`}>{controls}</div>
+    <FilterBar className="statement-control-bar no-print" label={`${title} controls`}>{controls}</FilterBar>
     <ReportDataRegion analytics>
       <ReportDataBoundary resetKey={resetKey} analytics><Suspense fallback={<ReportDataLoading analytics />}>{children}</Suspense></ReportDataBoundary>
     </ReportDataRegion>

@@ -135,10 +135,10 @@ test('Statement shells keep header, exports and all controls visible before data
   for (const [Component, options, title] of cases) {
     const markup = renderToStaticMarkup(React.createElement(Component, { options, data: pending }));
     assert.match(markup, new RegExp(`>${title}</h1>`));
-    assert.match(markup, /dashboard-control-bar statement-control-bar/);
-    assert.match(markup, /aria-label="Report columns"/);
-    assert.match(markup, /aria-label="Report detail"/);
-    assert.match(markup, /placeholder="Search accounts"/);
+    assert.match(markup, /dashboard-control-bar filter-control-bar statement-control-bar/);
+    assert.match(markup, /aria-label="View"/);
+    assert.match(markup, /aria-label="Display"/);
+    assert.match(markup, />Search accounts<\/label>/);
     assert.match(markup, /Show zero accounts/);
     assert.match(markup, /Expand all/);
     assert.match(markup, /Collapse all/);

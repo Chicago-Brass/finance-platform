@@ -3,26 +3,27 @@
 ## Frontend and access
 
 ```sh
-node --test app/landing.test.cjs components/*.test.cjs lib/reports/*.test.cjs
+node --test app/landing.test.cjs components/*.test.cjs lib/reports/*.test.cjs middleware.test.cjs supabase/functions/ledger-payment/handler.test.mjs
 npm run typecheck
 git diff --check
 ```
 
-The 2026-11-05 dashboard-controls follow-up has 99 frontend/HTTP tests passing. Coverage includes report amounts/signs,
+The 2026-11-06 shared-controls follow-up has 107 frontend/HTTP tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
 
 The performance cohort also checks parallel drawer sections, report-scoped cache reuse, abort/error
-handling, input validation, metadata-only dropdown reads, immediate route Suspense boundaries and
+handling, input validation, metadata-only dropdown reads, persistent controls and
 data-only loading, independent errors, static controls and modal dropdown keyboard behavior. Native browser verification is pending: the browser access host remained
 unavailable after Jeric reconnected and the browser runtime was reset. Do not claim measured
 end-to-end navigation or visual validation from these unit checks.
 
-Browser review used Jeric Chrome for desktop and narrow layouts, native date filters, display filters,
+Earlier baseline browser review used Jeric Chrome for desktop and narrow layouts, native date filters, display filters,
 independent table/sidebar scrolling, analytics tabs, General Ledger first/final pages, landing input
 behavior and authenticated root redirect. An anonymous loopback host allowed visual review without
 clearing the normal signed-in browser session. Preserve user sessions and tabs.
+Those earlier checks do not verify the current shared-control implementation.
 
 The native PDF dialog and a fresh live password submission were not exercised in the final landing
 pass. The browser Excel download timed out during report work; raw workbook values/formats were
@@ -92,3 +93,8 @@ literal punctuation and reversed-date empty states passed. The preview default l
 100 records. These checks did not reproduce the reported unavailable state and are not browser
 interaction proof. Retrying the browser connection/reset failed, as did native Chrome capture
 with capture-service error -3811. Desktop/narrow screenshots remain pending.
+
+The latest check covers React stream thenables, shared search/switch keyboard behavior, concurrent
+middleware checks with both authorization conditions required, and Income Statement account-payload
+filtering with unchanged figures across every View/Display combination. Live authenticated backend
+timings and byte counts are recorded in the spec. These do not establish browser/cache timings.

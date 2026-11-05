@@ -85,6 +85,33 @@ The follow-up tightens heading/filter spacing, puts period/year labels on one he
 groups Trial Balance date controls on the left and display controls on the right. Its zero-activity
 option includes unused accounts; accounts with settled debit/credit activity remain visible.
 
+The subsequent runtime review found a client-only General Ledger crash: the RSC-delivered
+account metadata promise has a non-chainable `.then()`, so `.then(...).catch(...)` dereferenced
+`undefined` during hydration. It now subscribes with success and failure callbacks in one `.then()`.
+A regression uses a non-chainable thenable rather than the native Promise used by earlier mocks.
+This explains why the successful authenticated HTTP reads did not catch the failure.
+
+`FilterControls.tsx` owns the shared bar, labeled field, search and segmented-switch components.
+Dropdowns use the same labeled-field wrapper. Labels sit above controls with a 3px gap. Controls
+are 32px tall, and the labeled bar has a 64px minimum height, wrapping when necessary. Page-specific
+search/switch implementations and their competing style rules have been removed.
+
+The route-level loading page and its temporary filter bar have been removed. Navigation retains
+the mounted page until the destination shell arrives, then its existing data-only Suspense handles
+financial loading. Navbar destination/progress feedback remains immediate; cold URL commits still
+wait for the middleware and lightweight shell response. Navigation links do not prefetch full reports.
+
+Protected middleware now runs live user validation and the allowlist query concurrently and still
+requires both to pass. Financial reads were already parallel. The Income Statement strips unrelated
+asset, liability and equity accounts before streaming data; all six View/Display combinations and
+analytics retain the same financial results.
+
+Live authenticated backend samples on 2026-11-06 measured sequential access checks at 444-781ms
+and parallel checks at 239-254ms (two samples each). The 12-period account JSON was 143,482 bytes
+before filtering and 64,862 afterward. These are backend/payload measurements, not browser render,
+navigation-cache or layout-shift benchmarks. Local authenticated responses rendered all five pages.
+Actual browser console, screenshots, responsive geometry and cache timing remain unverified.
+
 Authenticated HTTP reads on localhost rendered all five pages. General Ledger default, search,
 second-page, account/offset/side filters, literal punctuation and reversed-date empty states all
 returned successfully; its preview default also rendered 100 records. The reported unavailable

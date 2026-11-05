@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import type { CSSProperties, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { selectActive, selectGroups } from "./searchable-select-utils";
+import { FilterField } from "./FilterControls";
 import type { SelectOption } from "./searchable-select-utils";
 import "./searchable-select.css";
 
@@ -100,8 +101,7 @@ export function SearchableSelect({ label, value, options, onChange, placeholder 
     }
   };
 
-  return <div ref={root} className={`searchable-select ${className}${disabled ? " is-disabled" : ""}`}>
-    <label className="searchable-select-label" htmlFor={inputId}>{label}</label>
+  return <FilterField ref={root} label={label} htmlFor={inputId} className={`searchable-select ${className}${disabled ? " is-disabled" : ""}`}>
     <div className="searchable-select-field">
       <input ref={input} id={inputId} type="text" role="combobox" autoComplete="off" spellCheck={false}
         aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? listId : undefined}
@@ -128,5 +128,5 @@ export function SearchableSelect({ label, value, options, onChange, placeholder 
       </div>
       {!visible.length && <div className="searchable-select-empty" role="status">No matches</div>}
     </div>, input.current?.closest('[role="dialog"]') ?? document.body)}
-  </div>;
+  </FilterField>;
 }

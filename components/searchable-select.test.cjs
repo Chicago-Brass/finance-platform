@@ -8,7 +8,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 function load(name, mocks = {}) {
   const file = path.join(__dirname, name), module = { exports: {} };
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const localRequire = specifier => mocks[specifier] ?? (specifier.endsWith('.css') ? {} : specifier.startsWith('.') ? load(`${specifier}.ts`, mocks) : require(specifier));
+  const localRequire = specifier => mocks[specifier] ?? (specifier.endsWith('.css') ? {} : specifier.startsWith('.') ? load(`${specifier}${fs.existsSync(path.join(__dirname, `${specifier}.tsx`)) ? '.tsx' : '.ts'}`, mocks) : require(specifier));
   new Function('require', 'module', 'exports', code)(localRequire, module, module.exports);
   return module.exports;
 }
@@ -97,4 +97,30 @@ test('Popup stays inside its modal dialog and uses the body only for non-modal c
       assert.equal(portalTarget, nearestDialog ?? body);
     }
   } finally { global.document = previousDocument; }
+});
+
+test('Shared search uses an associated top label and native submit-friendly input', () => {
+  const { SearchField } = load('FilterControls.tsx');
+  const markup = renderToStaticMarkup(React.createElement(SearchField, { label: 'Search accounts', id: 'shared-search', name: 'q', value: 'bank', onChange() {} }));
+  assert.match(markup, /<label class="filter-control-label" for="shared-search">Search accounts<\/label>/);
+  assert.match(markup, /id="shared-search" type="search"/);
+  assert.match(markup, /name="q"/);
+  assert.match(markup, /enterKeyHint="search"/);
+});
+
+test('Shared segmented controls move selection and focus with arrows, Home and End', () => {
+  const changes = [], focused = [], refs = { current: [] };
+  const mockReact = { ...React, useRef: () => refs };
+  const { SegmentedControl } = load('FilterControls.tsx', { react: mockReact });
+  const element = SegmentedControl({ label: 'View', value: 'month', options: [{ value: 'month', label: 'Monthly' }, { value: 'quarter', label: 'Quarterly' }, { value: 'year', label: 'Annual' }], onChange: value => changes.push(value) });
+  const buttons = element.props.children.props.children;
+  buttons.forEach((button, index) => button.props.ref({ focus() { focused.push(index); } }));
+  for (const [index, key, expected] of [[0, 'ArrowLeft', 'year'], [0, 'ArrowRight', 'quarter'], [1, 'Home', 'month'], [1, 'End', 'year']]) {
+    let prevented = false;
+    buttons[index].props.onKeyDown({ key, preventDefault() { prevented = true; } });
+    assert.equal(changes.at(-1), expected);
+    assert.equal(prevented, true);
+  }
+  assert.deepEqual(focused, [2, 1, 0, 2]);
+  assert.deepEqual(buttons.map(button => button.props.tabIndex), [0, -1, -1]);
 });

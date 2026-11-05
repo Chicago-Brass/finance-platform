@@ -1,27 +1,21 @@
-.account-pill{display:inline-flex;align-items:center;max-width:100%;vertical-align:middle;border:1px solid #d9dfe6;border-radius:var(--control-radius,6px);background:#f7f8fa;color:var(--ink,#253247);font-size:12px;line-height:18px;overflow:hidden}
+.account-pill{display:inline-flex;align-items:center;max-width:100%;vertical-align:middle;border:1px solid #d9dfe6;border-radius:var(--control-radius,6px);background:#f7f8fa;color:var(--ink,#253247);font-size: var(--report-text-size);line-height:18px;overflow:hidden}
 .account-pill-code{padding:2px 7px;background:#edf0f3;color:var(--navy,#173553);font-weight:600;white-space:nowrap;border-right:1px solid #d9dfe6;font-variant-numeric:tabular-nums}
 .account-pill-name{padding:2px 8px;overflow-wrap:anywhere}
 .account-pill-missing{color:var(--ink-2,#5d6879)}
 .account-pill-link{display:inline-flex;max-width:100%;color:inherit;text-decoration:none;border-radius:var(--control-radius,6px)}
 .account-pill-link:hover .account-pill{border-color:var(--steel)}
 .account-pill-link:hover .account-pill-name{color:var(--steel);text-decoration:underline;text-underline-offset:2px}
-.ledger-account-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-left:0}
+.ledger-account-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px 12px;margin-left:0}
 .ledger-range-panel .date-presets{padding-top:12px}
 .ledger-page .ledger-table-panel{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
 .ledger-page .ledger-scroll{flex:1;min-height:0;margin:0;overflow:auto;overscroll-behavior:none;scrollbar-width:none}
 .ledger-page .ledger-scroll::-webkit-scrollbar{display:none;width:0;height:0}
-.ledger-account-select{width:clamp(150px,12vw,210px)}
-.ledger-global-search{display:flex;align-items:center;gap:6px;min-width:170px;flex:1 1 210px}
-.ledger-global-search .report-account-search{min-width:100px;flex:1}
-.ledger-global-search input{width:100%}
+.ledger-account-select{width:clamp(150px,13vw,210px)}
+.ledger-account-select .searchable-select-field{flex:1;min-width:0}
+.ledger-account-select .searchable-select-field input{min-width:0}
+.ledger-global-search{display:flex;align-items:flex-end;gap:6px;min-width:220px;flex:1 1 260px}
+.ledger-global-search .filter-search-field{flex:1;min-width:140px}
 .ledger-global-search .btn{flex:none}
-.ledger-checkbox{min-height:32px}
-.ledger-side-controls button{min-height:32px}
-.ledger-checkbox{display:inline-flex;align-items:center;gap:7px;margin-left:6px;font-size:12px;font-weight:400;white-space:nowrap;cursor:pointer}
-.ledger-checkbox input{accent-color:var(--navy);margin:0;width:14px;height:14px}
-.ledger-side-controls{display:inline-flex;border:1px solid #cfd6df;border-radius:var(--control-radius,6px);overflow:hidden}
-.ledger-side-controls button{border:0;border-radius:0;min-height:28px;padding:4px 10px;background:white;color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
-.ledger-side-controls button[aria-pressed=true]{background:var(--navy);color:white}
 .ledger-page .ledger-data-table{table-layout:fixed;min-width:1050px}
 .ledger-page .ledger-data-table th,.ledger-page .ledger-data-table td{padding:7px 14px;line-height:20px;vertical-align:middle}
 .ledger-page .ledger-data-table tbody th{position:static}
@@ -34,7 +28,7 @@
 .ledger-page .trial-balance-table .ledger-account-col{width:38%}
 .ledger-page .trial-balance-table .ledger-type-col{width:20%}
 .ledger-page .trial-balance-table .ledger-money-col{width:14%}
-.ledger-type-label{display:block;font-size:12px}
+.ledger-type-label{display:block;font-size: var(--report-text-size)}
 .ledger-subtype{display:block;font-size:11px;color:var(--ink-2);text-transform:capitalize;line-height:16px}
 .ledger-page .tchart-table{min-width:1180px}
 .ledger-page .tchart-table .tchart-rule-col{width:92px}
@@ -43,17 +37,17 @@
 .ledger-page .tchart-table .tchart-when-col{width:auto}
 .ledger-page .tchart-table .tchart-flag-col{width:96px}
 .ledger-page .tchart-table tbody td,.ledger-page .tchart-table tbody th{vertical-align:top}
-.ledger-page .tchart-table .tchart-group-row th{padding:9px 14px 7px;background:#f3f6f9;color:var(--navy);font-size:12px;font-weight:650;letter-spacing:.01em;border-bottom:1px solid var(--rule)}
+.ledger-page .tchart-table .tchart-group-row th{padding:9px 14px 7px;background:#f3f6f9;color:var(--navy);font-size: 14px;font-weight:650;letter-spacing:.01em;border-bottom:1px solid var(--rule)}
 .ledger-page .tchart-table .tchart-group-row:hover th{background:#f3f6f9}
 .tchart-group-row span{margin-left:8px;color:var(--ink-2);font-weight:400}
 .tchart-rule-code{display:inline-block;padding:1px 7px;border-radius:var(--inner-radius,4px);background:var(--steel-tint);color:var(--navy);font-size:12px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
-.tchart-trigger{font-size:12px}
+.tchart-trigger{font-size: var(--report-text-size)}
 .tchart-accounts{display:grid;gap:5px;margin:0;padding:0;list-style:none}
 .tchart-accounts li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0}
-.tchart-account-text{font-size:12px;color:var(--ink)}
+.tchart-account-text{font-size: var(--report-text-size);color:var(--ink)}
 .tchart-account-note,.tchart-audit{font-size:11px;color:var(--ink-2)}
 .tchart-audit{display:block;margin-top:3px}
-.tchart-when{font-size:12px;color:var(--ink)}
+.tchart-when{font-size: var(--report-text-size);color:var(--ink)}
 .tchart-count{margin-left:6px;font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
 .ledger-page .general-ledger-table{min-width:1360px}
 .ledger-page .general-ledger-table .ledger-date-col{width:125px}
@@ -62,28 +56,28 @@
 .ledger-page .general-ledger-table .ledger-money-col{width:130px}
 .ledger-page .general-ledger-table .ledger-notes-col{width:auto}
 .ledger-page .general-ledger-table .ledger-audit-col{width:90px}
-.ledger-date-cell time{white-space:nowrap;font-size:12px}
-.ledger-date-cell small{display:block;font-size:10px;line-height:15px;color:var(--ink-2)}
+.ledger-date-cell time{white-space:nowrap;font-size: var(--report-text-size)}
+.ledger-date-cell small{display:block;font-size: 11px;line-height:15px;color:var(--ink-2)}
 .ledger-split-pill{display:inline-flex;border:1px solid #d9dfe6;border-radius:var(--control-radius,6px);background:#f7f8fa;padding:3px 8px;color:var(--ink-2);font-size:11px}
-.ledger-notes-cell{font-size:12px;overflow-wrap:anywhere}
-.ledger-audit-link{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--steel);text-underline-offset:3px}
+.ledger-notes-cell{font-size: var(--report-text-size);overflow-wrap:anywhere}
+.ledger-audit-link{display:inline-flex;align-items:center;gap:3px;font-size: var(--report-text-size);color:var(--steel);text-underline-offset:3px}
 .ledger-audit-link svg{width:12px;height:12px;transform:rotate(45deg)}
 .ledger-muted{color:var(--ink-2)}
 .ledger-page .ledger-empty{text-align:center;color:var(--ink-2);padding:34px 14px!important}
 .ledger-balance-warning{color:#a4352b}
 .ledger-table-footer{flex-shrink:0}
 .ledger-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-shrink:0;padding:11px 14px;border-top:1px solid var(--rule);background:#fff}
-.ledger-page-status{display:grid;gap:2px;font-size:12px}
-.ledger-page-status small{font-size:10px;color:var(--ink-2)}
+.ledger-page-status{display:grid;gap:2px;font-size: var(--report-text-size)}
+.ledger-page-status small{font-size: 11px;color:var(--ink-2)}
 .ledger-page-links{display:flex;align-items:center;gap:10px}
 .ledger-page-links a{text-decoration:none}
-.ledger-page-number{font-size:12px;color:var(--ink-2);white-space:nowrap}
+.ledger-page-number{font-size: var(--report-text-size);color:var(--ink-2);white-space:nowrap}
 .ledger-previous-icon{transform:rotate(180deg)}
 .ledger-date-filters .filter-context{font-size:11px}
 .ledger-date-filters .period-picker-panel.ledger-range-panel{width:310px}
 .ledger-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:760px){.ledger-pagination{align-items:flex-start;flex-wrap:wrap}.ledger-page-links{margin-left:auto}.ledger-checkbox{margin-left:0}.ledger-date-fields{grid-template-columns:1fr}.ledger-date-filters .period-picker-panel.ledger-range-panel{width:min(310px,calc(100vw - 52px))}.ledger-page .ledger-data-table{min-width:950px}}
+@media(max-width:760px){.ledger-pagination{align-items:flex-start;flex-wrap:wrap}.ledger-page-links{margin-left:auto}.ledger-date-fields{grid-template-columns:1fr}.ledger-date-filters .period-picker-panel.ledger-range-panel{width:min(310px,calc(100vw - 52px))}.ledger-page .ledger-data-table{min-width:950px}}
 @media print{.ledger-page .ledger-table-panel{display:block;overflow:visible}.ledger-page .ledger-scroll{overflow:visible}.ledger-pagination{display:none}.ledger-page .ledger-data-table{min-width:0;table-layout:auto}.ledger-page .ledger-data-table thead,.ledger-page .ledger-data-table tfoot{position:static}.ledger-page .ledger-data-table th,.ledger-page .ledger-data-table td{font-size:9px;padding:4px 6px}.ledger-page .ledger-data-table col{width:auto!important}.account-pill{font-size:9px;border-color:#d9dfe6}.account-pill-code,.account-pill-name{padding:1px 4px}}
 
-@media(max-width:1100px){.ledger-account-filters{flex-wrap:wrap}.ledger-global-search{flex:1 1 190px}.ledger-account-select{width:180px}}
+@media(max-width:1100px){.ledger-account-filters{flex-wrap:wrap}.ledger-global-search{flex:1 1 260px}.ledger-account-select{width:170px}}
 .ledger-scroll:focus-visible{outline:2px solid var(--steel);outline-offset:-2px}

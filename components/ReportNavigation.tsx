@@ -63,17 +63,6 @@ export function ReportForm({ children, onSubmit, ...props }: Omit<FormHTMLAttrib
   }}>{children}</form>;
 }
 
-export function ReportLoading() {
-  const path = useReportPath();
-  const titles: Record<string, string> = { "/income-statement": "Income Statement", "/balance-sheet": "Balance Sheet", "/trial-balance": "Trial Balance", "/general-ledger": "General Ledger", "/t-chart": "T-Chart" };
-  const analytics = path === "/income-statement" || path === "/balance-sheet";
-  return <article className="report-page report-skeleton" aria-busy="true" aria-label="Loading report">
-    <header className="report-header"><div className="report-heading"><h1 className="report-title">{titles[path] || "Report"}</h1><p className="report-entity loading-message" role="status"><span className="report-spinner" aria-hidden="true" />Loading report...</p></div></header>
-    <div className="dashboard-control-bar report-controls-placeholder" aria-hidden="true" />
-    <ReportDataLoading analytics={analytics} />
-  </article>;
-}
-
 export function ReportContent({ children }: { children: ReactNode }) {
   const pending = useReportPending();
   return <main className="content" id="report-content" tabIndex={-1}>

@@ -148,7 +148,7 @@ test('Ledger, Trial Balance and rules keep their controls visible while data is 
   const workspace=loadWorkspace(React), data=new Promise(()=>{});
   for(const [component,props,expected] of [
     [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-11-03',page:1,query:'Vendor',side:'all'},data,accountData:data},'Search all records'],
-    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'Include zero activity'],
+    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'With activity'],
     [workspace.PostingRulesWorkspace,{asOf:'2026-11-03',data},'Search rules or accounts'],
   ]){
     const html=renderToStaticMarkup(React.createElement(component,props));
@@ -167,9 +167,9 @@ test('Ledger search waits for blur or submit and avoids sending twice for blur p
     if(predicate(node))return node;
     for(const child of React.Children.toArray(node.props.children)){const result=find(child,predicate);if(result)return result;}
   };
-  const input=find(element,node=>node.type==='input'&&node.props.name==='q');
+  const input=find(element,node=>node.type.name==='SearchField'&&node.props.name==='q');
   const form=find(element,node=>node.type==='form'&&node.props.role==='search');
-  input.props.onChange({target:{value:' vendor refund '}});
+  input.props.onChange(' vendor refund ');
   assert.equal(calls.length,0,'typing does not request a new page');
   input.props.onBlur();
   form.props.onSubmit({preventDefault(){}});
@@ -185,7 +185,7 @@ function findControl(node,predicate){
   for(const child of React.Children.toArray(node.props.children)){const found=findControl(child,predicate);if(found)return found;}
 }
 
-function ledgerScopeHarness(initial){
+function ledgerScopeHarness(initial,accountData=new Promise(()=>{})){
   const slots=[],calls=[],pending=[];let cursor=0,dirty=false;
   const hooks={...React,
     useState(initialValue){const index=cursor++;if(!slots[index])slots[index]={value:typeof initialValue==='function'?initialValue():initialValue};return[slots[index].value,value=>{const next=typeof value==='function'?value(slots[index].value):value;if(!Object.is(next,slots[index].value)){slots[index].value=next;dirty=true;}}];},
@@ -193,10 +193,25 @@ function ledgerScopeHarness(initial){
     useEffect(effect,deps){const index=cursor++,previous=slots[index];if(!previous||deps.some((value,i)=>!Object.is(value,previous.deps[i]))){slots[index]={deps,cleanup:previous?.cleanup};pending.push(()=>{slots[index].cleanup?.();slots[index].cleanup=effect();});}},
   };
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
-  const data=new Promise(()=>{}),accountData=new Promise(()=>{});let source=initial,element;
+  const data=new Promise(()=>{});let source=initial,element;
   const render=(options=source)=>{source=options;for(let pass=0;pass<5;pass++){cursor=0;dirty=false;element=workspace.GeneralLedgerWorkspace({options:source,data,accountData});while(pending.length)pending.shift()();if(!dirty)return element;}throw new Error('Workspace did not settle');};
   return{calls,render,find:predicate=>findControl(element,predicate),params:()=>Object.fromEntries(new URLSearchParams(calls.at(-1).slice(1)))};
 }
+
+test('Streamed account metadata accepts non-chainable React thenables and handles rejection',()=>{
+  for(const failed of [false,true]){
+    let resolve,reject;
+    const streamed={then(onValue,onError){resolve=onValue;reject=onError;}};
+    const fixture=ledgerScopeHarness({from:'2026-01-01',to:'2026-11-03',page:1},streamed);
+    fixture.render();
+    const rows=[{account_number:'112.100',account_name:'Bank',account_type:'asset'}];
+    if(failed)reject(new Error('Unavailable'));else resolve(rows);
+    fixture.render();
+    const picker=fixture.find(node=>node.type.name==='LedgerAccountFilter');
+    assert.deepEqual(picker.props.accounts,failed?[]:rows);
+    assert.equal(picker.props.unavailable,failed);
+  }
+});
 
 test('Rapid account, side, offset and date changes merge into the newest requested ledger scope',()=>{
   const initial={from:'2026-01-01',to:'2026-11-03',page:3,query:'vendor',side:'all'};
@@ -205,7 +220,7 @@ test('Rapid account, side, offset and date changes merge into the newest request
   const period=()=>fixture.find(node=>node.type===dateFilter.DateFilter);
   picker().props.onChange({account:'112.300'});fixture.render();
   assert.equal(picker().props.account,'112.300','selection changes before a server response');
-  fixture.find(node=>node.type==='button'&&node.props.children==='Debits').props.onClick();fixture.render();
+  fixture.find(node=>node.type.name==='SegmentedControl'&&node.props.label==='Entry side').props.onChange('debit');fixture.render();
   assert.deepEqual(fixture.params(),{from:initial.from,to:initial.to,account:'112.300',q:'vendor',side:'debit',page:'1'});
   fixture.render({...initial,account:'112.300',page:1});
   assert.equal(picker().props.side,'debit','an older account-only response cannot remove the pending side');
@@ -226,14 +241,14 @@ test('A completed request preserves newer focused search edits and Back clears a
     const initial={from:'2026-01-01',to:'2026-11-03',page:1,query:'vendor',side:'all'},fixture=ledgerScopeHarness(initial);fixture.render();
     const picker=()=>fixture.find(node=>node.type.name==='LedgerAccountFilter');
     picker().props.onChange({account:'112.300'});fixture.render();
-    let search=fixture.find(node=>node.type==='input'&&node.props.name==='q');search.props.onFocus();search.props.onChange({target:{value:'vendor revised'}});fixture.render();
+    let search=fixture.find(node=>node.type.name==='SearchField'&&node.props.name==='q');search.props.onFocus();search.props.onChange('vendor revised');fixture.render();
     fixture.render({...initial,account:'112.300'});
-    search=fixture.find(node=>node.type==='input'&&node.props.name==='q');assert.equal(search.props.value,'vendor revised');
+    search=fixture.find(node=>node.type.name==='SearchField'&&node.props.name==='q');assert.equal(search.props.value,'vendor revised');
     search.props.onBlur();fixture.render();
     assert.equal(fixture.params().q,'vendor revised');assert.equal(fixture.params().account,'112.300');
     picker().props.onChange({offset:'211.100'});fixture.render();assert.equal(picker().props.offset,'211.100');
     listeners.get('popstate')();fixture.render();
     assert.equal(picker().props.offset,undefined,'Back clears the abandoned pending offset');
-    fixture.render(initial);assert.equal(picker().props.account,undefined);assert.equal(fixture.find(node=>node.type==='input'&&node.props.name==='q').props.value,'vendor');
+    fixture.render(initial);assert.equal(picker().props.account,undefined);assert.equal(fixture.find(node=>node.type.name==='SearchField'&&node.props.name==='q').props.value,'vendor');
   }finally{global.window=previousWindow;}
 });

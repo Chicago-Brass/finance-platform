@@ -15,7 +15,7 @@ export function NavLinks() {
   return (
     <nav className="nav" aria-label="Reports">
       {LINKS.map((l) => (
-        <ReportLink key={l.href} href={l.href} prefetch={null} className={path === l.href ? "nav-link active" : "nav-link"} aria-current={path === l.href ? "page" : undefined}>
+        <ReportLink key={l.href} href={l.href} className={path === l.href ? "nav-link active" : "nav-link"} aria-current={path === l.href ? "page" : undefined}>
           {l.label}
         </ReportLink>
       ))}

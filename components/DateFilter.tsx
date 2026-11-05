@@ -6,6 +6,7 @@ import { ReportForm, ReportLink } from "./ReportNavigation";
 import { ledgerDatePresets } from "./ledger-table-utils";
 import type { MouseEvent, ReactNode } from "react";
 import "./ledger-tables.css";
+import { FilterBar, FilterField } from "./FilterControls";
 
 type Preserved = Record<string, string | undefined>;
 
@@ -29,8 +30,8 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
     onRangeChange(range);
   } : undefined;
   return (
-    <div className="report-filters ledger-date-filters dashboard-control-bar no-print" aria-label={asOfOnly ? "Trial Balance date filters" : "General Ledger date filters"}>
-      <div className="control-bar-period"><span className="filter-label">{asOfOnly ? "As of" : "Period"}</span>
+    <FilterBar className="ledger-date-filters no-print" label={asOfOnly ? "Trial Balance date filters" : "General Ledger date filters"}>
+      <FilterField label={asOfOnly ? "As of" : "Period"} className="control-bar-period">
       <details className="period-picker" key={`${from ?? ""}:${to}`} onKeyDown={closePopoverOnEscape}>
         <summary className="period-picker-trigger"><CalendarMark /><span>{asOfOnly || !from ? formatDate(to) : `${formatDate(from)} - ${formatDate(to)}`}</span><span aria-hidden="true">▾</span></summary>
         <div className={`period-picker-panel${asOfOnly ? "" : " ledger-range-panel"}`}>
@@ -40,9 +41,9 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
             const fields = new FormData(event.currentTarget);
             onRangeChange({ from: asOfOnly ? undefined : String(fields.get("from")), to: String(fields.get("to")) });
           }}>
-            <div className={asOfOnly ? "filter-field" : "ledger-date-fields"}>
-              {!asOfOnly && <div className="filter-field"><label htmlFor="ledger-from">Start date</label><input id="ledger-from" type="date" name="from" defaultValue={from} required /></div>}
-              <div className="filter-field"><label htmlFor="ledger-to">{asOfOnly ? "As of date" : "End date"}</label><input id="ledger-to" type="date" name="to" defaultValue={to} required /></div>
+            <div className={asOfOnly ? "" : "ledger-date-fields"}>
+              {!asOfOnly && <FilterField label="Start date" htmlFor="ledger-from"><input id="ledger-from" type="date" name="from" defaultValue={from} required /></FilterField>}
+              <FilterField label={asOfOnly ? "As of date" : "End date"} htmlFor="ledger-to"><input id="ledger-to" type="date" name="to" defaultValue={to} required /></FilterField>
             </div>
             <p className="filter-help">{asOfOnly ? "Includes all posted activity through this date." : "Includes both start and end dates."}</p>
             {Object.entries(preserve).map(([key, value]) => value && <input key={key} type="hidden" name={key} value={value} />)}
@@ -53,9 +54,9 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
           </div>
           <ReportLink className="filter-reset" onClick={rangeClick(asOfOnly ? { to: today } : { from: rangePresets[0].from, to: today })} href={asOfOnly ? query({ to: today }, preserve) : query({ from: rangePresets[0].from, to: today }, preserve)}>{asOfOnly ? "Reset to today" : "Reset to current year"}</ReportLink>
         </div>
-      </details></div>
+      </details></FilterField>
       {children}
       {note && <span className="filter-context">{note}</span>}
-    </div>
+    </FilterBar>
   );
 }
