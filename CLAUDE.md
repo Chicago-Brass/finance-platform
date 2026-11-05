@@ -10,7 +10,7 @@ Go-live: Dec 15, 2026, on live Supabase ledger data.
 
 ## Branches
 - `main` is the consolidated baseline and live-app branch: https://finance-platform-iota-bice.vercel.app.
-  Jeric recreated `develop` from that baseline on Nov 5, 2026 for performance work.
+  Use feature branches from current `main`; no persistent `develop` branch is required.
 - `mae/testing` is Mae's testing branch, a copy of `main`. Its preview is
   https://finance-platform-git-mae-testing-chicago-brass1.vercel.app
   and it uses the same login and the same approved-users list as the live app.
@@ -33,7 +33,7 @@ Go-live: Dec 15, 2026, on live Supabase ledger data.
   in parentheses. Calculate in integer cents; in the DB use `numeric(18,2)`, never float.
 - GitHub reported this repository public on Nov 4, 2026. Do not assume private visibility. Never
   commit credentials, raw conversation/tool logs or private financial extracts. Use synthetic
-  examples; keep the conversation summary and local session path in `knowledge-base/`.
+  examples. Keep `knowledge-base/` limited to repository architecture, data and operating guidance.
 - Never put the Supabase service-role/secret key in code, `.env.*` files, or the browser.
 - Schema changes go in as SQL files in `supabase/migrations/`, reviewed through a PR. RLS on every table;
   new tables have no default access for anon/authenticated (every grant is explicit).

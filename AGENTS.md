@@ -1,79 +1,74 @@
 # Chicago Brass Finance - agent instructions
 
-Read [knowledge-base/README.md](knowledge-base/README.md) first. It connects the current source,
-architecture, financial contracts, Airtable editors and the original local conversation.
+Start with [knowledge-base/README.md](knowledge-base/README.md). Read the relevant source, callers
+and detailed owner docs before changing behavior. The knowledge base contains repository
+architecture, data contracts and operating guidance; do not add chat summaries or session paths.
 
-## Working scope
+## Scope and Git
 
-- Inspect the actual source and callers before changing behavior. Source, deployed Airtable code,
-  deployed Edge code and dated test evidence are different states.
-- Check `git status` and preserve concurrent changes. `main` is the consolidated release baseline.
-  Jeric recreated `develop` from that baseline on 2026-11-05 for performance work; use `develop`.
-  Do not commit, push or deploy unless the task authorizes it. Ram normally owns release merges;
-  a direct instruction from Jeric can authorize a specific merge.
-- Preserve `mae/testing`, the separate UI/testing branch. Read [CLAUDE.md](CLAUDE.md) for the
-  additional rules that apply specifically when Mae requests work.
-- This repository was observed public on 2026-11-04. Never commit credentials, raw Codex session
-  logs, customer/payment extracts or unreviewed screenshots of financial records.
-- Keep relevant knowledge-base pages and their linked implementation guides current when code changes.
-  Put historical evidence in dated records; do not present it as today's live state.
+- Inspect `git status` first and preserve concurrent work. Commit, push, merge and deploy only
+  when authorized by the current task.
+- `main` is the production baseline. Start feature branches from current `main`; do not assume
+  a persistent `develop` exists. Preserve `mae/testing` and follow [CLAUDE.md](CLAUDE.md) when Mae
+  requests presentation work.
+- Treat this repository as public. Never commit secrets, raw tool/chat logs, private financial
+  extracts or unreviewed screenshots of business records. Use synthetic fixtures.
+- Keep [knowledge-base/](knowledge-base/) and the owning implementation docs accurate. Source,
+  saved automation code, published Airtable state and deployed Edge code are separate evidence.
 - Use a plain hyphen in generated prose and comments.
 
-## Architectural boundaries
+## Architecture
 
-1. Airtable owns the native event, category filters, component calculations and final debit/credit pairs.
-2. Each Airtable category function checks its own filters and pushes a result. Evaluate all applicable
-   categories, not a first-match `else if` chain. CORE / UTILS / HELPER remain the shared structure.
-3. The generic `ledger-payment` Edge Function authenticates, validates, resolves account identities
-   and writes the supplied pairs atomically. It does not recategorize transactions or calculate amounts.
-4. The frontend reads posted data as the signed-in user through RLS. Never put a database credential
-   or a Supabase secret/service-role key in the frontend.
+1. Airtable owns the native event, category filters, component calculations and final account pairs.
+2. Each CORE handler checks its category and pushes results; evaluate all eligible handlers.
+   UTILS owns substantive reads/calculation/transport helpers; HELPER owns logging only.
+3. The generic `ledger-payment` Edge Function authenticates, validates, resolves account identity
+   and records supplied pairs atomically. It does not recategorize or infer amount splits.
+4. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
+   or database credential to browser code.
 
-Follow the T-Chart's official Actual Triggers, Debit and Credit columns. Do not infer missing filters,
-account splits, reversal behavior or suspense rules from old notes. A matching unresolved category
-must fail explicitly with `Not yet implemented` before the sender posts its prepared packet.
+Follow the T-Chart's official trigger, debit and credit mappings. A matched unresolved category
+must throw `Not yet implemented` before prepared data is sent. Do not add unstated conditions,
+reverse earlier entries automatically or retrofit source records to make a test pass.
 
-The Edge writer uses direct parameterized SQL. Existing database guard triggers and read RPCs are
-still important. Legacy posting RPCs exist, but this writer does not call them; do not delete them
-or any guard merely because they are outside the current path.
+The writer uses parameterized direct SQL. Existing database guards, period checks, read RPCs and
+legacy posting/reversal functions remain unless their removal is explicitly authorized.
 
-## Financial and UI contracts
+## Data and UI contracts
 
-- Keep `Report` / `ReportLine` in `lib/reports/types.ts` stable.
-- Calculate in integer cents; show USD with two decimals, `$0.00`, and parentheses for negatives.
-  Missing values remain distinct from zero. Do not use display rounding to alter financial totals.
-- Invoice/payment names are labels. Record IDs and structured source references establish identity.
-- Unspecified multi-account splits fail rather than allocating a whole amount to every account.
-- Exact posting retries deduplicate; changed financial payloads conflict. Do not edit posted journals.
-- `active` account flags are labels for this workflow. `is_postable`, valid accounts, balanced lines,
-  posting-period guards, authentication and application access checks remain functional.
-- Branch attribution is deferred. The nullable database field exists but stays unpopulated by this writer.
-- Preserve the approved full-viewport report layout, internal table/sidebar scrolling and accessible
-  Position/Movement tabs. General Ledger loads 100 records per page.
-- The landing page is `/`; authenticated visitors go to Income Statement. `/login` is a compatibility
-  redirect. Signup and custom cooldown rules are outside the implemented scope.
+- Keep `Report` / `ReportLine` stable. Calculate money in checked integer cents, store numerics,
+  show two decimals, `$0.00` and parentheses for negatives. Missing is distinct from zero.
+- IDs establish identity; invoice/payment names are labels. Exact retries deduplicate and changed
+  financial packets conflict. Do not edit posted journals.
+- Unspecified multi-account splits fail. Account `active` is a label; `is_postable`, valid identity,
+  balance, period guards, authentication and approved-user checks remain functional.
+- Branch attribution is deferred; the nullable schema field remains unpopulated by the writer.
+- Keep destination headers/controls independent of data loading. Reuse shared controls, request
+  caches, modal behavior and currency/date formatters.
+- Preserve full-viewport reports, internal scrolling, keyboard support and Position/Movement tabs.
+  General Ledger pages contain 100 lines. Full-journal detail must fetch every entry line.
+- Account and journal drawers share a responsive 640px width. Keep vertical scrolling over the
+  journal table chained to its drawer; only the outer boundary stops background scrolling.
+- `/` owns sign-in; authenticated visitors go to Income Statement. Signup and custom cooldown
+  flows are outside the implemented scope.
 
-## Browser and live changes
+## Browser and live operations
 
-- On Jeric's device, use Chrome's Jeric profile (Jeric's personal Google account); enumerate profiles first.
-  Never click Request access. Recheck the account instead.
-- Use browser tooling, reuse one working tab, close completed agent-created task tabs and preserve
-  pre-existing user tabs. Restore temporary viewport overrides.
-- Airtable financial writes, checkbox retriggers, journal cleanup and tests that send webhooks need
-  explicit task authorization. A Test button can perform real writes.
-- Never retrofit legacy records merely to make a category test pass. Query by Payment Date when
-  looking for historical payment samples; Created Time is not a substitute.
+Use the Chrome profile specified by the current request; enumerate available profiles first.
+Never click Request access. Reuse a task tab, close completed agent-created tabs, preserve user
+sessions/tabs and restore viewport overrides. Report connection or visual-verification limits.
 
-## Verification
+Airtable writes, checkbox retriggers, webhook tests, journal cleanup and schema/grant changes need
+explicit task scope. Test buttons can create financial effects. Historical sample queries use
+Payment Date, not Created Time. Deployment of this app does not publish Airtable or apply migrations.
 
-Run the smallest relevant checks from [knowledge-base/testing.md](knowledge-base/testing.md).
-At minimum, changed frontend logic needs its focused tests and `npm run typecheck`. UI changes need
-browser inspection at desktop and narrow widths. Explain what was actually checked and any limits.
-Do not run hosted financial tests or database resets as part of routine frontend verification.
+## Checks and documentation
 
-## Jeric's local paths
+Use [knowledge-base/testing.md](knowledge-base/testing.md). Changed frontend logic needs focused
+regression checks and `npm run typecheck`; UI needs browser review where available. Use relevant
+native-script checks for automation changes and disposable database tests for financial read/writer
+changes. Do not run hosted financial tests or database resets as routine frontend verification.
 
-- App: `/Users/jeric/Documents/GitHub/finance-platform`
-- Original scripts/evidence: `/Users/jeric/Documents/GitHub/scripts`
-- Full conversation: see [knowledge-base/session-handoff.md](knowledge-base/session-handoff.md).
-  The repository contains a summary, not a copied transcript.
+Describe what changed, what was verified and any remaining limitations. Include a review link.
+Keep knowledge-base pages about the repository, infrastructure and data, without conversation
+history or device-specific paths to previous sessions.

@@ -1,87 +1,75 @@
-# Database and reporting schema
+# Ledger database and data contracts
 
-Project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj).
-Fresh migrations and read equivalence were verified on 2026-11-05. This documents structure,
-not the completeness or business correctness of the current journal dataset. The missing batched
-reporting function and restricted future-function default were aligned without changing journals.
+Hosted project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj).
+The schema and catalog are tracked in `supabase/`. Environment contents and journal completeness
+must be verified separately from source or migration history.
 
 ## Tables
 
-| Table | Purpose and important fields |
+| Table | Data |
 | --- | --- |
-| `accounts` | `code`, `name`, `account_type`, `subtype`, `normal_balance`, `is_bank`, `is_postable`, `active`, `airtable_record_id` |
-| `journal_entries` | Financial date/period, status, rule, source identity, transaction/event types, description, optional notes/audit URL, posting metadata and historical reversal links |
-| `journal_lines` | Entry/line number, account/offset code, debit/credit, structured vendor/client/order/PO/invoice/staff/state refs, source line ID, audit URL and nullable branch |
-| `accounting_periods` | Month/status and close metadata used by financial guards |
-| `ledger_rules` | Rule code, category/title, chart metadata and descriptive notes |
-| `ledger_rule_lines` | Catalog debit/credit lines, optional selectors and labels |
-| `account_selectors`, `account_selector_members` | Existing catalog account group metadata |
-| `app_users` | Approved email, role and active membership used for application access |
+| `accounts` | Code/name, type/subtype, normal balance, bank/postable/active flags and FIN account identity |
+| `journal_entries` | UUID, unique entry number, accounting date/period, status, description, rule, source identity, transaction/event metadata, optional notes/audit URL and posting timestamps |
+| `journal_lines` | Entry ID, ordered line number, account/offset code, debit/credit, notes/audit URL, vendor/customer/order/PO/invoice/employee/state references and nullable branch |
+| `accounting_periods` | Month/status and close metadata enforced by posting guards |
+| `ledger_rules`, `ledger_rule_lines` | Rule catalog and descriptive debit/credit mappings |
+| `account_selectors`, `account_selector_members` | Catalog account groupings |
+| `app_users` | Approved email, role and active application membership |
 
-All nine listed public base tables have RLS enabled. The six reporting views were verified with
-`security_invoker=true`: `v_account_monthly_activity`, `v_journal_entries`, `v_ledger`,
-`v_rule_conformance`, `v_t_chart`, and `v_trial_balance`.
+Base tables use RLS. Reporting views use security-invoker semantics. Report requests run with the
+signed-in identity, never a service-role key. `accounts.active` is a descriptive flag;
+`app_users.active` gates access, and `is_postable` restricts posting.
 
 ## Writer
 
-The Edge Function connects through its runtime database URL, enters the intended database role and
-uses parameterized Postgres.js SQL. It locks by FIN source, validates catalog/account references,
-inserts draft headers and balanced lines, then marks headers posted within one transaction.
+The generic `ledger-payment` Edge Function uses parameterized Postgres.js inside one transaction.
+It resolves account identities, locks the source, checks replay equality, inserts a draft header
+and lines, then posts the entry. Database guards enforce valid references, one positive monetary
+side per line, balance, posting periods and posted immutability.
 
-Amounts persist as database numerics. Posting pairs use positive decimal strings; debit and credit
-account selection establishes direction. Account lookup can use the FIN record ID or account number.
-FIN Nickel `0747` maps to ledger `112.300`; credit-card clearing is `231.100`.
+Account lookup accepts account number or FIN record ID. FIN Nickel `0747` maps to ledger `112.300`;
+card clearing is `231.100`. Category calculations and amount splits remain in Airtable.
+Exact replay is a duplicate/no-op; a changed financial packet conflicts. Runtime secrets and the
+verified-TLS database connection stay in the Edge environment.
 
-Journal source identity, posted immutability, valid line/account references, one monetary side per line,
-balanced entries and closed periods are protected by the service and existing database constraints/
-guards. An exact source replay does not create a new journal. Do not clear or modify production
-journals to test these guarantees.
+`journal_lines.branch` is reserved for attribution; the writer leaves it unpopulated and reports
+have no branch filter. Names are labels; UUIDs, source references and entry/line identities are
+used for lookup. Line money remains numeric in storage and is converted to checked integer cents
+for report calculations.
 
-`accounts.active` is treated as a label in the current reports/writer. `app_users.active` still gates
-application access, and `is_postable` remains a posting
-restriction. Branch attribution is deferred: `journal_lines.branch` exists, but the current Edge
-writer does not populate it and the reports have no branch filter.
+## Read interfaces
 
-## Read API
+| Interface | Use |
+| --- | --- |
+| `get_trial_balance(as_of, from)` | Posted debit/credit and natural balances for a range or cumulative snapshot |
+| `get_trial_balances(as_of[], from[])` | Up to 100 requested periods, materializing posted activity once |
+| `v_ledger` | Posted line records, resolved account/offset metadata, refs and audit links |
+| `search_ledger` | Literal global search and account/offset/side/date filtering before pagination |
+| `v_journal_entries` | Entry summaries and counts |
+| `v_t_chart` | Displayed rule catalog, not the automation router |
+| `current_app_role()` | Approved-user role gate |
+| `v_account_monthly_activity`, `v_trial_balance`, `v_rule_conformance` | Additional reporting/catalog interfaces |
 
-- `get_trial_balance(p_as_of date, p_from date default null)` returns account metadata and posted
-  debit/credit/balance aggregates. Income Statement uses period ranges; Balance Sheet and Trial
-  Balance use cumulative snapshots.
-- `get_trial_balances(p_as_of date[], p_from date[])` (included in the initial baseline) answers up to 100
-  (as-of, from) pairs in one call, one row per pair with that pair's accounts as JSON. It reads
-  posted activity once for all pairs, runs as SECURITY INVOKER and grants report access to
-  `authenticated`. Income Statement and Balance Sheet loaders use it. A missing-function fallback
-  remains for databases that have not adopted this baseline; DUAL ENTRY has the function.
-- `20261105143952_optimize_report_reads` replaces the batched function's per-period scans with
-  one shared activity scan. `v_ledger` now resolves offsetting accounts through an indexed lateral
-  lookup within each candidate entry instead of materializing/self-joining the entire line table.
-  Column types, accounting results, invoker security and grants are preserved. The applied initial
-  baseline remains unchanged; this is a normal forward migration.
-- `v_journal_entries` supplies posted-entry counts.
-- `v_ledger` supplies General Ledger records, including `entry_number`, `line_no`, `line_id`,
-  account names/numbers, offset data, notes and audit URLs. Pagination is stable by date/entry/line.
-- `v_t_chart` supplies displayed catalog rules; it is not the runtime category router.
-- `current_app_role()` supports the existing approved-user gate.
-- `search_ledger` (migration `20261105150253`) applies literal substring search and account/offset/
-  side/date scope before stable pagination. It runs as SECURITY INVOKER, with no anon/PUBLIC execute.
-  The empty-search path still uses the optimized ledger view directly. No posting function or
-  financial amount behavior was changed for dashboard search.
+Ledger pagination is stable by date, entry number and line number. Full-journal detail reads one
+posted `journal_entries` header by unique entry number and all `journal_lines` by entry UUID,
+ordered and paged in batches of 500. Account names join through the account FK. It does not inherit
+Ledger display filters or the 100-line report-page limit.
 
-Legacy `create_journal_entry`, `post_journal_entry` and `reverse_journal_entry` functions still exist
-in the hosted schema. The new Edge writer does not call them. Their existence is not a reason to
-silently delete them, alter their grants or replace the current direct-SQL implementation.
+Income Statement ranges and cumulative Balance Sheet snapshots have different semantics. Every
+Balance Sheet column uses its own prior-year baseline to separate current and unclosed prior
+income from recorded equity. Account classification and signs are defined in
+[report mappings](../docs/ledger-reporting.md).
 
-## Tracked migrations and truth limits
+## Migrations and seed
 
-`20261105141013_initial_ledger.sql` is the complete public-schema starting point. The six partial
-local migrations were consolidated with the hosted-only original schema. Their history remains in Git.
-Hosted history is replaced by the applied baseline marker after schema equivalence is verified;
-the initial CREATE statements are never replayed against the existing project.
+- `20261105141013_initial_ledger.sql`: complete public-schema baseline.
+- `20261105143952_optimize_report_reads.sql`: shared batched-aggregation scan and indexed offset lookup.
+- `20261105150253_add_ledger_search.sql`: scoped literal search before pagination.
+- `seed.sql`: reference accounts, selectors and rules only; no users, periods or financial entries.
 
-`supabase/seed.sql` holds reference accounts, selectors and rules. It excludes users, periods and
-journals. Both database test runners now restore the actual initial migration and this seed, rather
-than a historical schema fixture. Only the Supabase platform auth dependencies are mocked locally.
-See [baseline procedures and verification](../docs/database-baseline.md).
+Keep applied migrations intact and add forward migrations for schema changes. A baseline marker
+on an existing environment does not authorize replaying initial CREATE statements there. Compare
+hosted schema/history before applying changes; see [baseline procedures](../docs/database-baseline.md).
 
-See [the generic webhook contract](../docs/ledger-webhook-contract.md) for envelopes, references,
-replay behavior and HTTP errors, and [report mappings](../docs/ledger-reporting.md) for signs/grouping.
+Legacy create/post/reverse database functions remain in the schema. The generic Edge writer does
+not call them. Preserve their grants and guards unless removal is specifically authorized.

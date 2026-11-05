@@ -3,8 +3,7 @@
 Internal financial reporting (income statement, balance sheet) on Next.js + Vercel, backed by Supabase.
 
 Agents: start with [AGENTS.md](AGENTS.md) and the [knowledge base](knowledge-base/README.md).
-The [conversation summary](knowledge-base/conversation-context.md) records design decisions;
-[session handoff](knowledge-base/session-handoff.md) locates the full conversation on Jeric's device.
+The knowledge base covers architecture, data contracts, source ownership and verification.
 
 The current [dashboard PR](https://github.com/Chicago-Brass/finance-platform/pull/1) separates the
 immediate report shell from authenticated JSON data reads. See its [implementation spec](docs/dashboard-controls-spec.md)
@@ -48,8 +47,8 @@ Run `node --test app/landing.test.cjs` for routing, access and form checks. Visu
 signed-out `http://127.0.0.1:3010/` and signed-in `http://localhost:3010/` hosts independently.
 
 ## Change process
-Current performance work uses `develop`, recreated from the Nov 5 `main` baseline. Vercel creates
-preview deployments. Ram normally owns releases; Jeric authorized the baseline consolidation.
+Create feature branches from current `main`. Vercel produces previews for feature branches and
+Production deployments from `main`. Merge and publish only within the current authorized task.
 See `CLAUDE.md` for the rules Claude follows in this repo.
 
 ## Database baseline
@@ -89,12 +88,13 @@ npm run typecheck
 The database integration check uses a disposable local PostgreSQL container. These checks do not install the
 hosted functions, replace Airtable scripts, enable automations or post hosted ledger records.
 
-Performance work on `develop` streams destination-page skeletons, loads account totals/lines in
-parallel, reuses successful drawer sections within a report, and colocates server functions with
-the Oregon database. The read-query migration is applied to DUAL ENTRY and preserves existing
+The report application renders destination headers/controls immediately and reads financial JSON
+separately. Account totals/lines load in parallel and successful data is reused within its scoped
+cache. Vercel server functions run in Oregon near the database. The read-query migration is applied to DUAL ENTRY and preserves existing
 financial results. See [reporting and performance details](docs/ledger-reporting.md).
 
-The dashboard-controls PR adds persistent headers and one compact control bar to all five report
-pages, searchable keyboard-accessible selects, data-only loading and ledger-wide search.
+Report pages share compact left-aligned filters with right-side actions, accessible searchable
+selects, data-only loading and ledger-wide search. Ledger rows open full journal details;
+statement account rows open account activity. Both drawers share width and modal behavior.
 See [implementation spec and review results](docs/dashboard-controls-spec.md). Visual/browser
-verification is still pending because browser access is unavailable in the current session.
+verification must be checked separately from source tests and HTTP/build results.

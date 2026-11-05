@@ -64,6 +64,6 @@ had been applied directly without matching history markers. The baseline resolve
 
 This baseline does not resolve accounting decisions left pending in the official T-Chart.
 Explicit `Not yet implemented` handlers stay blocked. See
-[the current blocker list](../knowledge-base/airtable-triggers.md#blocked-and-unresolved-cases)
+[the current blocker list](../knowledge-base/airtable-triggers.md#explicit-implementation-limits)
 for account/split/trigger decisions. Branch reporting and Microsoft SSO setup also remain deferred.
 No Airtable data reconciliation, historical posting or hosted journal cleanup is part of this release.
