@@ -49,7 +49,9 @@ test('Each destination gets its own immediate shell without waiting for financia
   assert.equal(ledger.workspace.type,ui.Ledger);
   assert.equal(ledger.workspace.props.options.page,2);
   assert.equal(ledger.workspace.props.accountData.pending,true);
-  assert.equal(ui.calls.at(-1),'/api/reports/data?report=accounts');
+  assert.equal(ui.calls.at(-2),'/api/reports/data?report=accounts');
+  assert.equal(ui.calls.at(-1),'/api/reports/data?report=categories');
+  assert.equal(ledger.workspace.props.categoryData.pending,true);
   assert.equal(ui.render('/trial-balance','to=2026-11-05').workspace.type,ui.Trial);
   assert.equal(ui.render('/t-chart').workspace.type,ui.Rules);
   const count=ui.calls.length;
@@ -60,8 +62,20 @@ test('Each destination gets its own immediate shell without waiting for financia
 test('Display changes share one financial request key and metadata is only requested for Ledger',()=>{
   const ui=appHarness();
   ui.render('/income-statement','year=2026&from=1&to=3&grain=month');
-  const request=ui.calls.at(-2);
+  const request=ui.calls.at(-4);
   ui.render('/income-statement','year=2026&from=1&to=3&grain=quarter&layout=summary');
-  assert.equal(ui.calls.at(-2),request);
+  assert.equal(ui.calls.at(-4),request);
   assert.equal(ui.calls.at(-1),null);
+});
+
+test('Ledger totals request starts independently and reuses its cache key across pages',()=>{
+  const ui=appHarness();
+  const first=ui.render('/general-ledger','from=2026-01-01&to=2026-12-31&type=asset&category=PAY-01&min=0&page=1');
+  const calls=ui.calls.slice(-4);
+  assert.equal(first.workspace.props.countData.pending,true);
+  assert.match(calls[0],/report=ledger&/);assert.match(calls[1],/report=ledger-count&/);assert.ok(!calls[1].includes('page='));
+  ui.render('/general-ledger','from=2026-01-01&to=2026-12-31&type=asset&category=PAY-01&min=0&page=2');
+  assert.equal(ui.calls.at(-3),calls[1]);
+  ui.render('/general-ledger','from=2026-01-01&to=2026-12-31&type=expense&page=2');
+  assert.notEqual(ui.calls.at(-3),calls[1]);
 });

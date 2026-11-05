@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { parseReportScreen, REPORT_PATHS } from "@/lib/reports/report-routes";
 import type { ReportScreen } from "@/lib/reports/report-routes";
-import type { LedgerAccountOption, TbRow, TChartRow, getGeneralLedger } from "@/lib/reports/ledger";
+import type { LedgerAccountOption, LedgerCategoryOption, TbRow, TChartRow, getGeneralLedger } from "@/lib/reports/ledger";
 import type { BalanceSheetData, IncomeStatementData } from "@/lib/reports/statement-data";
 import { IncomeStatementWorkspace, BalanceSheetWorkspace } from "./StatementWorkspace";
 import { TrialBalanceWorkspace, GeneralLedgerWorkspace, PostingRulesWorkspace } from "./LedgerWorkspaces";
@@ -26,7 +26,9 @@ export function ReportApplication({ children }: { children: ReactNode }) {
 
 function ActiveReport({ screen }: { screen: ReportScreen }) {
   const query = useReportQuery<unknown>(screen.request);
+  const count = useReportQuery<number>(screen.kind === "ledger" ? screen.countRequest : null);
   const accounts = useReportQuery<LedgerAccountOption[]>(screen.kind === "ledger" ? "/api/reports/data?report=accounts" : null);
+  const categories = useReportQuery<LedgerCategoryOption[]>(screen.kind === "ledger" ? "/api/reports/data?report=categories" : null);
   useEffect(() => {
     document.title = `${TITLES[screen.kind]} · Chicago Brass Finance`;
   }, [screen.kind]);
@@ -34,7 +36,7 @@ function ActiveReport({ screen }: { screen: ReportScreen }) {
     case "income": return <IncomeStatementWorkspace options={screen.options} data={query as ReportQuery<IncomeStatementData>} />;
     case "balance": return <BalanceSheetWorkspace options={screen.options} data={query as ReportQuery<BalanceSheetData>} />;
     case "trial": return <TrialBalanceWorkspace asOf={screen.options.asOf} data={query as ReportQuery<TbRow[]>} />;
-    case "ledger": return <GeneralLedgerWorkspace options={screen.options} data={query as ReportQuery<LedgerData>} accountData={accounts} />;
-    case "rules": return <PostingRulesWorkspace asOf={screen.options.asOf} data={query as ReportQuery<TChartRow[]>} />;
+    case "ledger": return <GeneralLedgerWorkspace options={screen.options} data={query as ReportQuery<LedgerData>} countData={count} accountData={accounts} categoryData={categories} />;
+    case "rules": return <PostingRulesWorkspace data={query as ReportQuery<TChartRow[]>} />;
   }
 }

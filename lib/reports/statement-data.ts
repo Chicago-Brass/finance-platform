@@ -87,7 +87,7 @@ export function balanceSheetDates(asOf: string): string[] {
 
 export function buildBalanceSheetView(data: BalanceSheetData, grain: BalanceGrain, summary: boolean) {
   const options: BalanceSheetOptions = { asOf: data.asOf, grain, summary };
-  const { periods, columnYears, previousYearEnd, comparisonDate, trendDates } = balanceDatesFor(options);
+  const { periods, columnYears, comparisonDate, trendDates } = balanceDatesFor(options);
   const at = (date: string) => {
     const rows = data.balances[date];
     if (!rows) throw new Error(`Missing balances for ${date}.`);
@@ -95,7 +95,7 @@ export function buildBalanceSheetView(data: BalanceSheetData, grain: BalanceGrai
   };
   const snapshots = periods.map(period => ({ period, accounts: at(period.to) }));
   const priorYears = new Map(columnYears.map(year => [year, at(`${year - 1}-12-31`)]));
-  const report = getBalanceSheet(options, snapshots, at(previousYearEnd), data.posted, priorYears);
+  const report = getBalanceSheet(options, snapshots, priorYears, data.posted);
   const trend = trendDates.map(date => ({ period: { key: date, label: formatDate(date), from: date, to: date }, accounts: at(date) }));
   return { options, report, analytics: getBalanceAnalytics(report, data.asOf, at(comparisonDate), trend) };
 }

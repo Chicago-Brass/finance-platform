@@ -2,7 +2,7 @@ import { reportUser } from "@/lib/reports/report-session";
 import { DismissibleMenu } from "@/components/DismissibleMenu";
 import { NavLinks } from "@/components/NavLinks";
 import { RefreshDataButton, ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
-import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
+import { LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 import { ReportDataProvider } from "@/components/ReportData";
 import { ReportApplication } from "@/components/ReportApplication";
 
@@ -15,12 +15,12 @@ export default async function ReportsLayout({ children }: { children: React.Reac
 
   return (
     <ReportDataProvider key={user?.id} userId={user?.id}><ReportNavigationProvider><div className="app-shell reports-shell">
-      <a className="report-skip-link" href="#report-content">Skip to report</a>
+      <a className="report-skip-link no-print" href="#report-content">Skip to report</a>
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="brand-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
+            <img className="brand-logo" src="/images/chicago-brass-white.png" width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass Architectural Hardware" />
           </div>
           <NavLinks />
           <RefreshDataButton />

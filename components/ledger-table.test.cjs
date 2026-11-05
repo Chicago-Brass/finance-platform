@@ -30,7 +30,7 @@ const trial=[
   {account_number:'121.100',account_name:'Settled receivable',account_type:'asset',account_subtype:'receivable',normal_balance:'debit',total_debit:'10.00',total_credit:'10.00',balance:'0.00'},
   {account_number:'007.002',account_name:'Bank fees',account_type:'expense',account_subtype:'opex',normal_balance:'debit',total_debit:'0.00',total_credit:'0.00',balance:'0.00'},
 ];
-const ledger=[{line_id:'line-a',line_no:1,date:'2026-11-03',entry_number:42,account_number:'112.300',account_name:'Bank - Nickel',offsetting_account_number:'211.100',offsetting_account_name:'Accounts Payable',debit:'25.10',credit:'0.00',notes:'Vendor <adjustment>',audit_link:'https://airtable.com/record',offset_is_split:false},{line_id:'line-b',line_no:2,date:'2026-11-03',entry_number:42,account_number:'211.100',account_name:'Accounts Payable',offsetting_account_number:null,offsetting_account_name:null,debit:'0.00',credit:'25.10',notes:'Vendor <adjustment>',audit_link:'javascript:alert(1)',offset_is_split:true}];
+const ledger=[{line_id:'line-a',line_no:1,date:'2026-11-03',entry_number:42,account_number:'112.300',account_name:'Bank - Nickel',offsetting_account_number:'211.100',offsetting_account_name:'Accounts Payable',debit:'25.10',credit:'0.00',notes:'Vendor <adjustment>',audit_link:'https://airtable.com/record',offset_is_split:false},{line_id:'line-b',line_no:2,date:'2026-11-03',entry_number:42,account_number:'211.100',account_name:'Accounts Payable',offsetting_account_number:'007.003, 232.100',offsetting_account_name:'Split: 007.003 Interest Expense; 232.100 Auto Loan Payable',debit:'0.00',credit:'25.10',notes:'Vendor <adjustment>',audit_link:'javascript:alert(1)',offset_is_split:true}];
 
 test('Pagination accepts positive safe page numbers and preserves date filters',()=>{
   for(const value of [undefined,'','0','-2','1.5','Infinity','9007199254740992','oops'])assert.equal(utils.ledgerPageNumber(value),1);
@@ -52,7 +52,7 @@ test('Ledger account filters accept only account codes and survive pagination an
   assert.match(html,/account=112\.300&amp;offset=211\.100&amp;page=3/);
   assert.doesNotMatch(html,/statement-toolbar|Search this page/);
   const empty=renderToStaticMarkup(React.createElement(tables.GeneralLedgerTable,{rows:[],from:'2026-01-01',to:'2026-11-03',page:1,pageSize:100,hasNext:false,account:'112.300'}));
-  assert.match(empty,/No posted journal lines match these accounts/);
+  assert.match(empty,/No posted journal lines match the selected dates and filters/);
   const dates=renderToStaticMarkup(React.createElement(dateFilter.DateFilter,{from:'2026-01-01',to:'2026-11-03',preserve:{account:'112.300',offset:undefined}}));
   assert.match(dates,/<input type="hidden" name="account" value="112\.300"\/>/);
   assert.ok(!dates.includes('name="offset"'));
@@ -70,10 +70,10 @@ test('Ledger date presets handle year rollover and leap-month endpoints',()=>{
   assert.deepEqual(utils.ledgerDatePresets('2024-03-02')[1],{label:'Last month',from:'2024-02-01',to:'2024-02-29'});
 });
 
-test('Trial Balance display filters retain settled accounts with debit and credit activity',()=>{
-  assert.deepEqual(utils.filterTrialAccounts(trial,'','all',false).map(row=>row.account_number),['112.300','211.100','121.100']);
-  assert.equal(utils.filterTrialAccounts(trial,' nICkel ','asset',false)[0],trial[0]);
-  assert.equal(utils.filterTrialAccounts(trial,'211.100','asset',true).length,0);
+test('Trial Balance display filters retain every account, including zero-activity accounts',()=>{
+  assert.deepEqual(utils.filterTrialAccounts(trial,'','all').map(row=>row.account_number),['112.300','211.100','121.100','007.002']);
+  assert.equal(utils.filterTrialAccounts(trial,' nICkel ','asset')[0],trial[0]);
+  assert.equal(utils.filterTrialAccounts(trial,'211.100','asset').length,0);
   assert.equal(utils.moneyTotal(trial.map(row=>row.total_debit)),35.10);
   assert.throws(()=>utils.moneyTotal(['90071992547400.00','90071992547400.00']),/precision/);
 });
@@ -85,11 +85,14 @@ test('Ledger rendering uses readable dates, explicit zeros, pills and safe audit
   assert.match(html,/\$0\.00/);
   assert.match(html,/account-pill-code/);
   assert.match(html,/account-pill-name/);
-  assert.match(html,/Current page totals/);
+  assert.doesNotMatch(html,/Current page totals/);
   assert.match(html,/page=1/);
   assert.ok(!html.includes('href="javascript:'));
   assert.match(html,/Vendor &lt;adjustment&gt;/);
-  assert.match(html,/Split \/ multiple accounts/);
+  assert.doesNotMatch(html,/Split \/ multiple accounts/);
+  assert.match(html,/ledger-offset-accounts/);
+  assert.match(html,/007\.003/);
+  assert.match(html,/232\.100/);
   assert.match(html,/Page 2/);
 });
 
@@ -150,9 +153,9 @@ function loadWorkspace(react, navigate=()=>{}) {
 test('Ledger, Trial Balance and rules keep their controls visible while data is unresolved',()=>{
   const workspace=loadWorkspace(React), data=pendingQuery();
   for(const [component,props,expected] of [
-    [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-11-03',page:1,query:'Vendor',side:'all'},data,accountData:data},'Search all records'],
-    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'With activity'],
-    [workspace.PostingRulesWorkspace,{asOf:'2026-11-03',data},'Search rules or accounts'],
+    [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-11-03',page:1,query:'Vendor',side:'all'},data,accountData:data,categoryData:pendingQuery(),countData:pendingQuery()},'Search all records'],
+    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'Search accounts'],
+    [workspace.PostingRulesWorkspace,{data},'Search rules or accounts'],
   ]){
     const html=renderToStaticMarkup(React.createElement(component,props));
     assert.match(html,new RegExp(expected));
@@ -165,11 +168,11 @@ test('Ledger, Trial Balance and rules keep their controls visible while data is 
 test('Ledger search has no button, commits on blur or Enter, and deduplicates both events',()=>{
   const calls=[],hooks={...React,useState:initial=>[initial,()=>{}],useRef:value=>({current:value}),useEffect:()=>{}};
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
-  const element=workspace.GeneralLedgerWorkspace({options:{from:'2026-01-01',to:'2026-11-03',page:3,query:'',side:'all'},data:pendingQuery(),accountData:pendingQuery()});
+  const element=workspace.GeneralLedgerWorkspace({options:{from:'2026-01-01',to:'2026-11-03',page:3,query:'',side:'all'},data:pendingQuery(),accountData:pendingQuery(),categoryData:pendingQuery(),countData:pendingQuery()});
   const find=(node,predicate)=>{
     if(!React.isValidElement(node))return undefined;
     if(predicate(node))return node;
-    for(const child of React.Children.toArray(node.props.children)){const result=find(child,predicate);if(result)return result;}
+    for(const child of React.Children.toArray([node.props.search,node.props.children])){const result=find(child,predicate);if(result)return result;}
   };
   const input=find(element,node=>node.type.name==='SearchField'&&node.props.name==='q');
   const form=find(element,node=>node.type==='form'&&node.props.role==='search');
@@ -186,10 +189,10 @@ test('Ledger search has no button, commits on blur or Enter, and deduplicates bo
 function findControl(node,predicate){
   if(!React.isValidElement(node))return undefined;
   if(predicate(node))return node;
-  for(const child of React.Children.toArray(node.props.children)){const found=findControl(child,predicate);if(found)return found;}
+  for(const child of React.Children.toArray([node.props.search,node.props.children])){const found=findControl(child,predicate);if(found)return found;}
 }
 
-function ledgerScopeHarness(initial,accountData=pendingQuery()){
+function ledgerScopeHarness(initial,accountData=pendingQuery(),categoryData=pendingQuery()){
   const slots=[],calls=[],pending=[];let cursor=0,dirty=false;
   const hooks={...React,
     useState(initialValue){const index=cursor++;if(!slots[index])slots[index]={value:typeof initialValue==='function'?initialValue():initialValue};return[slots[index].value,value=>{const next=typeof value==='function'?value(slots[index].value):value;if(!Object.is(next,slots[index].value)){slots[index].value=next;dirty=true;}}];},
@@ -198,7 +201,7 @@ function ledgerScopeHarness(initial,accountData=pendingQuery()){
   };
   const workspace=loadWorkspace(hooks,href=>calls.push(href));
   const data=pendingQuery();let source=initial,element;
-  const render=(options=source)=>{source=options;for(let pass=0;pass<5;pass++){cursor=0;dirty=false;element=workspace.GeneralLedgerWorkspace({options:source,data,accountData});while(pending.length)pending.shift()();if(!dirty)return element;}throw new Error('Workspace did not settle');};
+  const render=(options=source)=>{source=options;for(let pass=0;pass<5;pass++){cursor=0;dirty=false;element=workspace.GeneralLedgerWorkspace({options:source,data,accountData,categoryData,countData:pendingQuery()});while(pending.length)pending.shift()();if(!dirty)return element;}throw new Error('Workspace did not settle');};
   return{calls,render,find:predicate=>findControl(element,predicate),params:()=>Object.fromEntries(new URLSearchParams(calls.at(-1).slice(1)))};
 }
 
@@ -226,7 +229,7 @@ test('Rapid account, side, offset and date changes merge into the newest request
   assert.equal(picker().props.side,'debit','an older account-only response cannot remove the pending side');
   picker().props.onChange({offset:'211.100'});fixture.render();
   assert.equal(fixture.params().account,'112.300');assert.equal(fixture.params().side,'debit');assert.equal(fixture.params().offset,'211.100');
-  assert.deepEqual(period().props.preserve,{account:'112.300',offset:'211.100',q:'vendor',side:'debit'});
+  assert.deepEqual(period().props.preserve,{account:'112.300',offset:'211.100',q:'vendor',side:'debit',type:undefined,category:undefined,min:undefined,max:undefined});
   period().props.onRangeChange({from:'2026-07-01',to:'2026-09-30'});fixture.render();
   assert.deepEqual(fixture.params(),{from:'2026-07-01',to:'2026-09-30',account:'112.300',offset:'211.100',q:'vendor',side:'debit',page:'1'});
   fixture.find(node=>node.type==='button'&&node.props.children==='Reset filters').props.onClick();fixture.render();
@@ -257,16 +260,128 @@ test('Cached ledger query and account metadata render immediately, while read er
   const workspace=loadWorkspace(React),ready=value=>({data:value,pending:false,error:false,retry:()=>{}});
   const options={from:'2026-01-01',to:'2026-11-03',page:1,account:'112.300',query:'',side:'all'};
   const html=renderToStaticMarkup(React.createElement(workspace.GeneralLedgerWorkspace,{
-    options,data:ready({rows:ledger,page:1,pageSize:100,hasNext:false}),accountData:ready(trial),
+    options,data:ready({rows:ledger,page:1,pageSize:100,hasNext:false}),accountData:ready(trial),categoryData:ready([]),countData:ready(232),
   }));
   assert.match(html,/General Ledger records/);
   assert.match(html,/112\.300 Bank - Nickel/);
-  assert.match(html,/Current page totals/);
+  assert.doesNotMatch(html,/Current page totals/);
   assert.doesNotMatch(html,/Loading ledger records|Read failed/);
   const failed={data:undefined,pending:false,error:true,retry:()=>{}};
-  const error=renderToStaticMarkup(React.createElement(workspace.GeneralLedgerWorkspace,{options,data:failed,accountData:failed}));
+  const error=renderToStaticMarkup(React.createElement(workspace.GeneralLedgerWorkspace,{options,data:failed,accountData:failed,categoryData:pendingQuery(),countData:pendingQuery()}));
   assert.match(error,/Search all records/);
   assert.match(error,/Read failed/);
   assert.match(error,/value="112\.300"/,'selected account remains available when metadata fails');
   assert.doesNotMatch(error,/Current page totals/);
+});
+
+
+test('Ledger type, category and amount filters merge with search, reset pagination, and clear together',()=>{
+  const initial={from:'2026-01-01',to:'2026-11-03',page:4,query:'48',side:'all'};
+  const fixture=ledgerScopeHarness(initial,pendingQuery(),{data:[{rule_code:'PAY-08',trigger_name:'Pay a vendor',category:'payment'}],pending:false,error:false});fixture.render();
+  const select=label=>fixture.find(node=>node.type.name==='SearchableSelect'&&node.props.label===label);
+  assert.ok(fixture.find(node=>node.type.name==='LedgerFilters').props.categories.some(option=>option.value==='PAY-08'&&option.label==='PAY-08 - Pay a vendor'));
+  select('Account type').props.onChange('liability');fixture.render();
+  fixture.find(node=>node.type.name==='LedgerFilters').props.onChange({category:'PAY-08'});fixture.render();
+  fixture.find(node=>node.type.name==='LedgerFilters').props.onChange({min:0,max:123.45});fixture.render();
+  assert.deepEqual(fixture.params(),{from:initial.from,to:initial.to,q:'48',type:'liability',category:'PAY-08',min:'0',max:'123.45',page:'1'});
+  const period=fixture.find(node=>node.type===dateFilter.DateFilter);
+  assert.equal(period.props.preserve.min,'0');assert.equal(period.props.preserve.category,'PAY-08');
+  period.props.onRangeChange({from:'2025-01-01',to:'2025-12-31'});fixture.render();
+  assert.equal(fixture.params().type,'liability');assert.equal(fixture.params().max,'123.45');
+  fixture.find(node=>node.type==='button'&&node.props.children==='Reset filters').props.onClick();fixture.render();
+  assert.deepEqual(fixture.params(),{from:'2025-01-01',to:'2025-12-31',page:'1'});
+});
+
+test('Ledger pagination carries the complete filter scope',()=>{
+  const html=renderToStaticMarkup(React.createElement(tables.GeneralLedgerTable,{rows:ledger,from:'2026-01-01',to:'2026-11-03',page:2,pageSize:100,hasNext:true,accountType:'asset',category:'PAY-08',min:0,max:123.45,query:'48'}));
+  for(const direction of ['prev','next']){
+    const href=html.match(new RegExp('href="([^" ]+)" rel="'+direction+'"'))[1].replaceAll('&amp;','&');
+    const params=new URLSearchParams(href.slice(1));
+    assert.equal(params.get('type'),'asset');assert.equal(params.get('category'),'PAY-08');assert.equal(params.get('min'),'0');assert.equal(params.get('max'),'123.45');assert.equal(params.get('q'),'48');
+  }
+});
+
+test('Ledger amount menu applies inclusive limits, rejects reversed ranges and supports clearing',()=>{
+  const {LedgerFilters}=load(path.join(__dirname,'LedgerFilters.tsx'));
+  const calls=[],menu={open:true,querySelector:()=>({focus(){menu.focused=true;}})};
+  let validity='',reported=false,values={min:'0',max:'123.45'};
+  const maximum={setCustomValidity:value=>{validity=value;},reportValidity(){reported=true;}};
+  const form={elements:{namedItem:()=>maximum},closest:()=>menu};
+  const element=LedgerFilters({min:0,max:123.45,categories:[{value:"",label:"All categories"}],onChange:range=>calls.push(range)});
+  const html=renderToStaticMarkup(element);
+  assert.match(html,/Ledger amount range/);assert.match(html,/Minimum \(\$\)/);assert.match(html,/Maximum \(\$\)/);
+  assert.match(html,/type="number"[^>]*min="0"[^>]*step="0.01"/);
+  const fields=findControl(element,node=>node.type==='form');
+  const original=global.FormData;
+  global.FormData=class{get(key){return values[key];}};
+  try{
+    fields.props.onSubmit({preventDefault(){},currentTarget:form});
+    assert.deepEqual(calls,[{min:0,max:123.45}]);assert.equal(menu.open,false);assert.equal(menu.focused,true);
+    values={min:'50',max:'49.99'};menu.open=true;
+    fields.props.onSubmit({preventDefault(){},currentTarget:form});
+    assert.equal(calls.length,1);assert.equal(reported,true);assert.match(validity,/Maximum must/);assert.equal(menu.open,true);
+    fields.props.onInput({currentTarget:form});assert.equal(validity,'');
+    values={min:'1e2',max:'2e2'};fields.props.onSubmit({preventDefault(){},currentTarget:form});
+    assert.deepEqual(calls.at(-1),{min:100,max:200},'valid native number notation retains its amount');
+    values={min:'',max:''};fields.props.onSubmit({preventDefault(){},currentTarget:form});
+    assert.deepEqual(calls.at(-1),{min:undefined,max:undefined});
+  }finally{global.FormData=original;}
+});
+
+test('Filter bars use search, dates and account type order; category stays inside the Ledger Filters menu',()=>{
+  const workspace=loadWorkspace(React),data=pendingQuery();
+  for(const [Component,props,labels] of [
+    [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-12-31',page:1},data,accountData:data,categoryData:data,countData:data},['Search all ledger records','Period','Account type','Account','Offsetting account','Entry side']],
+    [workspace.TrialBalanceWorkspace,{asOf:'2026-12-31',data},['Search accounts','As of','Account type']],
+    [workspace.PostingRulesWorkspace,{data},['Search rules or accounts','Category']],
+  ]){
+    const html=renderToStaticMarkup(React.createElement(Component,props));
+    const positions=labels.map(label=>html.indexOf(`>${label}<`));
+    assert.ok(positions.every((position,index)=>position>=0&&(!index||position>positions[index-1])),labels.join(', '));
+    if(Component===workspace.GeneralLedgerWorkspace){
+      const menu=html.match(/<details class="report-filter-menu ledger-more-filters"[\s\S]*?<\/details>/)[0];
+      assert.match(menu,/Transaction category/);assert.match(menu,/Minimum \(\$\)/);assert.match(menu,/Maximum \(\$\)/);
+    }
+    if(Component===workspace.TrialBalanceWorkspace)assert.doesNotMatch(html,/With activity|aria-label="Accounts"/);
+  }
+});
+
+test('Ledger footer shows one compact record range and total, including loading, empty and failure states',()=>{
+  const render=props=>renderToStaticMarkup(React.createElement(tables.GeneralLedgerTable,{rows:ledger,from:'2026-01-01',to:'2026-12-31',page:2,pageSize:100,hasNext:true,...props})).replace(/<!--.*?-->/g,'');
+  const html=render({total:232});assert.match(html,/Showing 101-102 of 232 records/);
+  assert.doesNotMatch(html,/Current page totals|records per page|Posted entries only|<tfoot>/);
+  assert.match(render({rows:[],page:1,total:0}),/Showing 0 of 0 records/);
+  assert.match(render({countPending:true}),/Showing 101-102 of \.\.\. records/);
+  assert.match(render({}),/total unavailable/);
+});
+
+test('Date menus place quick presets above the date fields for range and as-of reports',()=>{
+  for(const asOfOnly of [false,true]){
+    const html=renderToStaticMarkup(React.createElement(dateFilter.DateFilter,{from:'2026-01-01',to:'2026-12-31',asOfOnly}));
+    assert.ok(html.indexOf('class="date-presets"')<html.indexOf('<form'));
+    assert.match(html,asOfOnly?/ledger-asof-field/:/ledger-date-fields/);
+    assert.doesNotMatch(html,/class=""/);
+  }
+});
+
+
+test('Split offsets render every account separately from the catalog, without relying on the visible page',()=>{
+  const accounts=[
+    {account_number:'007.003',account_name:'Interest Expense',account_type:'expense'},
+    {account_number:'232.100',account_name:'Auto Loan Payable',account_type:'liability'},
+  ];
+  const html=renderToStaticMarkup(React.createElement(tables.GeneralLedgerTable,{rows:[ledger[1]],accounts,from:'2026-01-01',to:'2026-11-03',page:1,pageSize:100,hasNext:false}));
+  const offsets=html.match(/<div class="ledger-offset-accounts">(.*?)<\/div>/)[1];
+  assert.equal((offsets.match(/class="account-pill"/g)||[]).length,2);
+  assert.match(offsets,/title="007\.003 Interest Expense"/);
+  assert.match(offsets,/title="232\.100 Auto Loan Payable"/);
+  assert.doesNotMatch(offsets,/Split|multiple accounts/);
+});
+
+test('Account pills keep the full long name in their hover title and text',()=>{
+  const {AccountPill}=load(path.join(__dirname,'AccountPill.tsx'));
+  const name='Long account name that must stay on one line';
+  const html=renderToStaticMarkup(React.createElement(AccountPill,{code:'131.100',name}));
+  assert.match(html,/title="131\.100 Long account name that must stay on one line"/);
+  assert.ok(html.includes(name));
 });

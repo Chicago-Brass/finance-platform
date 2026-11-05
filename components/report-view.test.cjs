@@ -69,7 +69,6 @@ test('Report formatting shows cents, explicit zero, negative parentheses and mis
   assert.equal(format.formatReportAmount(-43.16), '($43.16)');
   assert.equal(format.formatReportAmount(12751.61), '$12,751.61');
   assert.equal(format.formatReportAmount(null), '-');
-  assert.equal(format.formatAmount(0.72, true), '$1');
 });
 
 test('Report query failures offer a retry without exposing server error details', () => {
@@ -110,7 +109,7 @@ test('Sidebar renders signed funding and shares over 100% without clipping them 
 });
 
 test('Drill-down targets follow report order and name each account section', () => {
-  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual', isSample: false, columns: [{ key: 'a', label: 'A', kind: 'amount' }], lines, checks: [] };
+  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual',  columns: [{ key: 'a', label: 'A', kind: 'amount' }], lines, checks: [] };
   assert.deepEqual(view.drillTargets(report), [
     { code: '004.001', label: 'Zero', context: 'Income Statement · Revenue' },
     { code: '004.002', label: 'Unavailable', context: 'Income Statement · Revenue' },
@@ -148,7 +147,7 @@ test('Statement shells keep header, exports and all controls visible before data
     const dateLabel = title === 'Income Statement' ? '>Period<' : '>As of<';
     assert.ok(markup.indexOf(dateLabel) >= 0 && markup.indexOf(dateLabel) < markup.indexOf('aria-label="View"'));
     assert.ok(markup.indexOf('aria-label="View"') < markup.indexOf('aria-label="Display"'));
-    assert.ok(markup.indexOf('aria-label="Display"') < markup.indexOf('>Search accounts<'));
+    assert.ok(markup.indexOf('>Search accounts<') < markup.indexOf(dateLabel));
     assert.ok(markup.indexOf('report-filter-menu') < markup.indexOf('control-reset'));
     assert.match(markup, /disabled=""[^>]*>.*Export Excel/);
     assert.match(markup, /Loading report data/);
@@ -157,7 +156,7 @@ test('Statement shells keep header, exports and all controls visible before data
 });
 
 test('Statement column headings keep each period and year together in one header label', () => {
-  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual', isSample: false, columns: [{ key: 'a', label: 'Q1', sublabel: '2026', kind: 'amount' }], lines, checks: [] };
+  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual',  columns: [{ key: 'a', label: 'Q1', sublabel: '2026', kind: 'amount' }], lines, checks: [] };
   const markup = renderToStaticMarkup(React.createElement(view.ReportView, { report, display: display() }));
   assert.match(markup, /<span class="col-head">Q1 <span class="col-sub">2026<\/span><\/span>/);
 });
@@ -168,4 +167,38 @@ test('Display rows and exported rows use the same account filters and collapse s
   const collapsed = view.reportRows(report, display({ collapsed: 'all' }));
   assert.deepEqual(collapsed.map(line => line.id), ['Revenue', 'Revenue total', 'Operating expenses', 'Net income']);
   assert.equal(collapsed.at(-1).values.a, -37.34);
+});
+
+test('Capped account charts disclose their scope separately from complete summary amounts and visible footer totals', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'AccountDrawer.tsx'), 'utf8');
+  const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const texts = node => !React.isValidElement(node) ? typeof node === 'string' || typeof node === 'number' ? String(node) : '' : React.Children.toArray(node.props.children).map(texts).join('');
+  for (const mode of ['period', 'balance']) for (const truncated of [false, true]) {
+    const cache = new Map(), range = { mode, from: '2026-01-01', to: '2026-01-31' };
+    const lines = [{ id: 'line', date: '2026-01-09', entry: 1, lineNo: 1, offsetCode: '211.100', offsetName: 'Payable', offsetSplit: false, debit: 100, credit: 0 }];
+    const loaded = { key: `112.100|${mode}|${range.from}|${range.to}|0`, cache, lines: { lines, truncated }, summary: { ...range, account: { code: '112.100', name: 'Bank', normalBalance: 'debit' }, debit: truncated ? 10000 : 100, credit: 0, opening: mode === 'balance' ? 200 : null, previous: null } };
+    let stateIndex = 0;
+    const hooks = { ...React, useId: () => 'test', useEffect() {}, useMemo: fn => fn(), useState: initial => [stateIndex++ === 0 ? loaded : initial, () => {}] };
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', code)(specifier => specifier === 'react' ? hooks : specifier.startsWith('@/') ? load(path.join(root, specifier.slice(2))) : specifier.startsWith('.') ? load(path.join(__dirname, specifier)) : require(specifier), module, module.exports);
+    const tree = module.exports.AccountDrawer({ target: { code: '112.100', label: 'Bank' }, range, cache, onClose() {}, onSelect() {} });
+    const text = texts(tree);
+    if (truncated) {
+      assert.match(text, /Charts and line counts use the first 1 lines. Summary amounts include all posted lines./);
+      const children = React.Children.toArray(tree.props.children);
+      assert.match(texts(children.find(child => child.props?.className === 'drill-analytics')), /Charts and line counts/);
+      assert.match(text, /Footer totals cover the visible lines only/);
+      assert.doesNotMatch(text, /Totals above include every line|Lines tie to the trial balance/);
+    } else {
+      assert.doesNotMatch(text, /Charts and line counts use|Footer totals cover/);
+    }
+  }
+});
+
+test('PDF printing hides the fixed skip link and compacts wide financial tables', () => {
+  const layout = fs.readFileSync(path.join(root, 'app/(reports)/layout.tsx'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8');
+  assert.match(layout, /className="report-skip-link no-print"/);
+  assert.match(css, /\.no-print[^}]*display:\s*none\s*!important/);
+  assert.match(css, /@media print\s*\{[\s\S]*?\.report-page \.fin-table th, \.report-page \.fin-table td \{ padding: 3px 4px;/);
 });

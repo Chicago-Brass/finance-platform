@@ -78,7 +78,7 @@ export function IncomeStatementWorkspace({ data, options: initial }: { data: Rep
   const options = { ...initial, grain: view.grain, summary: view.summary };
   const build = useCallback((value: IncomeStatementData) => buildIncomeStatementView(value, view.grain, view.summary).report, [view.grain, view.summary]);
   return <StatementShell title="Income Statement" period={`${formatDate(monthStart(initial.year, initial.from))} to ${formatDate(monthEnd(initial.year, initial.to))}`} data={data} display={display}
-    controls={<><ReportFilters options={options} /><ReportViewControls grains={INCOME_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
+    controls={<ReportDisplayControls display={display} summary={view.summary}><ReportFilters options={options} /><ReportViewControls grains={INCOME_GRAINS} {...view} /></ReportDisplayControls>}
     exports={<ExportArea data={data} build={build} display={display} />}>
     {data.data && <IncomeData data={data.data} grain={view.grain} summary={view.summary} display={display} />}
   </StatementShell>;
@@ -95,7 +95,7 @@ export function BalanceSheetWorkspace({ data, options: initial }: { data: Report
   const options = { ...initial, grain: view.grain, summary: view.summary };
   const build = useCallback((value: BalanceSheetData) => buildBalanceSheetView(value, view.grain, view.summary).report, [view.grain, view.summary]);
   return <StatementShell title="Balance Sheet" period={`As of ${formatDate(initial.asOf)}`} data={data} display={display}
-    controls={<><BalanceSheetFilters options={options} /><ReportViewControls grains={BALANCE_GRAINS} {...view} /><ReportDisplayControls display={display} summary={view.summary} /></>}
+    controls={<ReportDisplayControls display={display} summary={view.summary}><BalanceSheetFilters options={options} /><ReportViewControls grains={BALANCE_GRAINS} {...view} /></ReportDisplayControls>}
     exports={<ExportArea data={data} build={build} display={display} />}>
     {data.data && <BalanceData data={data.data} grain={view.grain} summary={view.summary} display={display} />}
   </StatementShell>;

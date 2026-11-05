@@ -2,7 +2,7 @@
 
 import { DismissibleMenu } from "./DismissibleMenu";
 import { useMemo, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Report, ReportLine } from "@/lib/reports/types";
 import type { ReportAnalytics as AnalyticsData } from "@/lib/reports/analytics";
 import { formatReportAmount, formatPercent } from "@/lib/format";
@@ -77,10 +77,11 @@ export function useReportDisplay(): ReportDisplayState {
 }
 
 /** Display controls stay in the page shell, even before financial data arrives. */
-export function ReportDisplayControls({ display, summary = false }: { display: ReportDisplayState; summary?: boolean }) {
+export function ReportDisplayControls({ display, summary = false, children }: { display: ReportDisplayState; summary?: boolean; children?: ReactNode }) {
   const { query, hideZero, setQuery, setHideZero, setCollapsed } = display;
   return <>
     <SearchField label="Search accounts" placeholder={summary ? "Search in Details" : "Name or account number"} value={query} disabled={summary} onChange={setQuery} title={summary ? "Choose Details to search individual accounts." : undefined} />
+    {children}
     <DismissibleMenu className="report-filter-menu">
       <summary className="btn btn-quiet">Filters{hideZero && <span className="report-filter-count">1</span>}</summary>
       <div className="report-filter-popover">
@@ -131,7 +132,6 @@ export function ReportView({ report, analytics, drill, display }: {
 
   return (
     <div className="statement-results">
-      {report.isSample && <p className="sample-banner" role="note">Sample data. These figures are for layout review and are not Chicago Brass results.</p>}
       {report.checks.some(check => !check.ok) && <div className="report-alerts" role="status">{report.checks.filter(check => !check.ok).map(check => <p className="check check-bad" key={check.label}>{check.label}: {check.detail}</p>)}</div>}
       <div className={`report-workspace${analytics ? " has-analytics" : ""}`}>
         <section className="statement-panel" aria-label={report.title}>

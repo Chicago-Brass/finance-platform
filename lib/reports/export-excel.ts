@@ -83,7 +83,7 @@ const SLATE = "FF5B6878";
 const TINT = "FFEAF0F6";
 
 const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** Builds cellXfs on demand and returns their indexes. */
 class Styles {
@@ -168,8 +168,8 @@ export function reportToXlsx(report: Report, lines: ReportLine[] = report.lines)
   r = 5; row(textCell(0, report.title, st.get({ font: 2 })), 24);
   r = 6; row(textCell(0, `${report.periodLabel} · ${report.basis}`, st.get({ font: 3 })));
   let next = 7;
-  if (report.isSample) {
-    r = next++; row(textCell(0, "Sample data: invented figures for layout review.", st.get({ font: 3 })));
+  if (lines.length < report.lines.length) {
+    r = next++; row(textCell(0, "Some detail rows are hidden. Financial totals include all accounts.", st.get({ font: 3 })));
   }
   r = next++; row("");
 
@@ -189,10 +189,10 @@ export function reportToXlsx(report: Report, lines: ReportLine[] = report.lines)
     const isTot = l.kind === "total" || l.kind === "grandTotal";
     const labelStyle =
       l.kind === "section"
-        ? st.get({ font: 6, indent })
+        ? st.get({ font: 6, indent, wrap: true })
         : l.kind === "account"
-          ? st.get({ indent })
-          : st.get({ font: isTot ? 5 : 1, indent, fill: isTot ? 3 : 0 });
+          ? st.get({ indent, wrap: true })
+          : st.get({ font: isTot ? 5 : 1, indent, fill: isTot ? 3 : 0, wrap: true });
     let cells = textCell(0, l.label, labelStyle);
     if (l.kind !== "section") {
       cells += report.columns

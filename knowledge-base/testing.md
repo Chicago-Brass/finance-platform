@@ -10,6 +10,9 @@ npm run build
 ```
 
 Use focused subsets during implementation; run the relevant release cohort before publication.
+TypeScript rejects unused locals and parameters. Statements require the batched read RPC and a
+complete per-year Balance Sheet baseline map; no old-database retry path is used.
+
 Tests cover cents/signs, grouping, earnings baselines, period modes, exports, auth gates, private
 cache isolation, stale requests, pagination/search, control behavior and drawer interaction.
 Mocked/component checks do not prove browser geometry or deployed permissions.
@@ -62,6 +65,8 @@ sh supabase/tests/check-report-reads.sh
 They restore the tracked migration/seed and use synthetic data. Run them for relevant writer,
 financial query or schema changes. Never reset a hosted database as routine frontend QA. A
 service-key schema read does not prove signed-in viewer RLS access; test that context separately.
+
+Current release evidence: [release verification](../docs/release-verification.md).
 
 ## Publication
 

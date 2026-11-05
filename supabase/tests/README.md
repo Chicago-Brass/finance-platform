@@ -46,6 +46,12 @@ data, deduplicates them together across payment triggers and rejects an incomple
 
 # Report read checks
 
+Ledger filter checks cover account type and T-Chart rule selection, inclusive debit/credit amount
+limits, zero maximum, combined journal-number search, pagination before/after the first 100 rows,
+matching full counts for both lean and search/offset paths, invalid inputs and approved-viewer
+versus unapproved/anonymous access. `filter_ledger` is the
+application's unified read; `search_ledger` remains available for older callers.
+
 ```sh
 sh supabase/tests/check-report-reads.sh
 ```
