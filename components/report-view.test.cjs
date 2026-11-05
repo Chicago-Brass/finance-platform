@@ -140,8 +140,16 @@ test('Statement shells keep header, exports and all controls visible before data
     assert.match(markup, /aria-label="Display"/);
     assert.match(markup, />Search accounts<\/label>/);
     assert.match(markup, /Show zero accounts/);
+    assert.doesNotMatch(markup, />Options<\/span>|>More</);
+    assert.match(markup, /<summary class="btn btn-quiet">Filters/);
     assert.match(markup, /Expand all/);
     assert.match(markup, /Collapse all/);
+    assert.match(markup, /class="btn btn-quiet control-reset"[^>]*>Reset filters<\/button>/);
+    const dateLabel = title === 'Income Statement' ? '>Period<' : '>As of<';
+    assert.ok(markup.indexOf(dateLabel) >= 0 && markup.indexOf(dateLabel) < markup.indexOf('aria-label="View"'));
+    assert.ok(markup.indexOf('aria-label="View"') < markup.indexOf('aria-label="Display"'));
+    assert.ok(markup.indexOf('aria-label="Display"') < markup.indexOf('>Search accounts<'));
+    assert.ok(markup.indexOf('report-filter-menu') < markup.indexOf('control-reset'));
     assert.match(markup, /disabled=""[^>]*>.*Export Excel/);
     assert.match(markup, /Loading report data/);
     assert.doesNotMatch(markup, /statement-toolbar|\$0\.00/);

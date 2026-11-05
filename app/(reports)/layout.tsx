@@ -1,4 +1,5 @@
 import { reportUser } from "@/lib/reports/report-session";
+import { DismissibleMenu } from "@/components/DismissibleMenu";
 import { NavLinks } from "@/components/NavLinks";
 import { RefreshDataButton, ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
@@ -23,14 +24,14 @@ export default async function ReportsLayout({ children }: { children: React.Reac
           </div>
           <NavLinks />
           <RefreshDataButton />
-          <details className="account-menu">
+          <DismissibleMenu className="account-menu">
             <summary className="account-trigger" aria-label="Account menu"><span className="account-avatar" aria-hidden="true">{initials}</span><span aria-hidden="true">▾</span></summary>
             <div className="account-menu-panel">
               <p className="account-email">{user?.email}</p>
               <a href="/account">Change password</a>
               <form action="/auth/signout" method="post"><button type="submit">Sign out</button></form>
             </div>
-          </details>
+          </DismissibleMenu>
         </div>
       </header>
       <ReportContent><ReportApplication>{children}</ReportApplication></ReportContent>

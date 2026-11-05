@@ -6,6 +6,7 @@
 
 async function handleOperatingExpense(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
+    if (results.some(result => result.tChartRow === 12)) return;
     // Not yet implemented: the chart's qualifying operating-account list is still PENDING.
     throw new Error("Not yet implemented: Expense row 2 needs the allowed operating expense accounts, excluding bank and revenue accounts.");
 }
@@ -55,8 +56,23 @@ async function handleBankFees(data, results) {
     if (data.invoiceType !== "AP") return;
     const accounts = await invoiceAccountNumbers(data);
     if (!accounts.includes("007.002")) return;
-    // Not yet implemented: debit 007.002 is defined, but the credited bank is PENDING.
-    throw new Error("Not yet implemented: Expense row 12 needs the bank account to credit for Invoice Amount.");
+    const paymentIds = linkedIds(data.invoice, INVOICE_FIELDS.payments);
+    if (!paymentIds.length) throw new Error("Bank-fee invoice needs a linked payment to identify the bank account.");
+    const payments = await readRecords(TABLES.payments, paymentIds, Object.values(PAYMENT_FIELDS));
+    const bankNumbers = [];
+    for (const payment of payments) {
+        const accountIds = linkedIds(payment, PAYMENT_FIELDS.accounts);
+        if (accountIds.length !== 1) throw new Error(`Bank-fee payment ${payment.id} must identify exactly one bank account.`);
+        const [number] = await accountNumbers(data, accountIds);
+        if (number !== "112.100" && number !== "0747") throw new Error(`Bank-fee payment ${payment.id} must use Fifth Third (112.100) or Nickel (0747).`);
+        bankNumbers.push(number);
+    }
+    if (new Set(bankNumbers).size !== 1) throw new Error("Bank-fee invoice links payments using different banks; the invoice amount cannot be split without a mapping.");
+    const credit = bankNumbers[0] === "0747" ? "112.300" : "112.100";
+    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
+    const postings = expensePosting(data, "007.002", credit, cents, data.invoice.id);
+    for (const posting of postings) posting.paymentRecordIds = paymentIds;
+    results.push({ category: "Bank fees and charges shown only on the bank statement", tChartRow: 12, postings });
 }
 
 async function handleBadDebtReserve(data, results) {
@@ -78,7 +94,7 @@ async function handleIncomeTaxAccrual(data, results) {
 
 // ==================== UTILS ====================
 
-const TABLES = { invoices: "tbldQXuqNEp8G5pfs", lines: "tblV26TC0f6CKDneL", accounts: "tblJ2RF8vlOhNMBKR" };
+const TABLES = { invoices: "tbldQXuqNEp8G5pfs", lines: "tblV26TC0f6CKDneL", accounts: "tblJ2RF8vlOhNMBKR", payments: "tblR61NG9i0giid28" };
 const INVOICE_FIELDS = {
     name: "fldMZyzqDidRujeZS",          // Invoice ID (primary display name)
     type: "fld9e6yDIv0PtBDV0",          // Invoice Type
@@ -88,6 +104,7 @@ const INVOICE_FIELDS = {
     date: "fldSungTQU5nIEIvi",          // Invoice Date
     lines: "fldF0uqCMkPgwuIes",         // Invoice Lines
     accounts: "fldT5u0prSS8G1H4x",      // Linked Chart of Accounts
+    payments: "fldeNFOgl9OBHPlNm",      // Linked Payments
     vendors: "fld77UN3hpnMagzkj",       // Linked Vendors (For both Expenses and Product Invoices)
     clients: "fld9aY5ze2BbaoWG5",       // Linked Client
     staff: "fldJXrFmx3Y6Szxa5",         // Linked Staff
@@ -101,6 +118,7 @@ const LINE_FIELDS = {
     accounts: "fldwr0Pfp8OHsNj5N", // Chart of Accounts
     invoices: "fldZpOBUbuVJbuaOG", // Linked Invoice
 };
+const PAYMENT_FIELDS = { accounts: "fldCIQSOdytBGi91S" }; // Account to Pay/Receive
 const ACCOUNT_FIELDS = { number: "fldTjgAITNrJVCCWq" }; // Account Number
 
 async function main(invoiceRecordId) {
@@ -245,8 +263,9 @@ function printResults(data, results, reason = "") {
     for (const [index, result] of results.entries()) {
         report.push("", divider, `MATCH ${index + 1}`, divider, `Category: ${result.category}`, `T-Chart row: ${result.tChartRow}`);
         for (const posting of result.postings) {
-            report.push(`Amount: ${posting.amount}`, `Debit account: ${posting.debitAccount.number}`, `Credit account: ${posting.creditAccount.number}`, `Invoice Line ID: ${posting.sourceRecordId}`);
+            report.push(`Amount: ${posting.amount}`, `Debit account: ${posting.debitAccount.number}`, `Credit account: ${posting.creditAccount.number}`, `Source record ID: ${posting.sourceRecordId}`);
         }
+        for (const id of result.postings[0]?.paymentRecordIds || []) report.push(`Linked payment ID: ${id}`);
         if (!result.postings.length) report.push("Amount: 0.00", "No monetary posting.");
     }
     if (!results.length) report.push("", reason || "No Expense Create Entry category matched.");
@@ -272,12 +291,16 @@ INPUTS / SECRET
   ledgerWebhookUrl: https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-payment
   Secret: Dual Ledger Webhook Secret, matching LEDGER_WEBHOOK_SECRET.
 SOURCE / MAPPING
-  T-Chart Category - Expenses, current download 4 Nov 2026, Actual Trigger / Mapping / Clarification.
+  T-Chart Category - Expenses, row 12 updated 5 Nov 2026, Actual Trigger / Mapping / Clarification.
   User override: every entry uses Invoice Date, including rows whose date says PENDING.
   Rows 8 and 10 post each matching Line Amount with its own source line ID.
   Row 8: 005.101/005.003/005.001 -> 241.100. Row 10: 005.201 -> 241.300.
   Round each posting to cents; zero is a category no-op. Negative or missing amounts fail.
-  Rows 2/6/7/12/13/14 retain explicit Not yet implemented errors for chart clarifications.
+  Row 12: full Invoice Amount, debit 007.002, credit the linked payments' bank.
+  FIN 112.100 -> ledger 112.100; FIN 0747 -> ledger 112.300. All linked payments
+  must identify the same supported bank. No allocation by payment amount or extra Sent filter.
+  The generic operating-expense placeholder skips a matched row 12.
+  Rows 2/6/7/13/14 retain explicit Not yet implemented errors for chart clarifications.
   Rows 3 and 4 have different primary events and do not run from this checkbox automation.
   Rows 5/9/11 have no approved Actual Trigger and are not inferred from descriptions.
 DATA / NETWORK

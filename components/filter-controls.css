@@ -1,4 +1,4 @@
-.filter-control-bar{display:flex;flex:none;align-items:flex-end;flex-wrap:wrap;gap:8px 12px;min-width:0;min-height:64px;margin:0 0 12px;padding:6px 10px;border:1px solid var(--rule,#dce0e5);border-radius:var(--panel-radius,8px);background:var(--surface,#fff);color:var(--ink,#253247);font-size:var(--report-text-size,13px)}
+.filter-control-bar{display:flex;flex:none;align-items:center;flex-wrap:wrap;gap:8px 12px;min-width:0;min-height:64px;margin:0 0 12px;padding:6px 10px;border:1px solid var(--rule,#dce0e5);border-radius:var(--panel-radius,8px);background:var(--surface,#fff);color:var(--ink,#253247);font-size:var(--report-text-size,13px)}
 .filter-control-field{display:flex;flex:0 1 auto;flex-direction:column;align-items:stretch;gap:3px;min-width:0;font-size:var(--report-text-size,13px)}
 .filter-control-label{display:block;margin:0;color:var(--ink-2,#5d6879);font-size:12px;line-height:14px;font-weight:500;white-space:nowrap}
 .filter-search-field{flex:1 1 180px;min-width:140px;max-width:260px}
@@ -25,3 +25,5 @@
 .filter-control-field>input:is([type=number],[type=date]):focus-visible{outline:2px solid var(--steel,#31536f);outline-offset:1px;border-color:var(--steel,#31536f)}
 .filter-control-field>input:is([type=number],[type=date]):disabled{background:#f3f5f7;color:#8c96a4;cursor:not-allowed}
 @media(prefers-reduced-motion:reduce){.filter-control-field>input:is([type=number],[type=date]){transition:none}}
+
+.filter-control-bar>.control-reset{flex:none;align-self:center;margin-left:auto}

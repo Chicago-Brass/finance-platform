@@ -24,10 +24,10 @@ replaying an older entry that contains notes can conflict with the new notes-fre
 | Invoice Entry - Create Entry | invoice-entry.js | Invoices.Create Entry checked | INV-01/03/04/06/07/08/10; INV-09 blocked |
 | Invoice Entry - Invoice Created | invoice-created.js | FIN Invoices record created | INV-05 blocked |
 | Expense - Invoice Created | expense-created.js | FIN Invoices record created | EXP-03 prepaid expense |
-| Expense - Invoice Create Entry | expense-entry.js | Invoices.Create Entry checked | EXP-01/05/06/07/09/11/12/13; only EXP-07 and EXP-09 currently post |
+| Expense - Invoice Create Entry | expense-entry.js | Invoices.Create Entry checked | EXP-01/05/06/07/09/11/12/13; EXP-07, EXP-09 and EXP-11 currently post |
 
 The three payment automations and Invoice Created were observed ON on 4 November 2026.
-Expense - Invoice Create Entry is OFF, with one saved script action. Payment Sent has one script action. The former Invoice
+Expense - Invoice Create Entry was observed ON on 5 November 2026, with one saved script action. Payment Sent has one script action. The former Invoice
 Paid action was consolidated into that script. The separate Invoice Paid and legacy Payment
 Returned automations were moved to trash, as requested. AP returns are handled by Sent + Return
 Payment (AP); no standalone return event is implemented by the official chart.
@@ -149,7 +149,7 @@ creation sources were read from their browser editors and matched the local file
 | 7 / EXP-06 | Blocks: 241.600 payroll component/amount is undefined |
 | 8 / EXP-07 | Each matching 005.101/005.003/005.001 Line Amount debits its account and credits 241.100 |
 | 10 / EXP-09 | Each matching 005.201 Line Amount debits 005.201 and credits 241.300 |
-| 12 / EXP-11 | Blocks: the credited bank account is PENDING |
+| 12 / EXP-11 | Full Invoice Amount debits 007.002 and credits the bank on linked payments: FIN 112.100 -> ledger 112.100; FIN 0747 -> ledger 112.300 |
 | 13 / EXP-12 | Blocks: the chart's missing FIN 121.900 clarification remains unresolved |
 | 14 / EXP-13 | Blocks: the chart's missing FIN 011.001/011.002 clarification remains unresolved; a two-account invoice has no defined split |
 
@@ -199,3 +199,17 @@ Six focused mocked behavior checks passed. Saved browser source was compared wit
 inputs, attached secret and ON state were verified. No live invoice or ledger test was created.
 The separate Invoice Entry row 6 AP-expense handler remains blocked on its freight source; it can also
 match a prepaid invoice but is outside this installation's scope.
+
+## Bank fees - 5 November 2026
+
+Expense row 12 / EXP-11 now reads Invoices.Linked Payments and each payment's Account to Pay/Receive
+on demand. Each payment must identify one supported bank, and all linked payments must use the same
+bank. It posts the full Invoice Amount once on Invoice Date, debit 007.002 and credit 112.100 for
+Fifth Third or 112.300 for FIN Nickel code 0747. Payment amounts do not allocate or multiply the fee;
+Sent is not an extra filter. Missing, unsupported or mixed banks fail before the webhook.
+
+The generic operating-expense placeholder skips a row 12 match so an otherwise valid AP expense
+bank-fee invoice can post. Other unresolved categories keep their existing fail-before-post behavior.
+The invoice remains the journal owner/audit source; linked payment IDs travel as structured refs.
+Nineteen focused native mocked checks passed. Saved source, unchanged inputs/secret and ON state
+were read back after publishing. No live invoice checkbox or posting test was run.

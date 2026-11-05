@@ -127,6 +127,6 @@ export function SearchableSelect({ label, value, options, onChange, placeholder 
         </div>)}
       </div>
       {!visible.length && <div className="searchable-select-empty" role="status">No matches</div>}
-    </div>, input.current?.closest('[role="dialog"]') ?? document.body)}
+    </div>, input.current?.closest('details, [role="dialog"]') ?? document.body)}
   </FilterField>;
 }

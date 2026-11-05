@@ -3,22 +3,22 @@
 import { useMemo } from "react";
 import type { TChartRow } from "@/lib/reports/ledger";
 import { filterRules, groupRules, ruleAccounts } from "@/lib/reports/t-chart";
-import { AccountLedgerLink } from "./LedgerTable";
+import { AccountPill } from "./AccountPill";
 import "./ledger-tables.css";
 
-function RuleAccounts({ text, asOf }: { text: string | null; asOf: string }) {
+function RuleAccounts({ text }: { text: string | null }) {
   const parts = ruleAccounts(text);
   if (parts.length === 0) return <span className="ledger-muted">-</span>;
   return (
     <ul className="tchart-accounts">
       {parts.map((part, index) => <li key={index}>{part.code
-        ? <><AccountLedgerLink code={part.code} name={part.name ?? null} asOf={asOf} />{part.note && <small className="tchart-account-note">{part.note}</small>}</>
+        ? <><AccountPill code={part.code} name={part.name ?? null} />{part.note && <small className="tchart-account-note">{part.note}</small>}</>
         : <span className="tchart-account-text">{part.text}</span>}</li>)}
     </ul>
   );
 }
 
-export function PostingRulesTable({ rules, asOf, query = "", category = "all" }: { rules: TChartRow[]; asOf: string; query?: string; category?: string }) {
+export function PostingRulesTable({ rules, query = "", category = "all" }: { rules: TChartRow[]; query?: string; category?: string }) {
   const groups = useMemo(() => groupRules(filterRules(rules, query, category)), [rules, query, category]);
   const shown = groups.reduce((total, group) => total + group.rules.length, 0);
   return (
@@ -36,8 +36,8 @@ export function PostingRulesTable({ rules, asOf, query = "", category = "all" }:
                   <tr key={rule.rule_code} className="row-account">
                     <th scope="row" className="label-cell"><span className="tchart-rule-code">{rule.rule_code}</span></th>
                     <td className="label-cell tchart-trigger">{rule.trigger_name}</td>
-                    <td className="label-cell"><RuleAccounts text={rule.debit_accounts} asOf={asOf} /></td>
-                    <td className="label-cell"><RuleAccounts text={rule.credit_accounts} asOf={asOf} /></td>
+                    <td className="label-cell"><RuleAccounts text={rule.debit_accounts} /></td>
+                    <td className="label-cell"><RuleAccounts text={rule.credit_accounts} /></td>
                     <td className="label-cell tchart-when">{rule.when_to_post || <span className="ledger-muted">-</span>}{rule.audit_trail && <small className="tchart-audit">Audit trail: {rule.audit_trail}</small>}</td>
                     <td className="label-cell">{rule.reversible == null ? <span className="ledger-muted">-</span> : rule.reversible ? "Yes" : "No"}</td>
                   </tr>

@@ -80,16 +80,16 @@ test('Enter selects without submitting; Escape closes locally; Tab leaves normal
   } finally { global.document = previousDocument; }
 });
 
-test('Popup stays inside its modal dialog and uses the body only for non-modal controls', () => {
+test('Popup stays inside its nearest menu or modal dialog, otherwise using the body', () => {
   const previousDocument = global.document;
-  const body = { kind: 'body' }, dialog = { kind: 'dialog' };
+  const body = { kind: 'body' }, dialog = { kind: 'dialog' }, menu = { kind: 'details' };
   global.document = { body };
   try {
-    for (const nearestDialog of [dialog, null]) {
+    for (const nearestDialog of [menu, dialog, null]) {
       let state = 0, reference = 0, portalTarget;
       const mockReact = { ...React,
         useId: () => 'portal-test', useMemo: fn => fn(), useEffect() {}, useLayoutEffect() {},
-        useRef: () => ({ current: reference++ === 1 ? { closest: selector => { assert.equal(selector, '[role="dialog"]'); return nearestDialog; } } : null }),
+        useRef: () => ({ current: reference++ === 1 ? { closest: selector => { assert.equal(selector, 'details, [role="dialog"]'); return nearestDialog; } } : null }),
         useState: initial => [state++ === 0 ? true : initial, () => {}],
       };
       const control = load('SearchableSelect.tsx', { react: mockReact, 'react-dom': { createPortal: (child, target) => { portalTarget = target; return child; } } }).SearchableSelect;

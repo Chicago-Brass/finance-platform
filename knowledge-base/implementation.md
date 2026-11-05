@@ -138,7 +138,7 @@ Every API read verifies the signed-in identity and runs through RLS. Middleware 
 allowlist checks in parallel and requires both. API failures return JSON statuses rather than HTML
 login redirects. Server reads remain uncached; a cache miss or Refresh reads the latest postings.
 
-Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
+Account rows on the Income Statement and Balance Sheet open a slide-over drawer
 above the page with that account's summary, filters and posted lines. Totals and lines start as
 parallel GET requests, each with its own skeleton/error/retry state. Totals use one batched RPC;
 lines use up to four 500-line reads with the existing 2,000-line cap. The main ledger remains
@@ -160,3 +160,37 @@ host-scoped; do not clear the user's normal session for visual tests.
 The default public Supabase configuration targets DUAL ENTRY. Environment variables can override it,
 so verify the actual process environment before diagnosing the database. Do not reuse another app's
 local Supabase variables, restart other shared dev servers or print secrets.
+
+## Report interaction and grouping update
+
+Menus share `components/DismissibleMenu.tsx`: outside pointer/focus and Escape dismiss the menu.
+Nested searchable lists portal into their owning menu or modal. The account drawer dismisses on
+backdrop pointer-down. General Ledger search commits on blur or Enter, without a Search button.
+[Statement grouping review](../docs/statement-grouping-review.md) records the comparison with
+`mae/testing`, classified Balance Sheet blocks and the combined other-income/expense section.
+The report data and cents contracts remain unchanged.
+
+Report filter bars keep date/period, selection/display controls and search together on the left.
+A shared `.control-reset` rule places Reset filters at the right and vertically centers it.
+On statements, Filters has no icon or top label and sits immediately before Reset, also centered.
+Statement Reset filters clears account search, zero-account visibility and collapsed sections;
+it preserves the selected reporting period and View/Display modes. Other report resets retain
+their existing behavior. Controls wrap at narrow widths.
+
+General Ledger rows now open `JournalEntryDrawer`, which shows the full posted entry rather than
+account activity. The on-demand `/api/reports/journal-entry` read is owned by
+`lib/reports/journal-entry.ts`; it fetches the header plus all lines by entry ID, using the
+existing private per-user report cache. Statement account drawers retain account activity.
+`DetailDrawer` shares modal focus and dismissal behavior. T-Chart account pills have no links;
+Trial Balance links to the General Ledger remain.
+
+The journal drawer is compact: a single-row header with source icon, Account/Debit/Credit/source columns
+and no line-number or balanced captions. Detailed line references are hidden for now. It inherits
+the shared 640px responsive drawer width used by statement account details. The inner table
+uses vertical overscroll auto so wheel movement reaches the drawer; only the outer drawer stops
+scrolling into the page. Horizontal table scrolling remains contained.
+
+Journal detail sections are Entry details (source, table, record, date, transaction type),
+Journal lines, and Posting information (rule, created/posted dates, journal ID). There is no
+separate References section, user/event metadata or separator between sections. Header and table
+borders remain visible.

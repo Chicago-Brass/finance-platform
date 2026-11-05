@@ -1,11 +1,12 @@
 "use client";
 
+import { DismissibleMenu } from "./DismissibleMenu";
 import { useState } from "react";
 import { ReportLink, ReportForm } from "./ReportNavigation";
 import type { IncomeStatementOptions } from "@/lib/reports/income-statement";
 import { formatDate, monthEnd, monthStart } from "@/lib/reports/report-utils";
 import { incomeDatePresets, reportHref } from "@/lib/reports/filter-options";
-import { CalendarMark, closePopoverOnEscape } from "./ReportViewControls";
+import { CalendarMark } from "./ReportViewControls";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterField } from "./FilterControls";
 
@@ -27,7 +28,7 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
   const presets = incomeDatePresets();
   const period = `${options.year}:${options.from}:${options.to}`;
   return <FilterField label="Period" className="statement-period-controls">
-    <details className="period-picker" key={period} onKeyDown={closePopoverOnEscape}>
+    <DismissibleMenu className="period-picker" key={period}>
       <summary className="period-picker-trigger"><CalendarMark /><span>{formatDate(monthStart(options.year, options.from))} - {formatDate(monthEnd(options.year, options.to))}</span><span aria-hidden="true">▾</span></summary>
       <div className="period-picker-panel">
         <div className="date-presets" aria-label="Quick reporting periods">{presets.map(preset => {
@@ -36,6 +37,6 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
         })}</div>
         <CustomPeriod options={options} />
       </div>
-    </details>
+    </DismissibleMenu>
   </FilterField>;
 }

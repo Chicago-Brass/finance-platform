@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type IconName = "excel" | "pdf" | "search" | "filter" | "chevronDown" | "chevronRight" | "expand" | "collapse" | "arrowUp" | "arrowDown" | "minus" | "check" | "mail" | "lock" | "eye" | "eyeOff" | "arrowRight" | "refresh";
+type IconName = "excel" | "pdf" | "search" | "filter" | "chevronDown" | "chevronRight" | "expand" | "collapse" | "arrowUp" | "arrowDown" | "minus" | "check" | "mail" | "lock" | "eye" | "eyeOff" | "arrowRight" | "refresh" | "externalLink";
 
 export function ReportIcon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
@@ -21,6 +21,7 @@ export function ReportIcon({ name, className = "" }: { name: IconName; className
     eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
     eyeOff: <><path d="m3 3 18 18M10.6 5.1 12 5c6 0 10 7 10 7a22 22 0 0 1-3.2 3.9M6.1 6.1A23 23 0 0 0 2 12s4 7 10 7c1.6 0 3.1-.5 4.4-1.2M10 10a3 3 0 0 0 4 4" /></>,
     arrowRight: <path d="M4 12h16m-6-6 6 6-6 6" />,
+    externalLink: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
     refresh: <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />,
   };
   return <svg className={`report-icon ${className}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
