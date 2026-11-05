@@ -8,6 +8,15 @@ import { ledgerRead } from "./report-session";
 
 export type TbRow = AccountBalance;
 export type LedgerAccountOption = Pick<TbRow, "account_number" | "account_name" | "account_type">;
+export type LedgerCategoryOption = { rule_code: string; trigger_name: string; category: string };
+
+export async function getLedgerCategories(): Promise<LedgerCategoryOption[]> {
+  return ledgerRead(async supabase => {
+    const { data, error } = await supabase.from("ledger_rules").select("rule_code,trigger_name,category").order("rule_code");
+    if (error) throw new Error(`Transaction category options query failed: ${error.message}`);
+    return data ?? [];
+  });
+}
 
 /** Dropdown choices need account metadata, not a cumulative financial aggregation. */
 export async function getLedgerAccounts(): Promise<LedgerAccountOption[]> {
@@ -36,8 +45,6 @@ export async function getTrialBalances(requests: TrialBalanceRequest[]): Promise
   if (requests.length === 0) return [];
   return ledgerRead(async supabase => {
     const { data, error } = await supabase.rpc("get_trial_balances", { p_as_of: requests.map(item => item.asOf), p_from: requests.map(item => item.from) });
-    // Older databases without the baseline's batched function can still read each set separately.
-    if (error?.code === "PGRST202") return Promise.all(requests.map(item => getTrialBalance(item.asOf, item.from)));
     if (error) throw new Error(`Trial balances query failed: ${error.message}`);
     const rows = (data ?? []) as { period_index: number; accounts: TbRow[] }[];
     if (rows.length !== requests.length || rows.some((row, index) => row.period_index !== index + 1)) throw new Error("Trial balances query returned unexpected periods.");
@@ -75,38 +82,36 @@ export const LEDGER_PAGE_SIZE = 100;
 const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no";
 
 export type LedgerSide = "all" | "debit" | "credit";
-export type LedgerAccountFilters = { account?: string; offset?: string; query?: string; side?: LedgerSide };
+export type LedgerAccountFilters = { account?: string; offset?: string; query?: string; side?: LedgerSide; accountType?: TbRow["account_type"]; category?: string; min?: number; max?: number };
+
+function ledgerFilterArgs(from: string, to: string, filters: LedgerAccountFilters) {
+  return {
+    p_from: from, p_to: to, p_query: filters.query?.trim().slice(0, 200) || "",
+    p_account: filters.account ?? null, p_offset: filters.offset ?? null,
+    p_side: filters.side === "debit" || filters.side === "credit" ? filters.side : "all",
+    p_account_type: filters.accountType ?? null, p_category: filters.category ?? null,
+    p_min: filters.min ?? null, p_max: filters.max ?? null,
+  };
+}
+
+export async function getLedgerCount(from: string, to: string, filters: LedgerAccountFilters = {}) {
+  return ledgerRead(async supabase => {
+    const { data, error } = await supabase.rpc("count_ledger", ledgerFilterArgs(from, to, filters));
+    if (error) throw new Error(`Ledger count failed: ${error.message}`);
+    const count = Number(data);
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error("Invalid ledger record count.");
+    return count;
+  });
+}
 
 export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}, pageSize = LEDGER_PAGE_SIZE) {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / pageSize) ? requestedPage : 1;
   const offset = (page - 1) * pageSize;
-  const { account, offset: offsetAccount } = filters;
-  const search = filters.query?.trim().slice(0, 200) || "";
-  const side = filters.side === "debit" || filters.side === "credit" ? filters.side : "all";
   return ledgerRead(async supabase => {
-    if (search) {
-      const { data, error } = await supabase.rpc("search_ledger", {
-        p_from: from, p_to: to, p_query: search,
-        p_account: account ?? null, p_offset: offsetAccount ?? null, p_side: side,
-        p_skip: offset, p_take: pageSize + 1,
-      }).select(LEDGER_COLUMNS);
-      if (error) throw new Error(`Ledger search failed: ${error.message}`);
-      const rows = (data ?? []) as LedgerRow[];
-      return { rows: rows.slice(0, pageSize), hasNext: rows.length > pageSize, page, pageSize };
-    }
-    let query = supabase
-      .from("v_ledger")
-      .select(LEDGER_COLUMNS)
-      .gte("date", from)
-      .lte("date", to);
-    if (account) query = query.eq("account_number", account);
-    if (offsetAccount) query = query.eq("offsetting_account_number", offsetAccount);
-    if (side !== "all") query = query.gt(side, 0);
-    const { data, error } = await query
-      .order("date", { ascending: true })
-      .order("entry_number", { ascending: true })
-      .order("line_no", { ascending: true })
-      .range(offset, offset + pageSize);
+    const { data, error } = await supabase.rpc("filter_ledger", {
+      ...ledgerFilterArgs(from, to, filters),
+      p_skip: offset, p_take: pageSize + 1,
+    }).select(LEDGER_COLUMNS);
     if (error) throw new Error(`Ledger query failed: ${error.message}`);
     const rows = (data ?? []) as LedgerRow[];
     return { rows: rows.slice(0, pageSize), hasNext: rows.length > pageSize, page, pageSize };

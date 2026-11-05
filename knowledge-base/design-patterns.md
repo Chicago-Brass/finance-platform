@@ -28,8 +28,9 @@ a generic predicate engine or wrapping every one-line expression in a helper.
   deterministic in cents and conservative of the payment total.
 - Never repeat a complete amount for every account in an unspecified split. Missing mappings fail
   explicitly. Zero components are no-ops; invalid required values fail.
-- Report display/search/collapse filters do not recompute financial totals. Ledger footer totals
-  are explicitly page totals. Balance Sheet columns are snapshots, not additive periods.
+- Statement display/search/collapse filters do not recompute financial totals. The Ledger footer
+  shows a record range and the full filtered line count. Balance Sheet columns are snapshots,
+  not additive periods.
 - Account `active` is a label; `is_postable`, valid identities, balanced lines, period guards,
   authentication and approved-user access remain functional checks.
 

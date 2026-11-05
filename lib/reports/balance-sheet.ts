@@ -25,7 +25,7 @@ export function balanceSheetPeriods(options: BalanceSheetOptions): Period[] {
   return dates.map((date, index) => ({ key: `p${index}`, label: formatDate(date), from: monthStart(Number(date.slice(0, 4)), 1), to: date }));
 }
 
-export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapshot[], priorYear: AccountBalance[], posted: number, priorYears: ReadonlyMap<number, AccountBalance[]> = new Map([[Number(options.asOf.slice(0, 4)), priorYear]])): Report {
+export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapshot[], priorYears: ReadonlyMap<number, AccountBalance[]>, posted: number): Report {
   const accounts = snapshots[snapshots.length - 1].accounts, keys = snapshots.map(snapshot => snapshot.period.key);
   const group = (id: string, label: string, rows: AccountBalance[], creditPositive: boolean, depth = 2) => accountGroup(id, label, rows, snapshots, { creditPositive, summary: options.summary, depth });
   const assets = accounts.filter(row => row.account_type === "asset"), liabilities = accounts.filter(row => row.account_type === "liability");
@@ -88,7 +88,7 @@ export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapsho
   const differences = subtractAmounts(keys, assetTotals, totalLE), balanced = Object.values(differences).every(value => value === 0);
   return {
     title: options.summary ? "Balance Sheet (summary)" : "Balance Sheet", entity: "Chicago Brass Inc. - Consolidated",
-    periodLabel: `As of ${formatDate(options.asOf)} - all posted activity to date`, basis: "Accrual basis - Posted ledger actuals", isSample: false,
+    periodLabel: `As of ${formatDate(options.asOf)} - all posted activity to date`, basis: "Accrual basis - Posted ledger actuals",
     columns: snapshots.map(({ period }) => {
       let sublabel: string | undefined;
       if (options.grain === "year") sublabel = formatDate(period.to).replace(/, \d{4}$/, "");

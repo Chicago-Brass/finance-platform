@@ -102,6 +102,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
                 <div className="drill-tile"><span>Avg per month</span><strong>{money(summary.averagePerMonth)}</strong><small>{summary.months.length} months</small></div>
               </>}
             </div>
+            {listed?.truncated && <p className="drill-warning" role="note">Charts and line counts use the first {lines.length} lines. Summary amounts include all posted lines.</p>}
             {listed ? <div className="drill-charts">
               <MonthlyBars months={summary.months} />
               <OffsetMix offsets={summary.offsets} />
@@ -147,7 +148,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <span>Credits <strong>{money(totals.credit)}</strong></span>
             {data && <span>Net <strong>{money(naturalNet(totals.debit, totals.credit, data.account.normalBalance))}</strong></span>}
             {!filtered && summary?.tiesToTotals && <span className="drill-ties">✓ Lines tie to the trial balance</span>}
-            {listed.truncated && <span className="drill-warning">Showing the first {lines.length} lines. Totals above include every line.</span>}
+            {listed.truncated && <span className="drill-warning">Showing the first {lines.length} lines. Footer totals cover the visible lines only.</span>}
             <ReportLink className="btn btn-quiet drill-ledger-link" href={`/general-ledger${ledgerHref({ from, to, account: target.code })}`} onClick={onClose}>Open in General Ledger</ReportLink>
           </footer>
         </>}

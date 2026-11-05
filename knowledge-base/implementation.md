@@ -70,19 +70,36 @@ commits on Enter or blur. Account-choice metadata loads independently of Ledger 
 
 ## Reports and interaction
 
+The report header uses the shared navy with light navigation, refresh and account controls. Its
+active-route underline sits below the link text. The header's white transparent logo preserves the
+official mark's alpha exactly; exports retain the original dark logo for white pages.
+
 - Income Statement uses selected full months and monthly, quarterly or annual columns. It includes
   revenue, COGS, gross profit, operating groups, net other income/expense, taxes and net income.
 - Balance Sheet uses cumulative snapshots and classified asset/liability blocks. Each column has
   its own prior-year earnings baseline. Annual columns are snapshots, never summed.
 - Trial Balance preserves all-account totals while filtering visible account rows.
 - General Ledger uses 100 lines per page and one lookahead, sorted by date, entry and line number.
-  Global search and all scopes apply before pagination; footer totals cover only the loaded page.
+  `filter_ledger` applies global search, account/offset, side, account type, T-Chart rule and inclusive
+  line-amount limits before pagination. The thin footer shows the displayed range and the full
+  matching line count. `count_ledger` runs independently with the same filters; its private client
+  cache key excludes page number. Search includes journal entry numbers. Account/category metadata
+  loads independently; the Filters menu owns transaction category and minimum/maximum amounts.
+  URLs and pagination preserve every active scope. Split offsets render one account pill per line
+  using the returned offset codes and existing account catalog, without another data request.
+  Account names stay on one line with ellipsis and a full-name hover title.
 - T-Chart renders reference rules and plain account pills. Trial Balance accounts link to Ledger.
 
-Filters sit together at the left; centered reset actions sit at the right. Statements have a
+Search comes first, followed by period/as-of, account type where available, account/offset and
+view controls. General Ledger keeps entry side last. Trial Balance always includes zero accounts
+and has no activity toggle. Date menus share a responsive width, one row of quick presets above
+the date fields, and consistent input spacing. Filters sit together at the left; centered reset
+actions sit at the right. Statements have a
 text-only Filters menu beside Reset. Outside pointer/focus and Escape dismiss menus. Searchable
 lists remain inside their owning menu or modal. Table and analytics scrolling stay inside the
 viewport; narrow layouts wrap/stack and print expands tables into document flow.
+The statement analytics sidebar collapses to a thin rail using its top left-border toggle. The
+table takes the freed width; expanding restores the selected Position or Movement tab.
 
 Statement accounts open account activity: summary/lines start in parallel, with independent errors
 and an owning-report cache. Lines are capped at 2,000 and disclose truncation; totals cover the

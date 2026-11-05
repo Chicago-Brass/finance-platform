@@ -77,7 +77,7 @@ export function getIncomeStatement(options: IncomeStatementOptions, snapshots: S
   return {
     title: options.summary ? "Income Statement (summary)" : "Income Statement", entity: "Chicago Brass Inc. - Consolidated",
     periodLabel: `${formatDate(snapshots[0].period.from)} to ${formatDate(snapshots[snapshots.length - 1].period.to)}`,
-    basis: "Accrual basis - Posted ledger actuals", isSample: false,
+    basis: "Accrual basis - Posted ledger actuals",
     columns: snapshots.map(snapshot => ({ key: snapshot.period.key, label: periodHeading(snapshot.period.to, options.grain), sublabel: options.grain === "year" ? "Selected period" : String(options.year), kind: "amount" as const })).concat(includeTotal ? [{ key: "total", label: "Total", sublabel: "Selected period", kind: "amount" as const }] : []),
     lines, checks,
   };

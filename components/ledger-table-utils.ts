@@ -24,15 +24,36 @@ export function ledgerSideParam(value: string | string[] | undefined): LedgerSid
   return side === "debit" || side === "credit" ? side : "all";
 }
 
+export function ledgerTypeParam(value: string | string[] | undefined): LedgerAccountFilters["accountType"] {
+  const type = Array.isArray(value) ? value[0] : value;
+  return type && Object.hasOwn(ACCOUNT_TYPES, type) ? type as LedgerAccountFilters["accountType"] : undefined;
+}
+
+export function ledgerCategoryParam(value: string | string[] | undefined) {
+  const category = Array.isArray(value) ? value[0] : value;
+  return category && /^[A-Z][A-Z0-9_-]{0,49}$/.test(category) ? category : undefined;
+}
+
+export function ledgerAmountParam(value: string | string[] | undefined) {
+  const text = (Array.isArray(value) ? value[0] : value)?.trim();
+  if (!text || !/^\d+(\.\d{1,2})?$/.test(text)) return undefined;
+  const amount = Number(text);
+  return Number.isSafeInteger(Math.round(amount * 100)) ? amount : undefined;
+}
+
 export type LedgerQuery = LedgerAccountFilters & { from: string; to: string; page?: number };
 
-export function ledgerHref({ from, to, account, offset, query, side, page }: LedgerQuery) {
+export function ledgerHref({ from, to, account, offset, query, side, accountType, category, min, max, page }: LedgerQuery) {
   const params = new URLSearchParams({ from, to });
   if (account) params.set("account", account);
   if (offset) params.set("offset", offset);
   const search = ledgerSearchParam(query);
   if (search) params.set("q", search);
   if (side && side !== "all") params.set("side", side);
+  if (accountType) params.set("type", accountType);
+  if (category) params.set("category", category);
+  if (min !== undefined) params.set("min", String(min));
+  if (max !== undefined) params.set("max", String(max));
   if (page) params.set("page", String(page));
   return `?${params}`;
 }
@@ -51,12 +72,12 @@ export function ledgerDatePresets(today: string) {
   ];
 }
 
-export function filterTrialAccounts(rows: TbRow[], query: string, type: string, showZero: boolean) {
+export function filterTrialAccounts(rows: TbRow[], query: string, type: string) {
   const search = query.trim().toLowerCase();
   return rows.filter(row => {
     if (type !== "all" && row.account_type !== type) return false;
     if (search && !`${row.account_number} ${row.account_name}`.toLowerCase().includes(search)) return false;
-    return showZero || [row.total_debit, row.total_credit, row.balance].some(value => Number(value) !== 0);
+    return true;
   });
 }
 

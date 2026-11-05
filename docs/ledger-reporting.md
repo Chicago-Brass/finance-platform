@@ -29,6 +29,9 @@ The dark sidebar has Position and Movement tabs:
 - Balance Sheet Movement compares assets, liabilities and equity with the previous quarter-end.
   Income Statement Movement compares revenue, operating expenses and net income with the same
   selected months in the previous year. Trends use the report's dated snapshots or periods.
+  Movement dollar differences are calculated in cents. Percentage change divides by the absolute
+  prior balance so a reduced loss has a positive direction; negative baselines disclose this in
+  the percentage tooltip. A zero prior balance shows `N/A` unless both amounts are zero.
 
 ## Account drill-down drawer
 
@@ -43,7 +46,8 @@ The `/api/reports/account-activity` GET endpoint runs as the signed-in user. The
 one batched trial-balance call for current/prior dates. Lines read account-filtered `v_ledger` in
 500-row pages, up to the existing 2,000-line cap. Each section has its own loading indicator and retry.
 The owning report caches successful sections until refresh/data or range changes; errors and
-aborted results are not cached. Totals always cover every line; a capped list says so. Ranges:
+aborted results are not cached. Summary amounts always cover every line. When the list is capped, a notice above the charts states
+that charts and line counts use only the first 2,000 lines; footer totals cover only visible lines. Ranges:
 
 - Income Statement and General Ledger use the selected dates (`period` mode). The comparison is
   the same dates one year earlier.
@@ -84,9 +88,12 @@ Both reports and their Excel/PDF outputs show currency symbols, two decimal plac
 and parentheses for negative amounts. Missing values remain distinct from zero. General Ledger
 and Trial Balance use the same cents formatter and combine account codes/names in pills. Exports use the currently visible
 rows; print hides the navigation, filters, view controls and analytics sidebar.
+Excel discloses hidden detail rows while retaining complete financial totals. Labels wrap, text
+stays literal, and invalid XML control characters are removed. PDF uses the native print dialog;
+compact landscape table padding preserves room for monthly columns and repeated headers.
 
 The earlier UI baseline was consolidated on main and visually reviewed in the Jeric Chrome profile.
-Those checks precede the current shared-control changes, whose browser verification is pending.
+Current production-build checks and their limits are recorded in [release verification](release-verification.md).
 Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
 independent table/sidebar scrolling. A 390x844 check verified the stacked narrow layout without
 page overflow. Print media expands the table and hides the sidebar instead of clipping content.
@@ -96,8 +103,8 @@ page overflow. Print media expands the table and hides the sidebar instead of cl
 Statement loaders (`lib/reports/statement-loaders.ts`) make one batched trial-balance call and one
 posted-entry count per data window. `get_trial_balances` materializes posted activity once and
 aggregates all requested ranges from it. Its results are regression-checked against individual
-`get_trial_balance` calls. On older databases without the batched function, the app falls back to one
-`get_trial_balance` call per range.
+`get_trial_balance` calls. The batched function is required; a missing or failed RPC is reported
+through the normal data-error state rather than retried through an obsolete per-range path.
 
 The report shell and data fetch have separate lifecycles. There is no placeholder route shell
 and no retained previous-page controls. `ReportApplication` keys each destination by pathname;
@@ -234,25 +241,26 @@ Run `node --test components/*.test.cjs lib/reports/*.test.cjs` and `npm run type
 The focused checks cover report grouping and signs, cents and exports, prior/current earnings,
 annual snapshots, analytics comparisons, signed-chart fallbacks, date presets, query preservation,
 and visible-row filtering. Browser layout and interaction checks are separate from these tests.
-The 41 focused checks and TypeScript check pass. Live browser checks also cover analytics tabs,
-search and zero-row filtering without changing totals, annual Balance Sheet reconciliation and
-preserved date/view selections. The browser Excel download timed out; workbook contents and
-currency formats are covered by the export test. The native PDF dialog was not exercised.
+See [release verification](release-verification.md) for the current test/build results and browser
+checks. Export verification covers generated workbook contents and a real browser download, plus
+the native Chrome PDF preview with repeated headers and all monthly columns.
 
 General Ledger reads posted lines from v_ledger within the inclusive selected date range,
 100 records per page with a single lookahead record to determine Next availability. Sorting by
 date, entry number and line number gives stable page ordering. Date changes reset to page one.
 Account, offset, search and side filters are URL parameters (`account`, `offset`, `q`, `side`)
 applied before pagination. Search commits on Enter or blur, rather than every keystroke.
-`search_ledger` uses bound literal substring matching, including punctuation; `%` and `_` are not
+`filter_ledger` uses bound literal substring matching, including punctuation; `%` and `_` are not
 wildcards. Date changes and pagination preserve scope. Rapid changes merge with the latest pending
 scope, so an earlier response cannot discard a newer selection. The offsetting filter excludes
-entries split across several offsetting accounts. Totals include the loaded page, not the whole
-date range. Trial Balance reads cumulative get_trial_balance
+entries split across several offsetting accounts. The thin footer shows the displayed range and
+full matching record count from `count_ledger`, cached separately from page data. Split offsets
+render one account pill per line using the existing account catalog. Long account names truncate
+on one line with a full-name hover title. Trial Balance reads cumulative get_trial_balance
 through the selected as-of date. T-Chart displays v_t_chart rule metadata rather than journal activity: one table grouped by
 category, with client-side category and text filters. An exact `Name (000.000)` debit/credit
-reference becomes an account link into the General Ledger; alternatives and descriptions stay
-as written. Trial Balance account pills link to the General Ledger the same way.
+reference becomes a plain account pill; alternatives and descriptions stay as written. Trial
+Balance account pills link to the General Ledger.
 
 Validation uses the current database dataset. Importing history, changing posting rules and
 reconciling Airtable records are not prerequisites or next steps for this frontend work.

@@ -44,10 +44,12 @@ for report calculations.
 | `get_trial_balance(as_of, from)` | Posted debit/credit and natural balances for a range or cumulative snapshot |
 | `get_trial_balances(as_of[], from[])` | Up to 100 requested periods, materializing posted activity once |
 | `v_ledger` | Posted line records, resolved account/offset metadata, refs and audit links |
-| `search_ledger` | Literal global search and account/offset/side/date filtering before pagination |
+| `search_ledger` | Older database API retained in applied schema; the app uses `filter_ledger` |
 | `v_journal_entries` | Entry summaries and counts |
 | `v_t_chart` | Displayed rule catalog, not the automation router |
 | `current_app_role()` | Approved-user role gate |
+| `filter_ledger(...)` | Caller-scoped search and ledger filters before stable pagination |
+| `count_ledger(...)` | Matching posted line count, with a lean path for scopes without search/offset |
 | `v_account_monthly_activity`, `v_trial_balance`, `v_rule_conformance` | Additional reporting/catalog interfaces |
 
 Ledger pagination is stable by date, entry number and line number. Full-journal detail reads one
@@ -65,6 +67,8 @@ income from recorded equity. Account classification and signs are defined in
 - `20261105141013_initial_ledger.sql`: complete public-schema baseline.
 - `20261105143952_optimize_report_reads.sql`: shared batched-aggregation scan and indexed offset lookup.
 - `20261105150253_add_ledger_search.sql`: scoped literal search before pagination.
+- `20261105213016_ledger_filters.sql`: unified caller-scoped ledger filters and pagination.
+- `20261105215238_ledger_record_count.sql`: full filtered ledger line counts.
 - `seed.sql`: reference accounts, selectors and rules only; no users, periods or financial entries.
 
 Keep applied migrations intact and add forward migrations for schema changes. A baseline marker

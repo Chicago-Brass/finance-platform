@@ -79,6 +79,7 @@ function Trend({ title, points }: { title: string; points: AnalyticsData["moveme
 
 export function ReportAnalytics({ analytics }: { analytics: AnalyticsData }) {
   const [tab, setTab] = useState<"position" | "movement">("position");
+  const [collapsed, setCollapsed] = useState(false);
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabNames = ["position", "movement"] as const;
@@ -93,31 +94,36 @@ export function ReportAnalytics({ analytics }: { analytics: AnalyticsData }) {
     event.preventDefault(); setTab(tabNames[next]); tabs.current[next]?.focus();
   };
   return (
-    <aside className="report-analytics no-print" aria-label="Report analytics">
-      <div className="analytics-tabs" role="tablist" aria-label="Report analytics views">
-        {tabNames.map((name, index) => <button key={name} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-${name}-tab`} aria-selected={tab === name} aria-controls={`${id}-${name}-panel`} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={event => selectWithKeyboard(event, index)}>{name === "position" ? "Position" : "Movement"}</button>)}
-      </div>
-      <section className="analytics-panel" id={`${id}-position-panel`} role="tabpanel" tabIndex={0} aria-labelledby={`${id}-position-tab`} hidden={tab !== "position"}>
-        <div className="analytics-heading"><h2>{positionTitle}</h2><p>{analytics.asOf}</p></div>
-        <section className="analytics-headline"><span>{analytics.headline.label}</span><strong className="analytics-value">{formatReportAmount(analytics.headline.value)}</strong></section>
-        <Composition data={analytics.composition} />
-        <section className="analytics-module analytics-secondary">
-          <div className="analytics-module-header"><h3>{analytics.kind === "balance" ? "Cash share" : "Net margin"}</h3><p className="analytics-share-value">{percent(analytics.secondary.share)}<span>{analytics.kind === "balance" ? "of assets" : "of revenue"}</span></p></div>
-          <div className="analytics-secondary-amount"><span>{analytics.secondary.label}</span><strong>{formatReportAmount(analytics.secondary.value)}</strong></div>
-          {analytics.secondary.share != null && analytics.secondary.share >= 0 && analytics.secondary.share <= 1 && <div className="analytics-share-track" aria-hidden="true"><span style={{ width: `${analytics.secondary.share * 100}%` }} /></div>}
-          {analytics.secondary.share == null && <p className="analytics-note">{analytics.kind === "balance" ? "No asset balance to calculate a share." : "No revenue to calculate a margin."}</p>}
-        </section>
-      </section>
-      <section className="analytics-panel" id={`${id}-movement-panel`} role="tabpanel" tabIndex={0} aria-labelledby={`${id}-movement-tab`} hidden={tab !== "movement"}>
-        <div className="analytics-heading"><h2>{analytics.kind === "balance" ? "Quarter-end movement" : "Period movement"}</h2><p>{analytics.movement.comparisonLabel}</p></div>
-        <div className="analytics-movements">
-          {analytics.movement.metrics.map(metric => {
-            const change = changeFromPrevious(metric.value, metric.previous);
-            return <section className="analytics-movement" key={metric.label}><div className="analytics-movement-top"><span>{metric.label}</span><strong>{formatReportAmount(metric.value)}</strong></div><div className="analytics-movement-bottom"><small className="analytics-previous">Previous: {formatReportAmount(metric.previous)}</small><div className="analytics-change"><ReportIcon name={change.difference > 0 ? "arrowUp" : change.difference < 0 ? "arrowDown" : "minus"} /><span>{change.difference > 0 ? "+" : ""}{formatReportAmount(change.difference)} <small>({change.percent != null && change.percent > 0 ? "+" : ""}{percent(change.percent)})</small></span></div></div></section>;
-          })}
+    <aside className={`report-analytics no-print${collapsed ? " is-collapsed" : ""}`} aria-label="Report analytics">
+      <button className="analytics-toggle" type="button" aria-label={collapsed ? "Expand analytics" : "Hide analytics"} title={collapsed ? "Expand analytics" : "Hide analytics"} aria-expanded={!collapsed} aria-controls={`${id}-content`} onClick={() => setCollapsed(!collapsed)}>
+        <ReportIcon name="chevronRight" />
+      </button>
+      <div className="analytics-content" id={`${id}-content`} hidden={collapsed}>
+        <div className="analytics-tabs" role="tablist" aria-label="Report analytics views">
+          {tabNames.map((name, index) => <button key={name} ref={element => { tabs.current[index] = element; }} type="button" role="tab" id={`${id}-${name}-tab`} aria-selected={tab === name} aria-controls={`${id}-${name}-panel`} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={event => selectWithKeyboard(event, index)}>{name === "position" ? "Position" : "Movement"}</button>)}
         </div>
-        <Trend title={analytics.movement.trendTitle} points={analytics.movement.trend} />
-      </section>
+        <section className="analytics-panel" id={`${id}-position-panel`} role="tabpanel" tabIndex={0} aria-labelledby={`${id}-position-tab`} hidden={tab !== "position"}>
+          <div className="analytics-heading"><h2>{positionTitle}</h2><p>{analytics.asOf}</p></div>
+          <section className="analytics-headline"><span>{analytics.headline.label}</span><strong className="analytics-value">{formatReportAmount(analytics.headline.value)}</strong></section>
+          <Composition data={analytics.composition} />
+          <section className="analytics-module analytics-secondary">
+            <div className="analytics-module-header"><h3>{analytics.kind === "balance" ? "Cash share" : "Net margin"}</h3><p className="analytics-share-value">{percent(analytics.secondary.share)}<span>{analytics.kind === "balance" ? "of assets" : "of revenue"}</span></p></div>
+            <div className="analytics-secondary-amount"><span>{analytics.secondary.label}</span><strong>{formatReportAmount(analytics.secondary.value)}</strong></div>
+            {analytics.secondary.share != null && analytics.secondary.share >= 0 && analytics.secondary.share <= 1 && <div className="analytics-share-track" aria-hidden="true"><span style={{ width: `${analytics.secondary.share * 100}%` }} /></div>}
+            {analytics.secondary.share == null && <p className="analytics-note">{analytics.kind === "balance" ? "No asset balance to calculate a share." : "No revenue to calculate a margin."}</p>}
+          </section>
+        </section>
+        <section className="analytics-panel" id={`${id}-movement-panel`} role="tabpanel" tabIndex={0} aria-labelledby={`${id}-movement-tab`} hidden={tab !== "movement"}>
+          <div className="analytics-heading"><h2>{analytics.kind === "balance" ? "Movement since quarter-end" : "Period movement"}</h2><p>{analytics.movement.comparisonLabel}</p></div>
+          <div className="analytics-movements">
+            {analytics.movement.metrics.map(metric => {
+              const change = changeFromPrevious(metric.value, metric.previous);
+              return <section className="analytics-movement" key={metric.label}><div className="analytics-movement-top"><span>{metric.label}</span><strong>{formatReportAmount(metric.value)}</strong></div><div className="analytics-movement-bottom"><small className="analytics-previous">Previous: {formatReportAmount(metric.previous)}</small><div className="analytics-change"><ReportIcon name={change.difference > 0 ? "arrowUp" : change.difference < 0 ? "arrowDown" : "minus"} /><span>{change.difference > 0 ? "+" : ""}{formatReportAmount(change.difference)} <small title={metric.previous < 0 ? "Change divided by the absolute previous balance." : undefined}>({change.percent != null && change.percent > 0 ? "+" : ""}{percent(change.percent)})</small></span></div></div></section>;
+            })}
+          </div>
+          <Trend title={analytics.movement.trendTitle} points={analytics.movement.trend} />
+        </section>
+      </div>
     </aside>
   );
 }

@@ -1,8 +1,18 @@
 .report-analytics {
-  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
-  padding: 12px; color: #f8fafc; background: var(--navy); border: 1px solid #234563;
+  position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  color: #f8fafc; background: var(--navy); border: 1px solid #234563;
   border-radius: var(--panel-radius); font-variant-numeric: tabular-nums;
 }
+.report-analytics .analytics-content:not([hidden]) { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; padding: 12px; }
+.report-analytics .analytics-toggle {
+  position: absolute; z-index: 3; top: 16px; left: -1px; transform: translateX(-50%);
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  color: white; background: var(--navy); border: 1px solid #54728d; border-radius: 50%; cursor: pointer;
+}
+.report-analytics .analytics-toggle:hover { background: #234563; }
+.report-analytics .analytics-toggle:focus-visible { outline: 2px solid var(--steel); outline-offset: 3px; }
+.report-analytics.is-collapsed { border-radius: 2px; }
+.report-analytics.is-collapsed .analytics-toggle svg { transform: rotate(180deg); }
 .report-analytics .analytics-panel:not([hidden]) {
   flex: 1; min-height: 0; overflow: auto; overscroll-behavior: none; scrollbar-width: none;
 }

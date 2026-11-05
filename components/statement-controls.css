@@ -3,7 +3,6 @@
 .statement-control-bar .filter-search-field { flex: 0 1 180px; }
 .statement-control-bar > .report-filter-menu { flex: none; margin-left: auto; align-self: center; }
 .statement-control-bar > .report-filter-menu + .control-reset { margin-left: 0; }
-.statement-control-bar .period-picker-panel .date-presets { margin-bottom: 14px; }
 .statement-results { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
 .statement-results > .report-workspace { min-height: 0; flex: 1; }
 @media (max-width: 720px) {

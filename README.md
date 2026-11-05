@@ -24,7 +24,7 @@ deployment. Branch reporting is deferred.
 - Access: only emails in `public.app_users` with `active = true` can see reports (checked in `middleware.ts`).
 - Reports: the header/filters render first; `/api/reports/data` supplies authenticated JSON afterward.
   Navigation switches the client workspace immediately, with a private five-minute response cache.
-  Server reads use `get_trial_balance` and the ledger views. The builders under
+  Server reads use required batched trial balances plus the filtered ledger/count RPCs. The builders under
   `lib/reports/` return the existing `Report` / `ReportLine` contract for the UI and Excel/PDF exports.
   Income Statement supports selectable years and monthly/quarterly/annual actuals. Balance Sheet uses
   cumulative as-of, monthly, quarterly or annual snapshots, with prior-year and current-year earnings
@@ -84,6 +84,9 @@ sh supabase/tests/check-payment-posting.sh
 sh supabase/tests/check-report-reads.sh
 npm run typecheck
 ```
+
+See [release verification](docs/release-verification.md) for the current cleanup, export and QA scope.
+TypeScript rejects unused code. The live report loaders do not fall back to the older database API.
 
 The database integration check uses a disposable local PostgreSQL container. These checks do not install the
 hosted functions, replace Airtable scripts, enable automations or post hosted ledger records.

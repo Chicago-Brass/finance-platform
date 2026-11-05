@@ -42,7 +42,6 @@ export interface Report {
   entity: string;
   periodLabel: string;
   basis: string;
-  isSample: boolean;
   columns: ReportColumn[];
   lines: ReportLine[];
   checks: ReportCheck[];

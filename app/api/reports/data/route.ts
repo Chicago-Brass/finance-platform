@@ -1,4 +1,4 @@
-import { getGeneralLedger, getLedgerAccounts, getTChart, getTrialBalance } from "@/lib/reports/ledger";
+import { getGeneralLedger, getLedgerAccounts, getLedgerCategories, getLedgerCount, getTChart, getTrialBalance } from "@/lib/reports/ledger";
 import { loadBalanceSheetData, loadIncomeStatementData } from "@/lib/reports/statement-loaders";
 import { parseReportScreen, REPORT_PATHS } from "@/lib/reports/report-routes";
 import type { ReportKind } from "@/lib/reports/report-routes";
@@ -18,16 +18,18 @@ export async function GET(request: Request) {
 
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const report = params.report;
-  if (report !== "accounts" && !Object.hasOwn(REPORT_PATHS, report)) return json({ error: "Unknown report." }, 400);
+  if (report !== "accounts" && report !== "categories" && report !== "ledger-count" && !Object.hasOwn(REPORT_PATHS, report)) return json({ error: "Unknown report." }, 400);
   try {
     if (report === "accounts") return json(await getLedgerAccounts());
-    const screen = parseReportScreen(REPORT_PATHS[report as ReportKind], params);
+    if (report === "categories") return json(await getLedgerCategories());
+    const screen = parseReportScreen(report === "ledger-count" ? REPORT_PATHS.ledger : REPORT_PATHS[report as ReportKind], params);
     switch (screen.kind) {
       case "income": return json(await loadIncomeStatementData(screen.options));
       case "balance": return json(await loadBalanceSheetData(screen.options.asOf));
       case "trial": return json(await getTrialBalance(screen.options.asOf, null));
       case "ledger": {
         const { from, to, page, ...filters } = screen.options;
+        if (report === "ledger-count") return json(await getLedgerCount(from, to, filters));
         return json(await getGeneralLedger(from, to, page, filters));
       }
       case "rules": return json(await getTChart());
