@@ -37,6 +37,10 @@ export type AccountActivity = DrillRange & {
   previous: { from: string; to: string; net: number } | null;
 };
 
+export type AccountActivitySummary = Omit<AccountActivity, "lines" | "truncated">;
+export type AccountActivityLines = Pick<AccountActivity, "lines" | "truncated">;
+export type AccountActivityParts = { summary: AccountActivitySummary; lines: AccountActivityLines };
+
 export function toActivityLine(row: LedgerRow): AccountActivityLine {
   return {
     id: row.line_id,

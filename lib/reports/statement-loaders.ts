@@ -9,7 +9,8 @@ export async function loadIncomeStatementData({ year, from, to }: IncomeRange): 
     getTrialBalances([...months, previous].map(period => ({ asOf: period.to, from: period.from }))),
     countPostedEntries(months[months.length - 1].to, months[0].from),
   ]);
-  return { ...range, months: months.map((period, index) => ({ period, accounts: balances[index] })), previous: balances[months.length], posted };
+  const incomeBalances = balances.map(accounts => accounts.filter(account => account.account_type === "revenue" || account.account_type === "expense"));
+  return { ...range, months: months.map((period, index) => ({ period, accounts: incomeBalances[index] })), previous: incomeBalances[months.length], posted };
 }
 
 export async function loadBalanceSheetData(asOf: string): Promise<BalanceSheetData> {

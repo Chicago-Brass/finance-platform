@@ -1,0 +1,14 @@
+.statement-control-bar .period-picker-trigger { max-width: 250px; }
+.statement-control-bar .period-picker-trigger > span:not(:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statement-control-bar .filter-search-field { margin-left: auto; flex: 0 1 180px; }
+.statement-control-bar .report-filter-menu { flex-shrink: 0; }
+.statement-control-bar .period-picker-panel .date-presets { margin-bottom: 14px; }
+.statement-results { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
+.statement-results > .report-workspace { min-height: 0; flex: 1; }
+@media (max-width: 720px) {
+  .statement-control-bar .filter-search-field { margin-left: 0; flex: 1 1 180px; }
+  .statement-control-bar .period-picker-trigger { max-width: 100%; }
+}
+@media print {
+  .statement-results, .statement-results > .report-workspace { display: block; height: auto; min-height: 0; }
+}

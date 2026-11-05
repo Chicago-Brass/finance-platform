@@ -2,31 +2,66 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useTransition } from "react";
+import { Component, createContext, useContext, useMemo, useState, useTransition } from "react";
 import type { AnchorHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
 import { ReportIcon } from "./ReportIcons";
+import { REPORT_PATHS } from "@/lib/reports/report-routes";
+import { useReportFetching, useReportRefresh } from "./ReportData";
 
-const Navigation = createContext<{ pending: boolean; navigate: (href: string) => void; refresh: () => void } | null>(null);
+const Navigation = createContext<{ pending: boolean; destination: string | null; navigate: (href: string) => void; refresh: () => void } | null>(null);
+
+const isReportPath = (path: string) => Object.values(REPORT_PATHS).some(value => value === path);
 
 export function ReportNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  return <Navigation.Provider value={{
-    pending,
-    navigate: href => startTransition(() => router.push(href, { scroll: false })),
-    // Clears the browser's cached report pages and re-reads the current one from the ledger.
-    refresh: () => startTransition(() => router.refresh()),
-  }}>{children}</Navigation.Provider>;
+  const [destination, setDestination] = useState<string | null>(null);
+  const refreshData = useReportRefresh();
+  const navigation = useMemo(() => ({
+    pending, destination,
+    navigate: (href: string) => {
+      const target = new URL(href, window.location.href);
+      if (target.origin === window.location.origin && isReportPath(window.location.pathname) && isReportPath(target.pathname)) {
+        // These routes share one client workspace; Next syncs its URL hooks with native history.
+        if (target.href !== window.location.href) window.history.pushState(null, "", `${target.pathname}${target.search}${target.hash}`);
+        return;
+      }
+      setDestination(target.pathname);
+      startTransition(() => router.push(href, { scroll: false }));
+    },
+    refresh: () => {
+      if (isReportPath(window.location.pathname)) { refreshData(); return; }
+      setDestination(window.location.pathname);
+      startTransition(() => router.refresh());
+    },
+  }), [pending, destination, router, refreshData]);
+  return <Navigation.Provider value={navigation}>{children}</Navigation.Provider>;
+}
+
+export function useReportPath() {
+  const path = usePathname(), navigation = useContext(Navigation);
+  return navigation?.pending && navigation.destination ? navigation.destination : path;
+}
+
+export function useReportNavigate() {
+  const navigation = useContext(Navigation);
+  if (!navigation) throw new Error("Report navigation provider is missing.");
+  return navigation.navigate;
+}
+
+export function useReportPending() {
+  return useContext(Navigation)?.pending ?? false;
 }
 
 export function RefreshDataButton() {
   const navigation = useContext(Navigation);
-  return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={navigation?.pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={navigation?.pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
+  const pending = useReportFetching() || navigation?.pending;
+  return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
 }
 
-export function ReportLink({ href, children, onClick, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
+export function ReportLink({ href, children, onClick, prefetch = false, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; prefetch?: boolean | null }) {
   const navigation = useContext(Navigation);
-  return <Link {...props} href={href} prefetch={false} scroll={false} onClick={event => {
+  return <Link {...props} href={href} prefetch={prefetch} scroll={false} onClick={event => {
     onClick?.(event);
     if (!navigation || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (props.target && props.target !== "_self")) return;
     event.preventDefault();
@@ -47,25 +82,38 @@ export function ReportForm({ children, onSubmit, ...props }: Omit<FormHTMLAttrib
   }}>{children}</form>;
 }
 
-export function ReportLoading() {
-  const path = usePathname();
-  const titles: Record<string, string> = { "/income-statement": "Income Statement", "/balance-sheet": "Balance Sheet", "/trial-balance": "Trial Balance", "/general-ledger": "General Ledger", "/t-chart": "T-Chart" };
-  const analytics = path === "/income-statement" || path === "/balance-sheet";
-  return <article className="report-page report-skeleton" aria-busy="true" aria-label="Loading report">
-    <header className="report-header"><div className="report-heading"><h1 className="report-title">{titles[path] || "Report"}</h1><p className="report-entity loading-message" role="status"><span className="report-spinner" aria-hidden="true" />Loading report...</p></div></header>
-    <div className="report-filters skeleton-filter" aria-hidden="true"><span className="skeleton-bar" /><span className="skeleton-bar" /></div>
-    <div className={`report-workspace${analytics ? " has-analytics" : ""}`} aria-hidden="true">
-      <section className="statement-panel skeleton-table"><div className="skeleton-table-head" />{Array.from({ length: 12 }, (_, index) => <div className="skeleton-table-row" key={index}><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></div>)}</section>
-      {analytics && <aside className="skeleton-sidebar"><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></aside>}
-    </div>
-  </article>;
+export function ReportContent({ children }: { children: ReactNode }) {
+  const fetching = useReportFetching(), pending = useReportPending() || fetching;
+  return <main className="content" id="report-content" tabIndex={-1}>
+    {pending && <div className="report-request-progress" role="status"><span className="sr-only">Updating report data...</span></div>}
+    <div className="report-content">{children}</div>
+  </main>;
 }
 
-export function ReportContent({ children }: { children: ReactNode }) {
+export function ReportDataLoading({ analytics = false, label = "Loading report data..." }: { analytics?: boolean; label?: string }) {
+  return <div className={`report-workspace report-data-loading${analytics ? " has-analytics" : ""}`} aria-busy="true">
+    <section className="statement-panel report-panel-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>{label}</span></section>
+    {analytics && <aside className="report-analytics report-panel-loading" role="status" aria-label="Loading analytics"><span className="report-spinner" aria-hidden="true" /><span>Loading analytics...</span></aside>}
+  </div>;
+}
+
+class DataBoundary extends Component<{ children: ReactNode; resetKey: unknown; onRetry: () => void; pending: boolean; fallback?: ReactNode; analytics?: boolean }, { failed: boolean; resetKey: unknown }> {
+  state = { failed: false, resetKey: this.props.resetKey };
+  static getDerivedStateFromError() { return { failed: true }; }
+  static getDerivedStateFromProps(props: { resetKey: unknown }, state: { resetKey: unknown }) {
+    return props.resetKey !== state.resetKey ? { failed: false, resetKey: props.resetKey } : null;
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
+    return <div className={`report-workspace${this.props.analytics ? " has-analytics" : ""}`}>
+      <section className="statement-panel report-panel-loading" role="alert"><p>Report data could not be loaded.</p><button className="btn btn-quiet" type="button" disabled={this.props.pending} onClick={this.props.onRetry}>Try again</button></section>
+      {this.props.analytics && <aside className="report-analytics report-panel-loading"><span>Analytics unavailable</span></aside>}
+    </div>;
+  }
+}
+
+export function ReportDataBoundary({ children, resetKey, fallback, analytics = false }: { children: ReactNode; resetKey: unknown; fallback?: ReactNode; analytics?: boolean }) {
   const navigation = useContext(Navigation);
-  const pending = navigation?.pending ?? false;
-  return <main className="content" aria-busy={pending}>
-    <div className="report-content" inert={pending || undefined} aria-hidden={pending || undefined}>{children}</div>
-    {pending && <div className="report-loading-overlay"><ReportLoading /></div>}
-  </main>;
+  return <DataBoundary resetKey={resetKey} analytics={analytics} fallback={fallback} pending={navigation?.pending ?? false} onRetry={() => navigation?.refresh()}>{children}</DataBoundary>;
 }

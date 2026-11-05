@@ -34,4 +34,4 @@ for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supaba
 done
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')
 REPORT_TEST_DATABASE_URL="postgres://postgres:local-only-report-check@127.0.0.1:$port/report_check" \
-  node --test "$test_dir/report-reads.test.mjs"
+  node --test "$test_dir/report-reads.test.mjs" "$test_dir/ledger-search.test.mjs"

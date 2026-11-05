@@ -22,16 +22,20 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // getUser() validates the session with Supabase Auth (do not trust getSession() here).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  const isReportApi = path.startsWith("/api/reports/");
+
+  // Protected routes require both live session validation and the current allowlist role.
+  // Run them together; getSession() alone must never authorize a request.
+  const [{ data: { user } }, access] = await Promise.all([
+    supabase.auth.getUser(),
+    isPublic ? Promise.resolve(null) : supabase.rpc("current_app_role"),
+  ]);
 
   if (!user) {
     if (isPublic) return response;
+    if (isReportApi) return NextResponse.json({ error: "Sign in to load reports." }, { status: 401 });
     const login = request.nextUrl.clone();
     login.pathname = "/";
     login.search = "";
@@ -41,8 +45,8 @@ export async function middleware(request: NextRequest) {
   if (isPublic) return response;
 
   // Signed in with Microsoft/email is not enough: the user must be on the allowlist.
-  const { data: role, error } = await supabase.rpc("current_app_role");
-  if (error || !role) {
+  if (access?.error || !access?.data) {
+    if (isReportApi) return NextResponse.json({ error: "You do not have access to reports." }, { status: 403 });
     const denied = request.nextUrl.clone();
     denied.pathname = "/not-authorized";
     denied.search = "";

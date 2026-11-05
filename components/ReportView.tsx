@@ -1,17 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { Report, ReportLine } from "@/lib/reports/types";
 import type { ReportAnalytics as AnalyticsData } from "@/lib/reports/analytics";
 import { formatReportAmount, formatPercent } from "@/lib/format";
 import { downloadExcel } from "@/lib/reports/export-excel";
-import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 import type { DrillRange } from "@/lib/reports/account-activity";
+import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { AccountDrawer } from "./AccountDrawer";
 import type { DrillTarget } from "./AccountDrawer";
 import { ReportAnalytics } from "./ReportAnalytics";
 import { ReportIcon } from "./ReportIcons";
+import { closePopoverOnEscape } from "./ReportViewControls";
+import { FilterField, SearchField } from "./FilterControls";
 
 /** A section can collapse when its next row is nested inside it. */
 export function collapsibleIds(lines: ReportLine[]) {
@@ -58,79 +60,90 @@ export function drillTargets(report: Report): DrillTarget[] {
   return targets;
 }
 
-export function ReportView({ report, analytics, filters, viewControls, drill }: {
+export type ReportDisplayState = {
+  query: string;
+  hideZero: boolean;
+  collapsed: Set<string> | "all";
+  setQuery: (query: string) => void;
+  setHideZero: (hide: boolean) => void;
+  setCollapsed: Dispatch<SetStateAction<Set<string> | "all">>;
+};
+
+export function useReportDisplay(): ReportDisplayState {
+  const [query, setSearch] = useState("");
+  const [hideZero, setHideZero] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string> | "all">(new Set());
+  return { query, hideZero, collapsed, setQuery: value => { setSearch(value); setCollapsed(new Set()); }, setHideZero, setCollapsed };
+}
+
+/** Display controls stay in the page shell, even before financial data arrives. */
+export function ReportDisplayControls({ display, summary = false }: { display: ReportDisplayState; summary?: boolean }) {
+  const { query, hideZero, setQuery, setHideZero, setCollapsed } = display;
+  return <>
+    <SearchField label="Search accounts" placeholder={summary ? "Search in Details" : "Name or account number"} value={query} disabled={summary} onChange={setQuery} title={summary ? "Choose Details to search individual accounts." : undefined} />
+    <FilterField label="Options">
+    <details className="report-filter-menu" onKeyDown={closePopoverOnEscape}>
+      <summary className="btn btn-quiet"><ReportIcon name="filter" />More{hideZero && <span className="report-filter-count">1</span>}</summary>
+      <div className="report-filter-popover">
+        <h2>Account display</h2>
+        <label className="report-zero-option"><input type="checkbox" checked={!hideZero} disabled={summary} onChange={event => setHideZero(!event.target.checked)} />Show zero accounts</label>
+        <div className="report-collapse-actions"><button className="btn btn-quiet" type="button" onClick={() => setCollapsed(new Set())}><ReportIcon name="expand" />Expand all</button><button className="btn btn-quiet" type="button" onClick={() => setCollapsed("all")}><ReportIcon name="collapse" />Collapse all</button></div>
+        <p>Display filters do not change financial totals.</p>
+        {(query || hideZero) && <button type="button" className="report-reset-display" onClick={() => { setQuery(""); setHideZero(false); }}>Reset display</button>}
+      </div>
+    </details></FilterField>
+  </>;
+}
+
+export function reportRows(report: Report, display: Pick<ReportDisplayState, "query" | "hideZero" | "collapsed">) {
+  return visibleLines(filterReportLines(report.lines, display.query, display.hideZero), display.collapsed === "all" ? collapsibleIds(report.lines) : display.collapsed);
+}
+
+export function ReportExportButtons({ report, display }: { report: Report; display: ReportDisplayState }) {
+  return <>
+    <button type="button" className="btn btn-quiet" onClick={() => downloadExcel(report, reportRows(report, display))}><ReportIcon name="excel" />Export Excel</button>
+    <button type="button" className="btn btn-quiet" onClick={() => window.print()}><ReportIcon name="pdf" />Export PDF</button>
+  </>;
+}
+
+/** Financial data panels only. Header and controls belong to the persistent workspace shell. */
+export function ReportView({ report, analytics, drill, display }: {
   report: Report;
   analytics?: AnalyticsData;
-  filters?: ReactNode;
-  viewControls?: ReactNode;
-  /** When set, account rows open the drill-down drawer for this date range. */
   drill?: DrillRange;
+  display: ReportDisplayState;
 }) {
   const [drillTarget, setDrillTarget] = useState<DrillTarget | null>(null);
+  const activityCache = useMemo<AccountActivityCache>(() => new Map(), [report, drill]);
   const targets = useMemo(() => drill ? drillTargets(report) : [], [drill, report]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState("");
-  const [hideZero, setHideZero] = useState(false);
+  const { collapsed, setCollapsed, query, hideZero } = display;
   const canCollapse = useMemo(() => collapsibleIds(report.lines), [report.lines]);
+  const collapsedIds = collapsed === "all" ? canCollapse : collapsed;
   const hasAccounts = report.lines.some(line => line.accountCode);
   const filtered = useMemo(() => filterReportLines(report.lines, query, hideZero), [report.lines, query, hideZero]);
-  const rows = useMemo(() => visibleLines(filtered, collapsed), [filtered, collapsed]);
+  const rows = useMemo(() => visibleLines(filtered, collapsedIds), [filtered, collapsedIds]);
   const displayFiltered = hasAccounts && (query.trim() !== "" || hideZero);
   const matchingAccounts = filtered.filter(line => line.accountCode).length;
   const toggle = (id: string) => setCollapsed(previous => {
-    const next = new Set(previous);
+    const next = new Set(previous === "all" ? canCollapse : previous);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
 
   return (
-    <article className="report-page">
-      <header className="report-header">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="print-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
-        <div className="report-heading">
-          <h1 className="report-title">{report.title}</h1>
-          <p className="report-entity">{report.entity} / {report.basis.split(" - ")[0]} / USD</p>
-          <p className="report-period">{report.periodLabel}</p>
-        </div>
-        <div className="report-exports no-print" aria-label="Export report">
-          <button type="button" className="btn btn-quiet" onClick={() => downloadExcel(report, rows)}><ReportIcon name="excel" />Export Excel</button>
-          <button type="button" className="btn btn-quiet" onClick={() => window.print()}><ReportIcon name="pdf" />Export PDF</button>
-        </div>
-      </header>
-
+    <div className="statement-results">
       {report.isSample && <p className="sample-banner" role="note">Sample data. These figures are for layout review and are not Chicago Brass results.</p>}
       {report.checks.some(check => !check.ok) && <div className="report-alerts" role="status">{report.checks.filter(check => !check.ok).map(check => <p className="check check-bad" key={check.label}>{check.label}: {check.detail}</p>)}</div>}
-      {filters}
-
       <div className={`report-workspace${analytics ? " has-analytics" : ""}`}>
         <section className="statement-panel" aria-label={report.title}>
-          <div className="statement-toolbar no-print">
-            <div className="statement-view-controls">{viewControls}</div>
-            <div className="statement-tools">
-              {hasAccounts && <label className="report-account-search"><ReportIcon name="search" /><span className="sr-only">Search accounts</span><input type="search" placeholder="Search accounts" value={query} onChange={event => { setQuery(event.target.value); setCollapsed(new Set()); }} /></label>}
-              {(hasAccounts || canCollapse.size > 0) && <details className="report-filter-menu">
-                <summary className="btn btn-quiet"><ReportIcon name="filter" />Filters{hasAccounts && hideZero && <span className="report-filter-count">1</span>}</summary>
-                <div className="report-filter-popover">
-                  <h2>Account display</h2>
-                  {hasAccounts && <label className="report-zero-option"><input type="checkbox" checked={!hideZero} onChange={event => setHideZero(!event.target.checked)} />Show zero accounts</label>}
-                  {canCollapse.size > 0 && <div className="report-collapse-actions"><button className="btn btn-quiet" type="button" onClick={() => setCollapsed(new Set())}><ReportIcon name="expand" />Expand all</button><button className="btn btn-quiet" type="button" onClick={() => setCollapsed(new Set(canCollapse))}><ReportIcon name="collapse" />Collapse all</button></div>}
-                  <p>Display filters do not change financial totals.</p>
-                  {displayFiltered && <button type="button" className="report-reset-display" onClick={() => { setQuery(""); setHideZero(false); }}>Reset display filters</button>}
-                </div>
-              </details>}
-            </div>
-          </div>
-
-          {displayFiltered && <p className="report-display-note" role="status">{matchingAccounts} matching accounts. Totals include all accounts.</p>}
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label={`${report.title} accounts`}>
             <table className="fin-table">
               <colgroup><col className="col-label" />{report.columns.map(column => <col key={column.key} className={column.kind === "percent" ? "col-pct" : "col-amt"} />)}</colgroup>
-              <thead><tr><th scope="col" className="label-cell">Account</th>{report.columns.map(column => <th key={column.key} scope="col" className="num-cell"><span className="col-head">{column.label}</span>{column.sublabel && <span className="col-sub">{column.sublabel}</span>}</th>)}</tr></thead>
+              <thead><tr><th scope="col" className="label-cell">Account</th>{report.columns.map(column => <th key={column.key} scope="col" className="num-cell"><span className="col-head">{column.label}{column.sublabel && <> <span className="col-sub">{column.sublabel}</span></>}</span></th>)}</tr></thead>
               <tbody>
                 {displayFiltered && hasAccounts && matchingAccounts === 0 && <tr><td colSpan={report.columns.length + 1} className="report-no-matches">No accounts match the display filters. Financial totals remain below.</td></tr>}
                 {rows.map(line => {
-                  const isToggle = canCollapse.has(line.id), isCollapsed = collapsed.has(line.id);
+                  const isToggle = canCollapse.has(line.id), isCollapsed = collapsedIds.has(line.id);
                   const target = drill && line.accountCode && !isToggle ? targets.find(item => item.code === line.accountCode) : undefined;
                   const drilled = !!target && drillTarget?.code === target.code;
                   return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}${drilled ? " is-drilled" : ""}`} data-account={line.accountCode}>
@@ -151,12 +164,12 @@ export function ReportView({ report, analytics, filters, viewControls, drill }: 
           </div>
           <footer className="report-status">
             {report.checks.filter(check => check.ok).map(check => <span key={check.label} title={check.detail}><ReportIcon name="check" />{check.label}: {check.detail}</span>)}
-            {displayFiltered && <span>Export includes the visible account rows.</span>}
+            {displayFiltered && <span role="status">{matchingAccounts} matching accounts. Totals include all accounts; export uses visible rows.</span>}
           </footer>
         </section>
         {analytics && <ReportAnalytics analytics={analytics} />}
       </div>
-      {drill && drillTarget && <AccountDrawer target={drillTarget} range={drill} accounts={targets} onSelect={setDrillTarget} onClose={() => setDrillTarget(null)} />}
-    </article>
+      {drill && drillTarget && <AccountDrawer target={drillTarget} range={drill} cache={activityCache} accounts={targets} onSelect={setDrillTarget} onClose={() => setDrillTarget(null)} />}
+    </div>
   );
 }

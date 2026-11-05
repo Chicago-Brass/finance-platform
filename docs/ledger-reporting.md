@@ -38,10 +38,12 @@ Escape, its close button or a click on the dimmed backdrop; focus returns to the
 holds no URL state, so View/Display parameters are unaffected. Statement drawers step to the
 previous or next account in report order.
 
-The `loadAccountActivity` server action (`app/(reports)/account-activity-action.ts`) runs as the
-signed-in user. It validates the account code and dates, then reads `get_trial_balance` for the
-range totals and pages `v_ledger` filtered by account for the lines, up to 2,000 lines. Totals
-always come from the trial balance; a capped list says so. Ranges and comparisons:
+The `/api/reports/account-activity` GET endpoint runs as the signed-in user. The browser requests
+`section=summary` and `section=lines` concurrently; either can render before the other. Totals use
+one batched trial-balance call for current/prior dates. Lines read account-filtered `v_ledger` in
+500-row pages, up to the existing 2,000-line cap. Each section has its own loading indicator and retry.
+The owning report caches successful sections until refresh/data or range changes; errors and
+aborted results are not cached. Totals always cover every line; a capped list says so. Ranges:
 
 - Income Statement and General Ledger use the selected dates (`period` mode). The comparison is
   the same dates one year earlier.
@@ -58,40 +60,66 @@ only when the unfiltered lines add up to the trial-balance debits and credits.
 All report headings use one row for the title, divider and entity description. Date filters carry
 the dates without duplicate Trial Balance or General Ledger captions. Monthly/quarterly/annual
 statement columns use month names, Q1-Q4, or years; partial Balance Sheet snapshots retain their
-exact as-of date below the compact heading. Analytics use compact, right-aligned values.
+exact as-of date inline in the compact heading. Analytics use compact, right-aligned values.
 
-Report links and GET forms navigate through the Next router. A spinner and table skeleton appear
-immediately while a new view loads; stale controls are inert during the transition. View (Monthly/Quarterly/Annual/As of) and Display
-(Summary/Details) switches on the Income Statement and Balance Sheet rebuild the report in the
-browser from the loaded data and update the URL with a history replace, so they make no request.
-Only the year, month range or as-of date loads data. Visited
-report pages stay in the browser's Next router cache for five minutes (`staleTimes.dynamic` in
-`next.config.mjs`), so returning to a page or a filter combination already seen is instant. The
-server does not cache ledger reads: a browser reload, or the Refresh data button in the top bar
-(`router.refresh()`, which also clears the router cache), reads the latest postings. Authentication
-runs once per request and is shared by the report layout and every read; middleware still checks
-the current application role. Query failures propagate. Router-cached pages belong to that browser
-tab only and are cleared by signing out.
+Financial links and GET filters update the URL through Next's native history integration. One
+persistent client report application selects the destination header and controls immediately,
+then fetches its financial data from `/api/reports/data`. SSR sends controls and a data indicator;
+financial page files contain metadata, not pending financial reads. Non-financial routes continue
+using the Next router. Only table/analytics panels load, and exports wait for ready data.
+
+View (Monthly/Quarterly/Annual/As of) and Display (Summary/Details) switches reuse loaded statement
+data. Their request keys exclude display choices. Dates and Ledger account/offset/side/search/page
+choices change the JSON request key. Search commits on Enter, Search or blur, not per keystroke.
+
+Successful responses live in a private per-user/layout cache for five minutes, up to 32 ready keys.
+In-flight reads are shared. Refresh data invalidates that cache; sign-out or account changes clear
+it. API/ledger reads are not cached on the server, so cache misses read fresh posted data. The
+Ledger account-choice request runs independently in parallel and is reused across filter changes.
+All API reads require session validation, the allowlist and RLS. Failed requests are not cached.
 
 Both reports and their Excel/PDF outputs show currency symbols, two decimal places, `$0.00` zeros
 and parentheses for negative amounts. Missing values remain distinct from zero. General Ledger
 and Trial Balance use the same cents formatter and combine account codes/names in pills. Exports use the currently visible
 rows; print hides the navigation, filters, view controls and analytics sidebar.
 
-The UI changes are consolidated on main and were verified locally. This work does not establish
-a hosted frontend deployment. These UI changes make no database, schema, ledger-data
-or Airtable changes. Browser comparison against the approved design is complete in the Jeric
-Chrome profile. Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
+The earlier UI baseline was consolidated on main and visually reviewed in the Jeric Chrome profile.
+Those checks precede the current shared-control changes, whose browser verification is pending.
+Desktop checks at 1920x1080, 1710x895 and 1440x900 verified viewport fit and
 independent table/sidebar scrolling. A 390x844 check verified the stacked narrow layout without
 page overflow. Print media expands the table and hides the sidebar instead of clipping content.
 
 ## Data and periods
 
 Statement loaders (`lib/reports/statement-loaders.ts`) make one batched trial-balance call and one
-posted-entry count per data window. `get_trial_balances` (included in the initial baseline) runs
-`get_trial_balance` for each requested range inside the database, so each set is identical to a
-single call. Until that migration is applied to a database, the app falls back to one
+posted-entry count per data window. `get_trial_balances` materializes posted activity once and
+aggregates all requested ranges from it. Its results are regression-checked against individual
+`get_trial_balance` calls. On older databases without the batched function, the app falls back to one
 `get_trial_balance` call per range.
+
+The report shell and data fetch have separate lifecycles. There is no placeholder route shell
+and no retained previous-page controls. `ReportApplication` keys each destination by pathname;
+`ReportDataPanel` owns loading, error and retry UI. Shared filter components place labels just
+above their controls. Cold financial navigation needs no server route/RSC request; it fetches only
+the active data key if that key is missing from the private cache.
+General Ledger's date/account filters share one desktop row; quick dates are inside its period picker.
+Account dropdown choices read `accounts` metadata without calculating a cumulative trial balance.
+The header uses the tightly cropped 250 x 78 official site logo at 2x display density.
+
+`vercel.json` places server functions in `pdx1`, matching the database's Oregon (`us-west-2`) region.
+Middleware runs live `getUser` and allowlist validation concurrently and requires both. Report reads verify the JWT using
+`getClaims`, whose signing-key cache avoids the duplicate Auth lookup. RLS remains active.
+
+Read-only `EXPLAIN ANALYZE` samples as an approved authenticated user on 2026-11-05:
+
+| Query | Previous | Optimized |
+| --- | --- | --- |
+| 12 statement periods | 26.5 ms | 16.0 ms |
+| One account's ledger page | 8.8 ms | 5.0 ms |
+
+These are SQL execution samples on the current small dataset, not end-to-end browser timings.
+Before/after digests of all visible ledger rows and selected statement snapshots match exactly.
+The migration changes read plans only; no journal records, amounts or permissions are rewritten.
 
 - Income Statement reads one trial balance per calendar month in the selected range, plus the
   prior-year comparison period, all in a single `get_trial_balances` call. Quarterly and annual columns, and the Total column, are sums of those
@@ -180,11 +208,13 @@ currency formats are covered by the export test. The native PDF dialog was not e
 General Ledger reads posted lines from v_ledger within the inclusive selected date range,
 100 records per page with a single lookahead record to determine Next availability. Sorting by
 date, entry number and line number gives stable page ordering. Date changes reset to page one.
-Account and offsetting-account filters are URL parameters (`account`, `offset`) applied in the
-database query, so they cover every page; date changes and pagination keep them. The offsetting
-filter excludes lines whose entry is split across several offsetting accounts, and the page says so.
-Search and debit/credit display filters apply to the current page; its totals include all
-loaded rows, not the entire date range. Trial Balance reads cumulative get_trial_balance
+Account, offset, search and side filters are URL parameters (`account`, `offset`, `q`, `side`)
+applied before pagination. Search commits on Enter, Search or blur, rather than every keystroke.
+`search_ledger` uses bound literal substring matching, including punctuation; `%` and `_` are not
+wildcards. Date changes and pagination preserve scope. Rapid changes merge with the latest pending
+scope, so an earlier response cannot discard a newer selection. The offsetting filter excludes
+entries split across several offsetting accounts. Totals include the loaded page, not the whole
+date range. Trial Balance reads cumulative get_trial_balance
 through the selected as-of date. T-Chart displays v_t_chart rule metadata rather than journal activity: one table grouped by
 category, with client-side category and text filters. An exact `Name (000.000)` debit/credit
 reference becomes an account link into the General Ledger; alternatives and descriptions stay

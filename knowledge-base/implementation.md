@@ -24,23 +24,33 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `supabase/functions/ledger-payment/` | Shared-secret HTTP boundary and generic transactional writer |
 | `supabase/migrations/` | Tracked database changes, including lifecycle metadata and nullable branch |
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
-| `lib/reports/report-session.ts` | One shared Auth check per request; ledger reads run as the signed-in user |
+| `lib/reports/report-session.ts` | One shared verified-JWT check per request; middleware retains live Auth/allowlist validation |
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
 | `lib/reports/statement-loaders.ts` | One batched `get_trial_balances` read plus the posted count per statement data window |
 | `lib/reports/statement-data.ts` | Builds every IS/BS View and Display from one data window; runs in the browser |
-| `components/StatementWorkspace.tsx` | IS/BS client state for View/Display switches without a request |
+| `components/StatementWorkspace.tsx` | IS/BS header, controls, query loading/error states, local View/Display and export readiness |
+| `components/LedgerWorkspaces.tsx` | Persistent TB/GL/T-Chart controls; optimistic ledger filter scope and independent account options |
+| `components/SearchableSelect.tsx` | Searchable single-select with keyboard interaction and dialog-aware popup placement |
+| `components/FilterControls.tsx`, `components/filter-controls.css` | Shared filter bar, top label, search field and keyboard-operated segmented switch across reports and drawer |
 | `lib/reports/income-statement.ts` | Income Statement grouping, periods and totals |
 | `lib/reports/balance-sheet.ts` | Cumulative balance snapshots and per-year earnings baselines |
 | `lib/reports/analytics.ts` | Position/Movement data derived from the report and comparison periods |
-| `components/ReportView.tsx` | Shared report table, account display filters, collapse controls and exports |
+| `components/ReportView.tsx` | Shared data panels plus controlled account display/collapse/export helpers; no inner toolbar |
 | `components/ReportAnalytics.tsx` | Accessible Position/Movement tabs and compact signed-value charts |
 | `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables, account-to-ledger links |
 | `components/AccountDrawer.tsx`, `components/account-drawer.css` | Slide-over account drill-down: summary, filters and posted lines |
 | `lib/reports/account-activity.ts` | Drill-down summaries, natural-sign amounts and line filters (cents) |
-| `app/(reports)/account-activity-action.ts` | Server action that loads one account's totals and lines as the signed-in user |
+| `app/api/reports/account-activity/route.ts` | Independent authenticated GET reads for account totals and lines |
+| `lib/reports/account-activity-server.ts` | Validates the drill range, batches totals and reads up to four 500-line pages |
+| `lib/reports/account-activity-client.ts` | Aborts abandoned requests and caches successful sections within one report snapshot |
 | `components/LedgerAccountFilter.tsx` | General Ledger account and offsetting-account query filters |
 | `components/PostingRulesTable.tsx` | T-Chart posting-rule table |
-| `components/ReportNavigation.tsx` | Client navigation, GET forms, immediate spinner/skeleton feedback |
+| `components/ReportNavigation.tsx` | Immediate URL navigation inside the financial workspace, data refresh and progress |
+| `components/ReportApplication.tsx` | URL-driven destination shells; no financial read blocks navigation |
+| `components/ReportData.tsx`, `lib/reports/report-data-client.ts` | Private user-scoped five-minute JSON cache, request sharing, refresh and auth invalidation |
+| `components/ReportDataPanel.tsx` | Data-only pending/error/retry UI and render boundary |
+| `lib/reports/report-routes.ts` | Shared normalized filter options and canonical data request keys |
+| `app/api/reports/data/route.ts` | Authenticated JSON reads for each report and Ledger account choices |
 | `app/page.tsx`, `components/LoginForm.tsx`, `app/landing.css` | Public landing and existing sign-in flow |
 | `middleware.ts`, `lib/supabase/` | Session validation, approved-user gate and user-scoped database clients |
 
@@ -71,8 +81,9 @@ access to the landing does not expose reports. Report clients use the signed-in 
 - Trial Balance: cumulative account debit, credit and natural-balance fields, with full-account totals.
 - General Ledger: posted `v_ledger` records, 100 per page plus one lookahead. Stable order is date,
   entry number and line number. Date changes reset page one. Account and offsetting-account filters
-  run in the query and survive date and page changes. Search/side controls apply to the current
-  page, whose totals are explicitly labeled as page totals.
+  run in the query and survive date and page changes. Search and side filters run before pagination
+  across all matching records. Search commits on Enter, Search or blur; typing alone sends no query.
+  Each page's totals remain explicitly labeled as page totals.
 - T-Chart page: database rule/catalog metadata in one grouped table. It does not execute Airtable
   category filters.
 
@@ -88,25 +99,61 @@ its own scroll area. Narrow screens stack the panels; print returns tables to do
 
 Headings use one row: title, vertical divider and description. Dates are not repeated in Trial
 Balance/General Ledger headings because their filters already show them. Statement columns use
-month names, Q1-Q4 or years, with exact partial-snapshot dates retained where needed.
+month names, Q1-Q4 or years, with year/date context inline in the same thin header row and exact
+partial-snapshot dates retained where needed. Search wrappers own their outer border and focus
+treatment; their text inputs stay borderless. Avoid broad toolbar input rules that override search
+or combobox padding. Trial Balance groups its date controls left and display controls right.
+Filter labels sit above 32px controls with a 3px gap in the shared 64px-minimum bar. Screen typography uses `--report-text-size` (13px) for regular table/control text, 14px section
+headings and navigation, 11-12px supporting labels, and 22px page headings. Sidebar headline
+amounts are 20px. Sizes follow these roles rather than a uniform increment on every element.
 
-Next client navigation replaces full-page filter reloads. A spinner/skeleton appears during a
-transition and stale controls become inert. Visited pages stay in the browser router cache for
-five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
-bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
-layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
-from data loaded once per year/month range or as-of date, so they make no request. That data comes
-from one `get_trial_balances` call (included in the initial baseline); on older databases the app falls
-back to one `get_trial_balance` call per range.
+The report layout owns one `ReportApplication`. Financial page files provide metadata and return
+null because their header, filters and table are rendered by that persistent application. On a
+first visit, SSR sends the header/controls and a data indicator. After hydration, the active report
+fetches `/api/reports/data`; no financial promise or rows are embedded in the server page.
+
+Financial links use Next's [native history integration](https://nextjs.org/docs/app/guides/single-page-applications#shallow-routing-on-the-client),
+which updates `usePathname` and `useSearchParams` without a server-route round trip. The destination
+shell is keyed by its pathname, so previous-page filters and drawer state are discarded immediately.
+Back/Forward restores URL-based filters. Non-financial navigation keeps normal Next routing.
+
+Each report makes one JSON request for its data. Ledger account choices are a separate parallel
+request cached independently; the table does not wait for them. Statements still use one batched
+`get_trial_balances` read and a posted-entry count in parallel inside the endpoint. Only revenue
+and expense accounts are sent for Income Statement. Ledger reads return 100 rows plus one internal
+lookahead, with search/account/offset/side filters applied before pagination.
+
+The private provider cache holds successful JSON responses for five minutes, up to 32 ready keys.
+Identical in-flight requests share one promise, including development StrictMode replay. Refresh
+clears this cache, and old responses cannot replace a newer request. The cache belongs to the
+verified user/layout, clears on sign-out or account changes, and is never put in local storage.
+Failed requests are not cached. API 401/403 responses redirect to sign-in or access-denied pages.
+
+View/Display, account display and local rules/Trial Balance filters reuse loaded data. Their cache
+keys exclude display-only state. Date ranges and Ledger filters/page/search change the JSON request
+key. Only data panels show loading/error indicators; controls remain available and exports stay
+disabled until their data is ready. Report render failures remain inside a data-area boundary.
+
+Every API read verifies the signed-in identity and runs through RLS. Middleware runs live user and
+allowlist checks in parallel and requires both. API failures return JSON statuses rather than HTML
+login redirects. Server reads remain uncached; a cache miss or Refresh reads the latest postings.
 
 Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
-above the page with that account's summary, filters and posted lines. It loads through a server
-action on each open, without a cache, and keeps no URL state. See
+above the page with that account's summary, filters and posted lines. Totals and lines start as
+parallel GET requests, each with its own skeleton/error/retry state. Totals use one batched RPC;
+lines use up to four 500-line reads with the existing 2,000-line cap. The main ledger remains
+100 rows per page. Successful sections are cached in the owning report's memory until its data
+or range changes or it unmounts. No financial data is cached globally or in local storage.
+Switching accounts/closing aborts old requests. Stale responses cannot replace the current account.
+Drawer summary/chart areas reserve space for loading and loaded content. Custom searchable selects
+support keyboard selection and place popups inside the modal's accessible subtree. Scrollbar chrome
+is hidden, while labeled focusable table/analytics regions retain scrolling with overscroll disabled. See
 [the drawer contract](../docs/ledger-reporting.md#account-drill-down-drawer).
 
 ## Local setup
 
-Run `npm run dev -- --port 3010` from the repository. Jeric has used `http://localhost:3010` for the
+Run `npm run dev -- --port 3010` from the repository. The 2026-11-06 production QA snapshot
+was built in `/tmp/finance-dashboard-controls-build` and served on port 3011 to exclude HMR/compilation overhead. Jeric has used `http://localhost:3010` for the
 signed-in browser and the loopback IP host for an independent signed-out check. Browser cookies are
 host-scoped; do not clear the user's normal session for visual tests.
 

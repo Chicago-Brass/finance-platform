@@ -30,8 +30,9 @@ integration. It contains technical context, not customer/payment exports or a co
 ## Project and branches
 
 - Repository: [Chicago-Brass/finance-platform](https://github.com/Chicago-Brass/finance-platform).
-- Consolidated baseline: `main`. Jeric authorized merging `develop` and retiring it on 2026-11-05.
-  New development uses task branches. See [baseline guide](../docs/database-baseline.md).
+- Consolidated release baseline: `main`. Jeric recreated `develop` from it on 2026-11-05 for
+  performance work. The merged `ram/ledger-test` branch was deleted; `mae/testing` remains.
+  See [baseline guide](../docs/database-baseline.md).
 - Preserve `mae/testing`, the separate UI/testing branch. Do not infer that it can be deleted because
   some commits are reachable from `develop`.
 - `feature/data-upload` was confirmed fully contained in `develop`; its remote was already absent

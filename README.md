@@ -6,6 +6,10 @@ Agents: start with [AGENTS.md](AGENTS.md) and the [knowledge base](knowledge-bas
 The [conversation summary](knowledge-base/conversation-context.md) records design decisions;
 [session handoff](knowledge-base/session-handoff.md) locates the full conversation on Jeric's device.
 
+The current [dashboard PR](https://github.com/Chicago-Brass/finance-platform/pull/1) separates the
+immediate report shell from authenticated JSON data reads. See its [implementation spec](docs/dashboard-controls-spec.md)
+for the request/cache design, measurements and outstanding browser verification.
+
 **Status:** On `main`, Income Statement and Balance Sheet read posted Supabase ledger data.
 The local app uses the DUAL ENTRY project. Current testing verifies page queries, field mappings,
 account groupings and filters against the existing database records. The report redesign adds a
@@ -19,7 +23,9 @@ deployment. Branch reporting is deferred.
   callbacks also return to the landing page. Supabase Auth and the approved-user check remain in
   place; Microsoft SSO is still controlled by its existing environment flag.
 - Access: only emails in `public.app_users` with `active = true` can see reports (checked in `middleware.ts`).
-- Reports: authenticated server reads use `get_trial_balance` and the ledger views. The builders under
+- Reports: the header/filters render first; `/api/reports/data` supplies authenticated JSON afterward.
+  Navigation switches the client workspace immediately, with a private five-minute response cache.
+  Server reads use `get_trial_balance` and the ledger views. The builders under
   `lib/reports/` return the existing `Report` / `ReportLine` contract for the UI and Excel/PDF exports.
   Income Statement supports selectable years and monthly/quarterly/annual actuals. Balance Sheet uses
   cumulative as-of, monthly, quarterly or annual snapshots, with prior-year and current-year earnings
@@ -42,8 +48,8 @@ Run `node --test app/landing.test.cjs` for routing, access and form checks. Visu
 signed-out `http://127.0.0.1:3010/` and signed-in `http://localhost:3010/` hosts independently.
 
 ## Change process
-New changes use task branches and pull requests. Vercel posts a preview link on every PR. Ram normally
-owns releases; Jeric authorized the Nov 5 baseline merge and retirement of `develop`.
+Current performance work uses `develop`, recreated from the Nov 5 `main` baseline. Vercel creates
+preview deployments. Ram normally owns releases; Jeric authorized the baseline consolidation.
 See `CLAUDE.md` for the rules Claude follows in this repo.
 
 ## Database baseline
@@ -82,3 +88,13 @@ npm run typecheck
 
 The database integration check uses a disposable local PostgreSQL container. These checks do not install the
 hosted functions, replace Airtable scripts, enable automations or post hosted ledger records.
+
+Performance work on `develop` streams destination-page skeletons, loads account totals/lines in
+parallel, reuses successful drawer sections within a report, and colocates server functions with
+the Oregon database. The read-query migration is applied to DUAL ENTRY and preserves existing
+financial results. See [reporting and performance details](docs/ledger-reporting.md).
+
+The dashboard-controls PR adds persistent headers and one compact control bar to all five report
+pages, searchable keyboard-accessible selects, data-only loading and ledger-wide search.
+See [implementation spec and review results](docs/dashboard-controls-spec.md). Visual/browser
+verification is still pending because browser access is unavailable in the current session.

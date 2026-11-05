@@ -1,33 +1,34 @@
 "use client";
 
-import type { ChangeEvent } from "react";
-import type { TbRow } from "@/lib/reports/ledger";
-import { ReportForm, ReportLink } from "./ReportNavigation";
+import type { LedgerAccountFilters, LedgerAccountOption } from "@/lib/reports/ledger";
+import { SearchableSelect } from "./SearchableSelect";
+import type { SelectOption } from "./SearchableSelect";
+import { ReportLink, useReportNavigate } from "./ReportNavigation";
 import { accountGroups, ledgerHref } from "./ledger-table-utils";
 
-type Props = { from: string; to: string; account?: string; offset?: string; accounts: TbRow[] };
+type Props = LedgerAccountFilters & {
+  from: string;
+  to: string;
+  accounts: LedgerAccountOption[];
+  unavailable?: boolean;
+  onChange?: (changes: Pick<LedgerAccountFilters, "account" | "offset">) => void;
+};
 
-/** Server-side account filters: they query every page, unlike the table's current-page search. */
-export function LedgerAccountFilter({ from, to, account, offset, accounts }: Props) {
-  const groups = accountGroups(accounts);
-  const options = groups.map(group => (
-    <optgroup key={group.type} label={group.label}>
-      {group.accounts.map(row => <option key={row.account_number} value={row.account_number}>{row.account_number} {row.account_name}</option>)}
-    </optgroup>
-  ));
-  const submit = (event: ChangeEvent<HTMLSelectElement>) => event.currentTarget.form?.requestSubmit();
+/** Account choices load independently; selected codes remain visible before metadata arrives. */
+export function LedgerAccountFilter({ from, to, account, offset, query, side, accounts, unavailable, onChange }: Props) {
+  const navigate = useReportNavigate();
+  const options: SelectOption[] = [{ value: "", label: "All accounts" }, ...accountGroups(accounts).flatMap(group =>
+    group.accounts.map(row => ({ value: row.account_number, label: `${row.account_number} ${row.account_name}`, group: group.label })))];
+  for (const code of [account, offset]) if (code && !options.some(option => option.value === code)) options.push({ value: code, label: code });
+  if (unavailable) options.push({ value: "unavailable", label: "Choices unavailable - refresh to retry", disabled: true });
+  const change = (changes: Pick<LedgerAccountFilters, "account" | "offset">) => onChange
+    ? onChange(changes)
+    : navigate(ledgerHref({ from, to, account, offset, query, side, ...changes }));
   return (
-    <ReportForm key={`${account ?? ""}:${offset ?? ""}`} className="ledger-account-filters" aria-label="General Ledger account filters">
-      <input type="hidden" name="from" value={from} />
-      <input type="hidden" name="to" value={to} />
-      <label className="ledger-account-field"><span className="filter-label">Account</span>
-        <select name="account" defaultValue={account ?? ""} onChange={submit}><option value="">All accounts</option>{options}</select>
-      </label>
-      <label className="ledger-account-field"><span className="filter-label">Offsetting account</span>
-        <select name="offset" defaultValue={offset ?? ""} onChange={submit}><option value="">All accounts</option>{options}</select>
-      </label>
-      <noscript><button className="btn btn-quiet" type="submit">Apply</button></noscript>
-      {(account || offset) && <ReportLink className="filter-reset" href={ledgerHref({ from, to })}>Clear accounts</ReportLink>}
-    </ReportForm>
+    <div className="ledger-account-filters" aria-label="General Ledger account filters">
+      <SearchableSelect className="ledger-account-select" label="Account" value={account ?? ""} options={options} onChange={value => change({ account: value || undefined })} />
+      <SearchableSelect className="ledger-account-select" label="Offsetting account" value={offset ?? ""} options={options} onChange={value => change({ offset: value || undefined })} />
+      {(account || offset) && !onChange && <ReportLink className="filter-reset" href={ledgerHref({ from, to, query, side })}>Clear accounts</ReportLink>}
+    </div>
   );
 }
