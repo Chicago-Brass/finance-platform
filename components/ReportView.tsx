@@ -8,6 +8,7 @@ import { formatReportAmount, formatPercent } from "@/lib/format";
 import { downloadExcel } from "@/lib/reports/export-excel";
 import { LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 import type { DrillRange } from "@/lib/reports/account-activity";
+import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { AccountDrawer } from "./AccountDrawer";
 import type { DrillTarget } from "./AccountDrawer";
 import { ReportAnalytics } from "./ReportAnalytics";
@@ -67,6 +68,7 @@ export function ReportView({ report, analytics, filters, viewControls, drill }: 
   drill?: DrillRange;
 }) {
   const [drillTarget, setDrillTarget] = useState<DrillTarget | null>(null);
+  const activityCache = useMemo<AccountActivityCache>(() => new Map(), [report, drill]);
   const targets = useMemo(() => drill ? drillTargets(report) : [], [drill, report]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -156,7 +158,7 @@ export function ReportView({ report, analytics, filters, viewControls, drill }: 
         </section>
         {analytics && <ReportAnalytics analytics={analytics} />}
       </div>
-      {drill && drillTarget && <AccountDrawer target={drillTarget} range={drill} accounts={targets} onSelect={setDrillTarget} onClose={() => setDrillTarget(null)} />}
+      {drill && drillTarget && <AccountDrawer target={drillTarget} range={drill} cache={activityCache} accounts={targets} onSelect={setDrillTarget} onClose={() => setDrillTarget(null)} />}
     </article>
   );
 }

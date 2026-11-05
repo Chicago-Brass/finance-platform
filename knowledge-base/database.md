@@ -1,7 +1,7 @@
 # Database and reporting schema
 
 Project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj).
-The schema was compared with a fresh baseline restore on 2026-11-05. This documents structure,
+Fresh migrations and read equivalence were verified on 2026-11-05. This documents structure,
 not the completeness or business correctness of the current journal dataset. The missing batched
 reporting function and restricted future-function default were aligned without changing journals.
 
@@ -48,10 +48,15 @@ writer does not populate it and the reports have no branch filter.
   debit/credit/balance aggregates. Income Statement uses period ranges; Balance Sheet and Trial
   Balance use cumulative snapshots.
 - `get_trial_balances(p_as_of date[], p_from date[])` (included in the initial baseline) answers up to 100
-  (as-of, from) pairs in one call, one row per pair with that pair's accounts as JSON. It calls
-  `get_trial_balance` for each pair, runs as SECURITY INVOKER and grants report access to
+  (as-of, from) pairs in one call, one row per pair with that pair's accounts as JSON. It reads
+  posted activity once for all pairs, runs as SECURITY INVOKER and grants report access to
   `authenticated`. Income Statement and Balance Sheet loaders use it. A missing-function fallback
   remains for databases that have not adopted this baseline; DUAL ENTRY has the function.
+- `20261105143952_optimize_report_reads` replaces the batched function's per-period scans with
+  one shared activity scan. `v_ledger` now resolves offsetting accounts through an indexed lateral
+  lookup within each candidate entry instead of materializing/self-joining the entire line table.
+  Column types, accounting results, invoker security and grants are preserved. The applied initial
+  baseline remains unchanged; this is a normal forward migration.
 - `v_journal_entries` supplies posted-entry counts.
 - `v_ledger` supplies General Ledger records, including `entry_number`, `line_no`, `line_id`,
   account names/numbers, offset data, notes and audit URLs. Pagination is stable by date/entry/line.

@@ -24,7 +24,7 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `supabase/functions/ledger-payment/` | Shared-secret HTTP boundary and generic transactional writer |
 | `supabase/migrations/` | Tracked database changes, including lifecycle metadata and nullable branch |
 | `lib/reports/ledger.ts` | Authenticated report queries and General Ledger pagination |
-| `lib/reports/report-session.ts` | One shared Auth check per request; ledger reads run as the signed-in user |
+| `lib/reports/report-session.ts` | One shared verified-JWT check per request; middleware retains live Auth/allowlist validation |
 | `lib/reports/t-chart.ts` | Posting-rule grouping, filtering and account-reference parsing |
 | `lib/reports/statement-loaders.ts` | One batched `get_trial_balances` read plus the posted count per statement data window |
 | `lib/reports/statement-data.ts` | Builds every IS/BS View and Display from one data window; runs in the browser |
@@ -37,7 +37,9 @@ to decide how to debit or credit an account. It receives complete posting pairs 
 | `components/LedgerTable.tsx` | Trial Balance and paginated General Ledger tables, account-to-ledger links |
 | `components/AccountDrawer.tsx`, `components/account-drawer.css` | Slide-over account drill-down: summary, filters and posted lines |
 | `lib/reports/account-activity.ts` | Drill-down summaries, natural-sign amounts and line filters (cents) |
-| `app/(reports)/account-activity-action.ts` | Server action that loads one account's totals and lines as the signed-in user |
+| `app/api/reports/account-activity/route.ts` | Independent authenticated GET reads for account totals and lines |
+| `lib/reports/account-activity-server.ts` | Validates the drill range, batches totals and reads up to four 500-line pages |
+| `lib/reports/account-activity-client.ts` | Aborts abandoned requests and caches successful sections within one report snapshot |
 | `components/LedgerAccountFilter.tsx` | General Ledger account and offsetting-account query filters |
 | `components/PostingRulesTable.tsx` | T-Chart posting-rule table |
 | `components/ReportNavigation.tsx` | Client navigation, GET forms, immediate spinner/skeleton feedback |
@@ -93,15 +95,19 @@ month names, Q1-Q4 or years, with exact partial-snapshot dates retained where ne
 Next client navigation replaces full-page filter reloads. A spinner/skeleton appears during a
 transition and stale controls become inert. Visited pages stay in the browser router cache for
 five minutes, so revisits are instant; the server does not cache ledger reads. A reload or the top
-bar's Refresh data button reads the latest postings. One Auth check per request is shared by the
+bar's Refresh data button reads the latest postings. One verified-JWT check per request is shared by the
 layout and reads. Income Statement and Balance Sheet View/Display switches are built in the browser
 from data loaded once per year/month range or as-of date, so they make no request. That data comes
 from one `get_trial_balances` call (included in the initial baseline); on older databases the app falls
 back to one `get_trial_balance` call per range.
 
 Account rows on the Income Statement, Balance Sheet and General Ledger open a slide-over drawer
-above the page with that account's summary, filters and posted lines. It loads through a server
-action on each open, without a cache, and keeps no URL state. See
+above the page with that account's summary, filters and posted lines. Totals and lines start as
+parallel GET requests, each with its own skeleton/error/retry state. Totals use one batched RPC;
+lines use up to four 500-line reads with the existing 2,000-line cap. The main ledger remains
+100 rows per page. Successful sections are cached in the owning report's memory until its data
+or range changes or it unmounts. No financial data is cached globally or in local storage.
+Switching accounts/closing aborts old requests. Stale responses cannot replace the current account. See
 [the drawer contract](../docs/ledger-reporting.md#account-drill-down-drawer).
 
 ## Local setup

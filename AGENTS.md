@@ -7,8 +7,8 @@ architecture, financial contracts, Airtable editors and the original local conve
 
 - Inspect the actual source and callers before changing behavior. Source, deployed Airtable code,
   deployed Edge code and dated test evidence are different states.
-- Check `git status` and preserve concurrent changes. `main` is the consolidated baseline;
-  `develop` was retired with Jeric's authorization on 2026-11-05. Use a task branch for new work.
+- Check `git status` and preserve concurrent changes. `main` is the consolidated release baseline.
+  Jeric recreated `develop` from that baseline on 2026-11-05 for performance work; use `develop`.
   Do not commit, push or deploy unless the task authorizes it. Ram normally owns release merges;
   a direct instruction from Jeric can authorize a specific merge.
 - Preserve `mae/testing`, the separate UI/testing branch. Read [CLAUDE.md](CLAUDE.md) for the

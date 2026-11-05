@@ -109,6 +109,12 @@ aligning Supabase with one verified initial migration, and deleting develop. Pre
 the separate UI/testing branch. Repository visibility was found public during the final handoff;
 the user clarified that only a summary and local conversation path should be committed.
 
+Jeric then recreated develop from the consolidated main for request/query performance work and
+deleted the merged ram/ledger-test branch. The performance changes stay on develop. Report routes
+stream loading boundaries; drawer totals/lines use independent GET requests with report-scoped
+caching. A forward read-query migration preserves financial results and leaves the applied initial
+baseline intact. Middleware still validates live sessions and application membership.
+
 The frontend objective changed explicitly to validating pages against the existing database.
 Making the database a complete mirror of Airtable is outside this phase. Income Statement and
 Balance Sheet now use posted ledger reads, with corrected groupings/signs and prior/current-year

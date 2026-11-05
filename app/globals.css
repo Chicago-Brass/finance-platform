@@ -79,10 +79,6 @@ label { font-weight: 600; font-size: 13px; }
 .topbar-inner { display: flex; align-items: center; gap: 1.75rem; height: 64px; }
 .brand { display: flex; align-items: center; gap: 0.85rem; white-space: nowrap; }
 .brand-logo { display: block; height: 36px; width: auto; }
-.brand-name {
-  padding-left: 0.85rem; border-left: 1px solid var(--rule); color: var(--navy);
-  font-weight: 600; font-size: 15px; letter-spacing: 0.01em;
-}
 .nav { display: flex; gap: 0.25rem; flex: 1; overflow-x: auto; align-self: stretch; }
 .nav-link {
   display: flex; align-items: center; text-decoration: none; padding: 0 0.85rem; color: var(--ink-2);
@@ -98,7 +94,6 @@ label { font-weight: 600; font-size: 13px; }
 .content { padding-top: 1.5rem; padding-bottom: 3rem; }
 
 @media (max-width: 760px) {
-  .brand-name { display: none; }
   .topbar-inner { gap: 0.75rem; }
   .brand-logo { height: 28px; }
 }
@@ -196,9 +191,9 @@ label { font-weight: 600; font-size: 13px; }
 .reports-shell .topbar-inner { max-width: none; height: 56px; gap: 26px; padding: 0 40px; }
 .reports-shell .brand { gap: 18px; }
 .reports-shell .brand-logo { width: 112px; height: auto; }
-.reports-shell .brand-name { font-size: 13px; padding-left: 18px; }
 .reports-shell .nav { gap: 2px; }
-.reports-shell .nav-link { font-size: 13px; padding: 0 12px; border-bottom-width: 2px; margin-bottom: -2px; }
+.reports-shell .nav-link { position: relative; font-size: 13px; padding: 0 12px; border-bottom: 0; margin-bottom: 0; }
+.reports-shell .nav-link.active::after { content: ""; position: absolute; height: 3px; bottom: 0; left: 12px; right: 12px; border-radius: 3px 3px 0 0; background: var(--navy); }
 .reports-shell .content { position: relative; width: 100%; max-width: none; flex: 1; min-height: 0; overflow: auto; padding: 24px 40px; }
 .reports-shell .content:has(.report-page) { display: flex; flex-direction: column; overflow: hidden; }
 .reports-shell .btn-quiet { min-height: 32px; padding: 5px 10px; font-size: 12px; border-radius: var(--control-radius); }
@@ -311,7 +306,6 @@ button.segment-option { border: 0; background: transparent; font: inherit; curso
 }
 @media (max-width: 1100px) {
   .reports-shell .topbar-inner { gap: 14px; padding: 0 18px; }
-  .reports-shell .brand-name { display: none; }
   .reports-shell .nav-link { padding: 0 9px; }
 }
 @media (max-width: 760px) {

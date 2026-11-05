@@ -38,11 +38,10 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
             {Object.entries(preserve).map(([key, value]) => value && <input key={key} type="hidden" name={key} value={value} />)}
             <button className="btn btn-primary" type="submit">{asOfOnly ? "Apply date" : "Apply dates"}</button>
           </ReportForm>
+          {!asOfOnly && <div className="date-presets" aria-label="Quick ledger periods">{rangePresets.map(preset => <ReportLink key={preset.label} href={query({ from: preset.from, to: preset.to }, preserve)} className={`preset-link${from === preset.from && to === preset.to ? " is-active" : ""}`} aria-current={from === preset.from && to === preset.to ? "true" : undefined}>{preset.label}</ReportLink>)}</div>}
         </div>
       </details>
-      <div className="date-presets" aria-label={asOfOnly ? "Quick as-of dates" : "Quick ledger periods"}>
-        {asOfOnly ? asOfPresets.map(preset => <ReportLink key={preset.label} href={query({ to: preset.asOf }, preserve)} className={`preset-link${to === preset.asOf ? " is-active" : ""}`} aria-current={to === preset.asOf ? "true" : undefined}>{preset.label}</ReportLink>) : rangePresets.map(preset => <ReportLink key={preset.label} href={query({ from: preset.from, to: preset.to }, preserve)} className={`preset-link${from === preset.from && to === preset.to ? " is-active" : ""}`} aria-current={from === preset.from && to === preset.to ? "true" : undefined}>{preset.label}</ReportLink>)}
-      </div>
+      {asOfOnly && <div className="date-presets" aria-label="Quick as-of dates">{asOfPresets.map(preset => <ReportLink key={preset.label} href={query({ to: preset.asOf }, preserve)} className={`preset-link${to === preset.asOf ? " is-active" : ""}`} aria-current={to === preset.asOf ? "true" : undefined}>{preset.label}</ReportLink>)}</div>}
       <ReportLink className="filter-reset" href={asOfOnly ? query({ to: today }, preserve) : query({ from: rangePresets[0].from, to: today }, preserve)}>{asOfOnly ? "Reset to today" : "Reset to current year"}</ReportLink>
       {children}
       {note && <span className="filter-context">{note}</span>}

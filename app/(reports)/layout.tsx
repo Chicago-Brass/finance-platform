@@ -17,7 +17,6 @@ export default async function ReportsLayout({ children }: { children: React.Reac
           <div className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand-logo" src={LOGO_DATA_URI} width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass" />
-            <span className="brand-name">Finance</span>
           </div>
           <NavLinks />
           <RefreshDataButton />

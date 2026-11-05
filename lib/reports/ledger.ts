@@ -7,6 +7,16 @@ import { ledgerRead } from "./report-session";
  */
 
 export type TbRow = AccountBalance;
+export type LedgerAccountOption = Pick<TbRow, "account_number" | "account_name" | "account_type">;
+
+/** Dropdown choices need account metadata, not a cumulative financial aggregation. */
+export async function getLedgerAccounts(): Promise<LedgerAccountOption[]> {
+  return ledgerRead(async supabase => {
+    const { data, error } = await supabase.from("accounts").select("account_number:code,account_name:name,account_type").order("code");
+    if (error) throw new Error(`Account options query failed: ${error.message}`);
+    return data ?? [];
+  });
+}
 
 export async function getTrialBalance(asOf: string, from: string | null) {
   return ledgerRead(async supabase => {
@@ -65,9 +75,9 @@ export const LEDGER_PAGE_SIZE = 100;
 
 export type LedgerAccountFilters = { account?: string; offset?: string };
 
-export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}) {
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / LEDGER_PAGE_SIZE) ? requestedPage : 1;
-  const offset = (page - 1) * LEDGER_PAGE_SIZE;
+export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}, pageSize = LEDGER_PAGE_SIZE) {
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / pageSize) ? requestedPage : 1;
+  const offset = (page - 1) * pageSize;
   const { account, offset: offsetAccount } = filters;
   return ledgerRead(async supabase => {
     let query = supabase
@@ -81,10 +91,10 @@ export async function getGeneralLedger(from: string, to: string, requestedPage =
       .order("date", { ascending: true })
       .order("entry_number", { ascending: true })
       .order("line_no", { ascending: true })
-      .range(offset, offset + LEDGER_PAGE_SIZE);
+      .range(offset, offset + pageSize);
     if (error) throw new Error(`Ledger query failed: ${error.message}`);
     const rows = (data ?? []) as LedgerRow[];
-    return { rows: rows.slice(0, LEDGER_PAGE_SIZE), hasNext: rows.length > LEDGER_PAGE_SIZE, page, pageSize: LEDGER_PAGE_SIZE };
+    return { rows: rows.slice(0, pageSize), hasNext: rows.length > pageSize, page, pageSize };
   });
 }
 

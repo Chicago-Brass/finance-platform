@@ -1,11 +1,11 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import type { TbRow } from "@/lib/reports/ledger";
+import type { LedgerAccountOption } from "@/lib/reports/ledger";
 import { ReportForm, ReportLink } from "./ReportNavigation";
 import { accountGroups, ledgerHref } from "./ledger-table-utils";
 
-type Props = { from: string; to: string; account?: string; offset?: string; accounts: TbRow[] };
+type Props = { from: string; to: string; account?: string; offset?: string; accounts: LedgerAccountOption[] };
 
 /** Server-side account filters: they query every page, unlike the table's current-page search. */
 export function LedgerAccountFilter({ from, to, account, offset, accounts }: Props) {

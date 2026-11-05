@@ -42,8 +42,8 @@ Run `node --test app/landing.test.cjs` for routing, access and form checks. Visu
 signed-out `http://127.0.0.1:3010/` and signed-in `http://localhost:3010/` hosts independently.
 
 ## Change process
-New changes use task branches and pull requests. Vercel posts a preview link on every PR. Ram normally
-owns releases; Jeric authorized the Nov 5 baseline merge and retirement of `develop`.
+Current performance work uses `develop`, recreated from the Nov 5 `main` baseline. Vercel creates
+preview deployments. Ram normally owns releases; Jeric authorized the baseline consolidation.
 See `CLAUDE.md` for the rules Claude follows in this repo.
 
 ## Database baseline
@@ -82,3 +82,8 @@ npm run typecheck
 
 The database integration check uses a disposable local PostgreSQL container. These checks do not install the
 hosted functions, replace Airtable scripts, enable automations or post hosted ledger records.
+
+Performance work on `develop` streams destination-page skeletons, loads account totals/lines in
+parallel, reuses successful drawer sections within a report, and colocates server functions with
+the Oregon database. The read-query migration is applied to DUAL ENTRY and preserves existing
+financial results. See [reporting and performance details](docs/ledger-reporting.md).

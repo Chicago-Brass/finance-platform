@@ -10,7 +10,7 @@ Go-live: Dec 15, 2026, on live Supabase ledger data.
 
 ## Branches
 - `main` is the consolidated baseline and live-app branch: https://finance-platform-iota-bice.vercel.app.
-  `develop` was retired with Jeric's authorization on Nov 5, 2026. New development uses task branches.
+  Jeric recreated `develop` from that baseline on Nov 5, 2026 for performance work.
 - `mae/testing` is Mae's testing branch, a copy of `main`. Its preview is
   https://finance-platform-git-mae-testing-chicago-brass1.vercel.app
   and it uses the same login and the same approved-users list as the live app.

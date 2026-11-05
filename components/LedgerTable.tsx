@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { LedgerRow, TbRow } from "@/lib/reports/ledger";
+import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { formatReportAmount } from "@/lib/format";
 import { formatDate } from "@/lib/reports/report-utils";
 import { AccountDrawer } from "./AccountDrawer";
@@ -51,6 +52,7 @@ export function TrialBalanceTable({ rows, asOf }: { rows: TbRow[]; asOf?: string
 }
 
 export function GeneralLedgerTable({ rows, from, to, page, pageSize, hasNext, account, offset }: { rows: LedgerRow[]; from: string; to: string; page: number; pageSize: number; hasNext: boolean; account?: string; offset?: string }) {
+  const activityCache = useMemo<AccountActivityCache>(() => new Map(), [rows, from, to]);
   const [query, setQuery] = useState("");
   const [side, setSide] = useState("all");
   const [drill, setDrill] = useState<DrillTarget | null>(null);
@@ -81,7 +83,7 @@ export function GeneralLedgerTable({ rows, from, to, page, pageSize, hasNext, ac
         </table>
       </div>
       <footer className="ledger-pagination"><div className="ledger-page-status"><span>{rows.length ? `Records ${first}-${first + rows.length - 1}` : "0 records on this page"}</span><small>{pageSize} records per page / Posted entries only</small></div><nav className="ledger-page-links" aria-label="Ledger pagination">{page > 1 ? <ReportLink className="btn btn-quiet" href={ledgerHref({ from, to, account, offset, page: page - 1 })} rel="prev"><ReportIcon name="chevronRight" className="ledger-previous-icon" />Previous</ReportLink> : <button className="btn btn-quiet" disabled type="button"><ReportIcon name="chevronRight" className="ledger-previous-icon" />Previous</button>}<span className="ledger-page-number" aria-current="page">Page {page}</span>{hasNext ? <ReportLink className="btn btn-quiet" href={ledgerHref({ from, to, account, offset, page: page + 1 })} rel="next">Next<ReportIcon name="chevronRight" /></ReportLink> : <button className="btn btn-quiet" disabled type="button">Next<ReportIcon name="chevronRight" /></button>}</nav></footer>
-      {drill && <AccountDrawer target={drill} range={drillRange} onSelect={setDrill} onClose={() => setDrill(null)} />}
+      {drill && <AccountDrawer target={drill} range={drillRange} cache={activityCache} onSelect={setDrill} onClose={() => setDrill(null)} />}
     </section>
   );
 }

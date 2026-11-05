@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import postgres from "postgres";
+import { readFileSync, readdirSync } from "node:fs";
 
 const databaseUrl = process.env.REPORT_TEST_DATABASE_URL;
 if (!databaseUrl || !["127.0.0.1", "localhost"].includes(new URL(databaseUrl).hostname)) {
@@ -8,6 +9,27 @@ if (!databaseUrl || !["127.0.0.1", "localhost"].includes(new URL(databaseUrl).ho
 }
 const sql = postgres(databaseUrl, { prepare: false, max: 2, connect_timeout: 5, onnotice: () => {} });
 const postings = [];
+
+test("optimized ledger offsets and filters equal the initial view, including split and explicit offsets", async () => {
+  await sql.begin(async sql => {
+    const [entry] = await sql`insert into public.journal_entries (entry_date, description) values ('2026-01-20', 'Split offset regression') returning id`;
+    await sql`insert into public.journal_lines (entry_id,line_no,account_code,offset_account_code,debit,credit) values
+      (${entry.id},1,'211.100','112.200',60,0), (${entry.id},2,'007.003',null,40,0), (${entry.id},3,'112.100',null,0,100)`;
+    await sql`update public.journal_entries set status='posted' where id=${entry.id}`;
+    const directory = new URL('../migrations/', import.meta.url);
+    const initial = readFileSync(new URL(readdirSync(directory).find(name => name.endsWith('_initial_ledger.sql')), directory), 'utf8');
+    const original = initial.match(/CREATE OR REPLACE VIEW "public"\."v_ledger".*? AS\n([\s\S]+?)\nALTER VIEW/)[1].trim().replace(/;$/, '');
+    for (const clause of ["", "where account_number='112.100'", "where date between '2026-01-01' and '2026-07-31'", "where offsetting_account_number='112.200'"]) {
+      const expected = await sql.unsafe(`select * from (${original}) old_view ${clause} order by line_id`);
+      const actual = await sql.unsafe(`select * from public.v_ledger ${clause} order by line_id`);
+      assert.deepEqual([...actual], [...expected]);
+    }
+    const rows = await sql`select line_no, offsetting_account_number, offset_is_split from public.v_ledger where entry_id=${entry.id} order by line_no`;
+    assert.equal(rows[0].offsetting_account_number, '112.200');
+    assert.equal(rows[2].offset_is_split, true);
+    throw new Error("rollback");
+  }).catch(error => { if (error.message !== "rollback") throw error; });
+});
 
 // Synthetic posted journals across two years, plus one draft that every report must ignore.
 before(async () => {

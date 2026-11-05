@@ -31,6 +31,13 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-state { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 24px 20px; color: var(--ink-2); font-size: 13px; }
 .drill-loading { flex-direction: row; align-items: center; }
 .drill-state p { margin: 0; }
+.drill-summary-skeleton .skeleton-bar { width: 60%; height: 10px; }
+.drill-summary-skeleton strong.skeleton-bar { width: 85%; height: 22px; margin-top: 12px; }
+.drill-chart-skeleton { height: 114px; padding-top: 20px; }
+.drill-chart-skeleton .skeleton-bar { width: 100%; height: 90px; }
+.drill-line-skeleton { padding: 12px 20px; }
+.drill-line-skeleton > div { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 24px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+.drill-line-skeleton .skeleton-bar { width: 100%; height: 12px; }
 
 .drill-analytics { flex: none; padding: 14px 20px; background: var(--surface-2); border-bottom: 1px solid var(--rule); }
 .drill-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }

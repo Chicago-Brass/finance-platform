@@ -2,21 +2,27 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useTransition } from "react";
+import { createContext, useContext, useState, useTransition } from "react";
 import type { AnchorHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
 import { ReportIcon } from "./ReportIcons";
 
-const Navigation = createContext<{ pending: boolean; navigate: (href: string) => void; refresh: () => void } | null>(null);
+const Navigation = createContext<{ pending: boolean; destination: string | null; navigate: (href: string) => void; refresh: () => void } | null>(null);
 
 export function ReportNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [destination, setDestination] = useState<string | null>(null);
   return <Navigation.Provider value={{
-    pending,
-    navigate: href => startTransition(() => router.push(href, { scroll: false })),
+    pending, destination,
+    navigate: href => { setDestination(new URL(href, window.location.href).pathname); startTransition(() => router.push(href, { scroll: false })); },
     // Clears the browser's cached report pages and re-reads the current one from the ledger.
-    refresh: () => startTransition(() => router.refresh()),
+    refresh: () => { setDestination(window.location.pathname); startTransition(() => router.refresh()); },
   }}>{children}</Navigation.Provider>;
+}
+
+export function useReportPath() {
+  const path = usePathname(), navigation = useContext(Navigation);
+  return navigation?.pending && navigation.destination ? navigation.destination : path;
 }
 
 export function RefreshDataButton() {
@@ -24,9 +30,9 @@ export function RefreshDataButton() {
   return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={navigation?.pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={navigation?.pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
 }
 
-export function ReportLink({ href, children, onClick, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
+export function ReportLink({ href, children, onClick, prefetch = false, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; prefetch?: boolean | null }) {
   const navigation = useContext(Navigation);
-  return <Link {...props} href={href} prefetch={false} scroll={false} onClick={event => {
+  return <Link {...props} href={href} prefetch={prefetch} scroll={false} onClick={event => {
     onClick?.(event);
     if (!navigation || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (props.target && props.target !== "_self")) return;
     event.preventDefault();
@@ -48,7 +54,7 @@ export function ReportForm({ children, onSubmit, ...props }: Omit<FormHTMLAttrib
 }
 
 export function ReportLoading() {
-  const path = usePathname();
+  const path = useReportPath();
   const titles: Record<string, string> = { "/income-statement": "Income Statement", "/balance-sheet": "Balance Sheet", "/trial-balance": "Trial Balance", "/general-ledger": "General Ledger", "/t-chart": "T-Chart" };
   const analytics = path === "/income-statement" || path === "/balance-sheet";
   return <article className="report-page report-skeleton" aria-busy="true" aria-label="Loading report">

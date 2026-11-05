@@ -19,6 +19,7 @@ function load(file) {
 }
 const view = load(path.join(__dirname, 'ReportView.tsx'));
 const analytics = load(path.join(__dirname, 'ReportAnalytics.tsx'));
+const drawer = load(path.join(__dirname, 'AccountDrawer.tsx'));
 const format = load(path.join(root, 'lib/format.ts'));
 const line = (id, kind, depth, values = {}, accountCode) => ({ id, label: id, kind, depth, values, accountCode });
 const lines = [
@@ -28,6 +29,18 @@ const lines = [
   line('Personnel', 'section', 1), line('Salary', 'account', 2, {a:25,b:30}, '005.002'),
   line('Personnel total', 'subtotal', 1, {a:25,b:30}), line('Net income', 'grandTotal', 0, {a:-37.34,b:-30}),
 ];
+
+test('Account drawer opens its header immediately with separate loading areas and no false zero amounts', () => {
+  const markup = renderToStaticMarkup(React.createElement(drawer.AccountDrawer, {
+    target: { code: '112.100', label: 'Operating bank' }, range: { mode: 'period', from: '2026-01-01', to: '2026-11-05' },
+    cache: new Map(), onSelect: () => {}, onClose: () => {},
+  }));
+  assert.match(markup, /Operating bank/);
+  assert.match(markup, /Loading account totals/);
+  assert.match(markup, /Loading ledger lines/);
+  assert.match(markup, /aria-label="Account summary" aria-busy="true"/);
+  assert.doesNotMatch(markup, /No posted lines|\$0\.00/);
+});
 
 test('Account filters preserve derived totals, missing values and nonzero periods', () => {
   const filtered = view.filterReportLines(lines, '', true);

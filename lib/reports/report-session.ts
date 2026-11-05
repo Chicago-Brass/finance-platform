@@ -1,11 +1,12 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
-// One Auth check per request, shared by the report layout and every ledger read.
+// Middleware does the live Auth/allowlist check; reads also verify the signed JWT locally.
 const reportContext = cache(async () => {
   const client = await createClient();
-  const { data: { user }, error } = await client.auth.getUser();
-  if (error || !user) throw new Error("Sign in to load reports.");
+  const { data, error } = await client.auth.getClaims();
+  if (error || !data?.claims?.sub) throw new Error("Sign in to load reports.");
+  const user = { id: data.claims.sub, email: data.claims.email as string | undefined };
   return { client, user };
 });
 

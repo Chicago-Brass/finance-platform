@@ -6,7 +6,8 @@ Date: 2026-11-05. Project: DUAL ENTRY (`inzobaubbikyiekcfarj`).
 
 `main` contains the merged report UI, Airtable senders and generic Edge writer. Jeric authorized
 this consolidation and retirement of `develop`. `mae/testing` and other existing branches remain.
-New work should start on a task branch from `main`.
+Jeric subsequently recreated `develop` from this baseline for performance work and authorized
+deleting the merged `ram/ledger-test` branch. `mae/testing` remains separate.
 
 `supabase/migrations/20261105141013_initial_ledger.sql` is the single schema baseline. It includes
 the original hosted-only schema and all six previously tracked increments: nine public tables,
