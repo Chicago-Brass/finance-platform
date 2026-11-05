@@ -8,7 +8,7 @@ npm run typecheck
 git diff --check
 ```
 
-The 2026-11-05 dashboard-controls check has 98 frontend/HTTP tests passing. Coverage includes report amounts/signs,
+The 2026-11-05 dashboard-controls follow-up has 99 frontend/HTTP tests passing. Coverage includes report amounts/signs,
 per-year Balance Sheet earnings, compact period headers, analytics, exports, cache session isolation,
 pagination, display filters and landing/auth routing. These are mostly pure or mocked checks,
 not hosted accounting data reconciliation.
@@ -85,3 +85,10 @@ The read database runner also includes two global ledger-search tests: search be
 literal punctuation, all scope filters, draft exclusion and caller RLS. There are eight database
 read tests. Browser interaction and computed responsive geometry remain unverified because the
 browser-access host is unavailable.
+
+The input/header follow-up also passed TypeScript and a production build. Authenticated localhost
+HTTP reads rendered all five pages; ledger search, second page, account/offset/side filters,
+literal punctuation and reversed-date empty states passed. The preview default ledger rendered
+100 records. These checks did not reproduce the reported unavailable state and are not browser
+interaction proof. Retrying the browser connection/reset failed, as did native Chrome capture
+with capture-service error -3811. Desktop/narrow screenshots remain pending.

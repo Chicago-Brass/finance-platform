@@ -148,7 +148,7 @@ test('Ledger, Trial Balance and rules keep their controls visible while data is 
   const workspace=loadWorkspace(React), data=new Promise(()=>{});
   for(const [component,props,expected] of [
     [workspace.GeneralLedgerWorkspace,{options:{from:'2026-01-01',to:'2026-11-03',page:1,query:'Vendor',side:'all'},data,accountData:data},'Search all records'],
-    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'Zero accounts'],
+    [workspace.TrialBalanceWorkspace,{asOf:'2026-11-03',data},'Include zero activity'],
     [workspace.PostingRulesWorkspace,{asOf:'2026-11-03',data},'Search rules or accounts'],
   ]){
     const html=renderToStaticMarkup(React.createElement(component,props));

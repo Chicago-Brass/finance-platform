@@ -79,10 +79,22 @@ Table totals / pagination                             Fixed-height analytics
 | UI and accessibility | Combobox popup was outside the drawer's modal subtree | Popup targets the nearest dialog; keyboard and portal regression tests added |
 | UI and loading | Drawer and statement error states changed panel geometry | Fixed summary space and two-column statement errors preserve the surrounding layout |
 | Layout and print | Screen typography overrode print sizes; short loading panes and signed chart legends changed height | Screen-only font rules, flexible data loaders and reserved legend slots |
+| Screenshot follow-up | A broad input selector added a second border and padding inside search controls and overrode combobox padding | Removed the blanket input decoration; each control owns its border, padding and focus treatment |
+
+The follow-up tightens heading/filter spacing, puts period/year labels on one header line and
+groups Trial Balance date controls on the left and display controls on the right. Its zero-activity
+option includes unused accounts; accounts with settled debit/credit activity remain visible.
+
+Authenticated HTTP reads on localhost rendered all five pages. General Ledger default, search,
+second-page, account/offset/side filters, literal punctuation and reversed-date empty states all
+returned successfully; its preview default also rendered 100 records. The reported unavailable
+state was not reproduced by these checks, which do not exercise client-side browser interactions.
 
 The new `20261105150253_add_ledger_search.sql` migration adds an invoker read function. It is applied
 to DUAL ENTRY; the applied initial migration remains unchanged. Disposable database checks cover
 search beyond page one, literal punctuation, filters, pagination, exact rows and caller RLS.
 
-Native browser checks could not run because the browser-access host is unavailable. The PR remains
-a draft for desktop/narrow visual and interactive verification. No browser screenshots were created.
+Native browser checks could not run because the browser-access host is unavailable. A reconnect
+and runtime reset still failed; native Chrome capture also returned capture-service error -3811.
+The PR remains a draft for desktop/narrow visual and interactive verification. No browser
+screenshots were created.

@@ -148,6 +148,12 @@ test('Statement shells keep header, exports and all controls visible before data
   }
 });
 
+test('Statement column headings keep each period and year together in one header label', () => {
+  const report = { title: 'Income Statement', entity: 'Chicago Brass', periodLabel: '2026', basis: 'Accrual', isSample: false, columns: [{ key: 'a', label: 'Q1', sublabel: '2026', kind: 'amount' }], lines, checks: [] };
+  const markup = renderToStaticMarkup(React.createElement(view.ReportView, { report, display: display() }));
+  assert.match(markup, /<span class="col-head">Q1 <span class="col-sub">2026<\/span><\/span>/);
+});
+
 test('Display rows and exported rows use the same account filters and collapse state', () => {
   const report = { lines };
   assert.deepEqual(view.reportRows(report, display({ query: '004.006' })).filter(line => line.accountCode).map(line => line.id), ['Returns']);

@@ -137,7 +137,7 @@ export function ReportView({ report, analytics, drill, display }: {
           <div className="table-wrap" tabIndex={0} role="region" aria-label={`${report.title} accounts`}>
             <table className="fin-table">
               <colgroup><col className="col-label" />{report.columns.map(column => <col key={column.key} className={column.kind === "percent" ? "col-pct" : "col-amt"} />)}</colgroup>
-              <thead><tr><th scope="col" className="label-cell">Account</th>{report.columns.map(column => <th key={column.key} scope="col" className="num-cell"><span className="col-head">{column.label}</span>{column.sublabel && <span className="col-sub">{column.sublabel}</span>}</th>)}</tr></thead>
+              <thead><tr><th scope="col" className="label-cell">Account</th>{report.columns.map(column => <th key={column.key} scope="col" className="num-cell"><span className="col-head">{column.label}{column.sublabel && <> <span className="col-sub">{column.sublabel}</span></>}</span></th>)}</tr></thead>
               <tbody>
                 {displayFiltered && hasAccounts && matchingAccounts === 0 && <tr><td colSpan={report.columns.length + 1} className="report-no-matches">No accounts match the display filters. Financial totals remain below.</td></tr>}
                 {rows.map(line => {

@@ -28,10 +28,12 @@ export function TrialBalanceWorkspace({ asOf, data }: { asOf: string; data: Prom
   return <article className="report-page ledger-page">
     <ReportPageHeader title="Trial Balance" description="Chicago Brass Inc. / Posted ledger / USD" />
     <DateFilter to={asOf} asOfOnly>
-      <SearchableSelect label="Account type" value={type} options={[{ value: "all", label: "All types" }, ...Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))]} onChange={setType} />
-      <label className="ledger-checkbox"><input type="checkbox" checked={showZero} onChange={event => setShowZero(event.target.checked)} />Zero accounts</label>
-      <SearchField value={query} onChange={setQuery} label="Search accounts" />
-      <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
+      <div className="control-bar-actions">
+        <SearchableSelect label="Account type" value={type} options={[{ value: "all", label: "All types" }, ...Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label }))]} onChange={setType} />
+        <label className="ledger-checkbox" title="Include accounts with no debit, credit or balance."><input type="checkbox" checked={showZero} onChange={event => setShowZero(event.target.checked)} />Include zero activity</label>
+        <SearchField value={query} onChange={setQuery} label="Search accounts" />
+        <button type="button" className="btn btn-quiet control-reset" disabled={!filtered} onClick={() => { setQuery(""); setType("all"); setShowZero(true); }}>Reset filters</button>
+      </div>
     </DateFilter>
     <ReportDataRegion><ReportDataBoundary resetKey={data}><Suspense fallback={<ReportDataLoading label="Loading trial balance" />}><TrialBalanceData data={data} asOf={asOf} query={query} type={type} showZero={showZero} /></Suspense></ReportDataBoundary></ReportDataRegion>
   </article>;

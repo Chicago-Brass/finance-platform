@@ -1,7 +1,7 @@
 import { todayChicago } from "@/lib/dates";
 import { formatDate } from "@/lib/reports/report-utils";
 import { balanceDatePresets } from "@/lib/reports/filter-options";
-import { CalendarMark } from "./ReportViewControls";
+import { CalendarMark, closePopoverOnEscape } from "./ReportViewControls";
 import { ReportForm, ReportLink } from "./ReportNavigation";
 import { ledgerDatePresets } from "./ledger-table-utils";
 import type { MouseEvent, ReactNode } from "react";
@@ -30,8 +30,8 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
   } : undefined;
   return (
     <div className="report-filters ledger-date-filters dashboard-control-bar no-print" aria-label={asOfOnly ? "Trial Balance date filters" : "General Ledger date filters"}>
-      <span className="filter-label">{asOfOnly ? "As of" : "Period"}</span>
-      <details className="period-picker" key={`${from ?? ""}:${to}`}>
+      <div className="control-bar-period"><span className="filter-label">{asOfOnly ? "As of" : "Period"}</span>
+      <details className="period-picker" key={`${from ?? ""}:${to}`} onKeyDown={closePopoverOnEscape}>
         <summary className="period-picker-trigger"><CalendarMark /><span>{asOfOnly || !from ? formatDate(to) : `${formatDate(from)} - ${formatDate(to)}`}</span><span aria-hidden="true">▾</span></summary>
         <div className={`period-picker-panel${asOfOnly ? "" : " ledger-range-panel"}`}>
           <ReportForm aria-label={asOfOnly ? "Custom Trial Balance date" : "Custom General Ledger dates"} onSubmit={event => {
@@ -53,7 +53,7 @@ export function DateFilter({ from, to, asOfOnly = false, note, preserve = {}, ch
           </div>
           <ReportLink className="filter-reset" onClick={rangeClick(asOfOnly ? { to: today } : { from: rangePresets[0].from, to: today })} href={asOfOnly ? query({ to: today }, preserve) : query({ from: rangePresets[0].from, to: today }, preserve)}>{asOfOnly ? "Reset to today" : "Reset to current year"}</ReportLink>
         </div>
-      </details>
+      </details></div>
       {children}
       {note && <span className="filter-context">{note}</span>}
     </div>

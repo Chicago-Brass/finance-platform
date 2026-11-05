@@ -93,7 +93,10 @@ its own scroll area. Narrow screens stack the panels; print returns tables to do
 
 Headings use one row: title, vertical divider and description. Dates are not repeated in Trial
 Balance/General Ledger headings because their filters already show them. Statement columns use
-month names, Q1-Q4 or years, with exact partial-snapshot dates retained where needed.
+month names, Q1-Q4 or years, with year/date context inline in the same thin header row and exact
+partial-snapshot dates retained where needed. Search wrappers own their outer border and focus
+treatment; their text inputs stay borderless. Avoid broad toolbar input rules that override search
+or combobox padding. Trial Balance groups its date controls left and display controls right.
 
 Next client navigation replaces full-page filter reloads. Persistent page shells render URL-based
 headers and one compact control bar before financial promises resolve. Only data panels become
