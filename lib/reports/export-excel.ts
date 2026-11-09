@@ -109,8 +109,8 @@ class Styles {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="3">
-<numFmt numFmtId="164" formatCode="#,##0;(#,##0);&quot;–&quot;"/>
-<numFmt numFmtId="165" formatCode="&quot;$&quot;#,##0;(&quot;$&quot;#,##0);&quot;–&quot;"/>
+<numFmt numFmtId="164" formatCode="#,##0.00;(#,##0.00);&quot;$0.00&quot;"/>
+<numFmt numFmtId="165" formatCode="&quot;$&quot;#,##0.00;(&quot;$&quot;#,##0.00);&quot;$0.00&quot;"/>
 <numFmt numFmtId="166" formatCode="0.0%;(0.0%);&quot;–&quot;"/>
 </numFmts>
 <fonts count="7">

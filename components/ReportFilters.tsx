@@ -1,13 +1,12 @@
 "use client";
 
 import type { IncomeStatementOptions } from "@/lib/reports/income-statement";
-import { BRANCHES, PL_YEAR } from "@/lib/reports/pl-2026-data";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Report filters as a plain GET form: the URL holds the view, so it can be bookmarked and shared. */
 export function ReportFilters({ options }: { options: IncomeStatementOptions }) {
-  const byBranch = options.view === "BY_BRANCH";
+  const years = [...new Set([options.year, ...Array.from({ length: 6 }, (_, index) => new Date().getFullYear() - index)])].sort((a, b) => b - a);
   return (
     <form
       method="get"
@@ -16,15 +15,9 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
       aria-label="Report filters"
     >
       <div className="filter">
-        <label htmlFor="f-view">Branch</label>
-        <select id="f-view" name="view" defaultValue={options.view}>
-          <option value="ALL">Consolidated</option>
-          {BRANCHES.map((b) => (
-            <option key={b.code} value={b.code}>
-              {b.name}
-            </option>
-          ))}
-          <option value="BY_BRANCH">Side by side by branch</option>
+        <label htmlFor="f-year">Year</label>
+        <select id="f-year" name="year" defaultValue={options.year}>
+          {years.map(year => <option key={year} value={year}>{year}</option>)}
         </select>
       </div>
 
@@ -33,7 +26,7 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
         <select id="f-from" name="from" defaultValue={options.from}>
           {MONTHS.map((m, i) => (
             <option key={m} value={i + 1}>
-              {m} 1, {PL_YEAR}
+              {m} 1, {options.year}
             </option>
           ))}
         </select>
@@ -44,7 +37,7 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
         <select id="f-to" name="to" defaultValue={options.to}>
           {MONTHS.map((m, i) => (
             <option key={m} value={i + 1}>
-              {m} {new Date(PL_YEAR, i + 1, 0).getDate()}, {PL_YEAR}
+              {m} {new Date(options.year, i + 1, 0).getDate()}, {options.year}
             </option>
           ))}
         </select>
@@ -52,7 +45,7 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
 
       <div className="filter">
         <label htmlFor="f-grain">Columns</label>
-        <select id="f-grain" name="grain" defaultValue={options.grain} disabled={byBranch}>
+        <select id="f-grain" name="grain" defaultValue={options.grain}>
           <option value="month">Monthly</option>
           <option value="quarter">Quarterly</option>
           <option value="year">Annual</option>
@@ -71,7 +64,6 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
         <button className="btn btn-quiet" type="submit">Apply</button>
       </noscript>
       <a className="filters-reset" href="?">Reset to current year</a>
-      {byBranch && <p className="filters-hint">Side by side shows the whole Start–End range for each branch.</p>}
     </form>
   );
 }

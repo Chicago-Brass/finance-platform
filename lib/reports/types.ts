@@ -1,8 +1,7 @@
 /**
  * ReportLine data contract.
  *
- * Stage 1 feeds these from static sample data. Stage 3 feeds the SAME shape
- * from Supabase ledger views, so the UI May signs off on does not change.
+ * Live Supabase ledger reads feed this shape without changing Mae's report renderer.
  */
 
 export type ColumnKind = "amount" | "percent";
