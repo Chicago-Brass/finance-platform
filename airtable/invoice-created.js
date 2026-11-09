@@ -1,23 +1,31 @@
-// FIN Invoice Created - retain the unresolved outbound-shipping category.
+// FIN Invoice Created - post outbound-shipping invoices linked to account 004.013.
 // Airtable inputs: invoiceRecordId, ledgerWebhookUrl. Secret: Dual Ledger Webhook Secret.
 // See DOCS at bottom.
 
 // ==================== CORE ====================
 
 async function handleOutboundShippingInvoice(data, results) {
+    // Partial implementation - functioning: the approved AP/account filters work; the vendor filter remains deferred.
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
-    // Not yet implemented: the chart still says "Not sure" for the freight-cost source.
-    throw new Error("Not yet implemented: Invoice Entry row 6 needs the freight and handling cost field.");
+    const accounts = await readAccounts(getLinkedRecords(data.invoice, INVOICE_FIELDS.accounts));
+    if (!accounts.some(account => account.getCellValueAsString(ACCOUNT_FIELDS.number) === "004.013")) return;
+    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
+    results.push({
+        category: "Carrier invoice for OUTBOUND shipping to clients", tChartRow: 6,
+        postings: invoicePosting(data, "004.013", "211.100", cents),
+    });
 }
 
 // ==================== UTILS ====================
 
-const TABLES = { invoices: "tbldQXuqNEp8G5pfs" };
+const TABLES = { invoices: "tbldQXuqNEp8G5pfs", accounts: "tblJ2RF8vlOhNMBKR" };
+const ACCOUNT_FIELDS = { number: "fldTjgAITNrJVCCWq" }; // Account Number
 const INVOICE_FIELDS = {
     name: "fldMZyzqDidRujeZS",          // Invoice ID (primary display name)
     type: "fld9e6yDIv0PtBDV0",          // Invoice Type
     vendorTypeAP: "fldXwodwAuXLJt5rP",  // Vendor Type (AP)
     vendorTypeAR: "fldbMLaxgnu81a0O0",  // Vendor Type (AR)
+    accounts: "fldT5u0prSS8G1H4x",      // Linked Chart of Accounts
     amount: "fldm5nXoW7MrwjkhW",        // Invoice Amount
     date: "fldSungTQU5nIEIvi",          // Invoice Date
     purchaseOrders: "fldcIaoLYHgegP17m", // Related Purchase Order
@@ -37,8 +45,7 @@ async function main(invoiceRecordId) {
 
     printResults(data, results);
     if (!results.length) return results;
-    const entryDate = data.invoice.getCellValue(INVOICE_FIELDS.date);
-    if (!entryDate) throw new Error("Invoice Date is required for posting.");
+    const entryDate = invoiceDate(data.invoice.getCellValue(INVOICE_FIELDS.date));
     if (!ledgerWebhookUrl) throw new Error("Map ledgerWebhookUrl to the deployed ledger-payment Edge Function URL.");
     const response = await postLedgerPayload({
         invoiceRecordId: data.invoice.id, eventType: "created", entryDate,
@@ -62,6 +69,15 @@ async function loadInvoiceData(invoiceRecordId) {
     return { invoice, invoiceType, vendorType };
 }
 
+async function readAccounts(links) {
+    if (!links.length) return [];
+    const ids = [...new Set(links.map(link => link.id))];
+    const query = await base.getTable(TABLES.accounts).selectRecordsAsync({ recordIds: ids, fields: Object.values(ACCOUNT_FIELDS) });
+    const missing = ids.filter(id => !query.records.some(record => record.id === id));
+    if (missing.length) throw new Error(`Linked accounts not found: ${missing.join(", ")}`);
+    return query.records;
+}
+
 function getLinkedRecords(record, fieldId) { return record.getCellValue(fieldId) || []; }
 
 function moneyCents(value, label) {
@@ -72,8 +88,16 @@ function moneyCents(value, label) {
     return cents === 0 ? 0 : cents;
 }
 
+function invoiceDate(value) {
+    if (!value) throw new Error("Invoice Date is required for posting.");
+    if (value.length === 10) return value;
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) throw new Error("Invoice Date is invalid.");
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).map(part => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function invoicePosting(data, debit, credit, cents) {
-    if (cents < 0) throw new Error(`Invoice ${data.invoice.id} has a negative amount; this category does not define its negative posting treatment.`);
     if (!cents) return [];
     const invoice = data.invoice;
     /** @type {any} */
@@ -124,6 +148,10 @@ function printResults(data, results) {
 }
 
 function printPostingResponse(response) {
+    if (response.status === "pending_review" || response.status === "rejected") {
+        console.log(`Ledger: ${response.status}\nReview request: ${response.requestId}\nNo journals were posted.`);
+        return;
+    }
     const report = ["--------------------------------------------------------", "LEDGER RESULT", "--------------------------------------------------------"];
     for (const result of response.results || []) {
         report.push(`Rule: ${result.ruleCode}`, `Status: ${result.status}`);
@@ -135,19 +163,22 @@ function printPostingResponse(response) {
 /*
 DOCS
 PURPOSE / RUNTIME
-  Native FIN Invoice Created automation. CORE retains row 6's known filters and
-  explicit Not yet implemented error until the freight-cost source is resolved.
+  Native FIN Invoice Created automation. CORE owns row 6's exact AP expense and
+  linked-account 004.013 filters. No expense-vendor filter is applied.
   Other mapped Invoice Entry categories moved to invoice-entry.js / Create Entry.
 INPUTS / SECRET
   invoiceRecordId: FIN invoice record ID from the created-record trigger.
   ledgerWebhookUrl: https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-payment
   Secret: Dual Ledger Webhook Secret.
 SOURCE / MAPPING
-  Category - Invoice Entry row 6, 4 Nov 2026. AP / AP - Expenses (Non-Sales Tax).
-  Amount source is unresolved. Planned Dr 004.013 / Cr 211.100, Invoice Date.
+  Category - Invoice Entry row 6, 7 Nov 2026. AP / AP - Expenses (Non-Sales Tax).
+  Linked Chart of Accounts must include 004.013. The workbook row remains yellow
+  for user review, but its current three filters and mapping are implemented.
+  Amount = Invoice Amount; Dr 004.013 / Cr 211.100, Invoice Date.
+  Daily 11 PM Central is documented only; retain the existing trigger for now.
 DATA / NETWORK
-  Native FIN reads by field IDs; no Airtable record writes. The blocked handler
-  throws before POST. No migrated category remains in this source.
+  Native FIN reads by field IDs; no Airtable record writes or source amount ABS.
+  No migrated category remains in this source. Missing accounts/amounts/dates fail.
 LOCAL CHECK
   node airtable/check-invoice-created.cjs
 */

@@ -27,6 +27,11 @@ architecture, data contracts and operating guidance; do not add chat summaries o
 4. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
    or database credential to browser code.
 
+The staged `supabase/functions/ledger-daily/` worker moves Payment, Expense and Invoice Entry discovery and
+calculations into Edge code. Query definitions separate direct filters from linked-record
+queries, and it reuses the generic journal writer. It is an externally triggered webhook with a global run lock; native
+automations remain the live baseline until cutover. Read its README before changing this worker.
+
 Follow the T-Chart's official trigger, debit and credit mappings. A matched unresolved category
 must throw `Not yet implemented` before prepared data is sent. Do not add unstated conditions,
 reverse earlier entries automatically or retrofit source records to make a test pass.
@@ -42,7 +47,7 @@ legacy posting/reversal functions remain unless their removal is explicitly auth
   financial packets conflict. Do not edit posted journals.
 - Unspecified multi-account splits fail. Account `active` is a label; `is_postable`, valid identity,
   balance, period guards, authentication and approved-user checks remain functional.
-- Branch attribution is deferred; the nullable schema field remains unpopulated by the writer.
+- Supplied branch attribution is nullable; empty stays NULL. All four financial reports filter stored journal-line branches; Consolidated includes every branch and unassigned lines.
 - Keep destination headers/controls independent of data loading. Reuse shared controls, request
   caches, modal behavior and currency/date formatters.
 - Preserve full-viewport reports, internal scrolling, keyboard support and Position/Movement tabs.

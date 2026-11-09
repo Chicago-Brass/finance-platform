@@ -32,9 +32,12 @@ docker exec "$container_name" createdb -U postgres ledger_check
 for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
   docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$file"
 done
+docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$test_dir/fixtures/open-periods.sql"
+# Verify the retained manual capabilities before proving the Edge writer does not call them.
+docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$test_dir/fixtures/reference-array-capabilities.sql"
 # Prove the Edge code writes tables directly; the existing financial trigger guards remain active.
 docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check \
   -c 'drop function public.create_journal_entry(jsonb,jsonb,boolean); drop function public.reverse_journal_entry(uuid,date,text);'
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')
 LEDGER_TEST_DATABASE_URL="postgres://postgres:local-only-ledger-check@127.0.0.1:$port/ledger_check" \
-  node --test "$test_dir/post-airtable-payment.test.mjs"
+  node --test --test-concurrency=1 "$test_dir/post-airtable-payment.test.mjs" "$test_dir/reverse-airtable-ledger.test.mjs" "$test_dir/daily-payment-worker.test.mjs" "$test_dir/ledger-writeback.test.mjs" "$test_dir/period-management.test.mjs" "$test_dir/journal-deletion.test.mjs"

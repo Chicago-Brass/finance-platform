@@ -84,6 +84,22 @@ test("forwards transaction metadata, final debit/credit pairs and branch unchang
   }
 });
 
+test("forwards depreciation source metadata and identifies it in safe failure logs", async (t) => {
+  const supplied = {
+    depreciationRecordId: "recDepreciation01", eventType: "created", entryDate: "2026-11-30",
+    categories: [{ ruleCode: "EXP-10", transactionType: "Monthly depreciation", notes: "Associated asset: Example equipment", postings: [] }],
+  };
+  const result = { depreciationRecordId: supplied.depreciationRecordId, eventType: "created", results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
+  const response = await handleRequest(request(supplied), environment, async received => {
+    assert.deepEqual(received, supplied); return result;
+  });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), result);
+  const logs = [];
+  t.mock.method(console, "error", (...args) => logs.push(args));
+  assert.equal((await handleRequest(request(supplied), environment, async () => { throw new Error("Private details"); })).status, 503);
+  assert.deepEqual(logs, [["Ledger posting failed.", { code: "UNKNOWN", sourceRecordId: supplied.depreciationRecordId }]]);
+});
+
 test("returns duplicate and no-op outcomes without another write attempt", async () => {
   const result = { results: [{ status: "duplicate" }, { status: "noop" }], postedCount: 0, duplicateCount: 1 };
   let calls = 0;

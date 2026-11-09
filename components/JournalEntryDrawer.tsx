@@ -33,7 +33,7 @@ export function JournalEntryDetails({ entry, selectedLineId }: { entry: JournalE
     <section className="journal-section" aria-label="Entry details">
       <h3>Entry details</h3>
       <p className="journal-description">{entry.description}</p>
-      <Fields items={[["Source", entry.source_system], ["Table", entry.source_table], ["Record", entry.source_record_id], ["Date", formatDate(entry.entry_date)], ["Transaction type", entry.transaction_type]]} />
+      <Fields items={[["Source", entry.source_system], ["Table", entry.source_table], ["Record", entry.source_record_id], ["Accounting date", formatDate(entry.entry_date)], ["Source date", entry.source_date ? formatDate(entry.source_date) : null], ["Transaction type", entry.transaction_type]]} />
       {entry.notes && <div className="journal-notes"><h4>Notes</h4><p>{entry.notes}</p></div>}
     </section>
     <section className="journal-section" aria-label="Journal lines">

@@ -1,8 +1,16 @@
-# Ledger status - 4 November 2026
+# Ledger status
 
 This page summarizes the latest verified state. The [webhook contract](ledger-webhook-contract.md),
 [category matrix](ledger-payment-category-matrix.md) and actual source describe behavior.
 The [initial rollout](ledger-rollout-2026-10-30.md) is historical evidence, not current deployment state.
+
+## Payment mapping refresh - 7 November 2026
+
+The current Payment changes preserve signed source amounts, use invoice-line account groups for
+staff and debt payments, implement invoice-owned interest and inclusive small-balance write-offs,
+and retain the three native event triggers. The workbook's daily 11 PM schedule remains a draft.
+See [Payment category audit](payment-category-audit.md) for current filters, mappings, tests and
+remaining scope; older sample totals below describe the earlier mapping version.
 
 ## Local financial reports - 4 November
 
@@ -204,10 +212,10 @@ probe and mock regression coverage; it did not retrigger payments or rewrite the
 | Categories | Current boundary |
 | --- | --- |
 | PAY-10 | Discount Lines Total is known; bank/discount credit scope and split remain undefined. |
-| PAY-15 | Salary/fee split remains undefined. |
+| PAY-15 | Salary, W2 tax and 401k liability groups work; benefits and wire/FX fees remain excluded. |
 | PAY-23 | Bank/recovery account selection remains undefined; FIN account 122.100 was missing when checked. |
-| PAY-14 / PAY-25 | Payroll/Fidelity primary trigger and amount mappings remain undefined; handlers are not routed. |
-| PAY-16 / PAY-18 | Implemented for separate single-account principal/interest invoices. Multiple accounts or shared interest between both principal types fail explicitly. |
+| PAY-14 | Payroll category deferred. PAY-25 interest is implemented with signed Invoice Amount and invoice-owned identity. |
+| PAY-16 / PAY-18 | Implemented with invoice-line principal/interest account groups. Ambiguous shared interest fails; partial payments use the chart's full line totals. |
 
 No qualifying sample was found in the bounded date/category searches for PAY-03, PAY-04, PAY-12,
 PAY-17, PAY-18, PAY-19, PAY-20, PAY-21, PAY-22, PAY-24 or PAY-27. This is a coverage limit, not proof
@@ -267,3 +275,28 @@ payments, cents/no-op behavior, missing/ambiguous bank failures and existing cat
 Chart row 12 retains its primary filters, mapping is updated, resolved clarification is cleared,
 and Done? is Fully. The final downloaded workbook is on Desktop. Evidence is in
 scripts/outputs/expense-bank-fees-implementation-2026-11-05/. No live financial test was triggered.
+
+## Shared automation audit - 7 November 2026
+
+All nine Company Ledger automations were inspected live and remain ON with their current native
+events, input bindings, URL and shared secret. All nine published script copies were reopened and
+copied back for exact comparison with local source. Migrated categories are absent from retired
+senders. The daily 11 PM Central schedule remains deferred.
+
+The rounding/sign/account-grouping/branch fixes and explicit partial-handler comments are
+published. DUAL ENTRY migrations 20261107022920 and 20261107023520 are applied and recorded;
+ledger-payment's updated ledger.ts was independently read back. Existing journal/line counts,
+debit/credit totals and scalar references were preserved. All business references now persist as
+arrays, including state_ref; active is an account label only. No historical references were inferred.
+
+Current checks pass: 35 disposable database posting tests, 12 report-read/security tests, 16 HTTP/
+journal-detail checks, targeted native script checks, TypeScript and whitespace validation.
+No historical payment/invoice checkbox was retriggered and no hosted financial posting test was run.
+The temporary read-only probe found no eligible Create Entry test record and did not execute; its
+source was replaced with the proper Expense script before publication.
+
+See the [infrastructure audit](automation-infrastructure-audit.md) for the complete ownership and
+implementation-state tables, possible Expense row 3 overlap, and remaining chart blockers.
+
+Invoice Entry I5 was restored from the approved freight mapping. A fresh workbook download
+confirmed I5 was the only changed cell value and J5 remained unchanged; section headings are bold.

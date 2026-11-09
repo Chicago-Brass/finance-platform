@@ -6,26 +6,46 @@
 
 async function handleOperatingExpense(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
-    if (results.some(result => result.tChartRow === 12)) return;
-    // Not yet implemented: the chart's qualifying operating-account list is still PENDING.
-    throw new Error("Not yet implemented: Expense row 2 needs the allowed operating expense accounts, excluding bank and revenue accounts.");
+    const accounts = await invoiceAccountNumbers(data);
+    if (!accounts.includes("006.002")) return;
+    if (accounts.length !== 1) throw new Error("Not yet implemented: Utilities uses the full Invoice Amount; multiple invoice accounts need separate amounts.");
+    const units = moneyUnits(data.invoice.getCellValue(INVOICE_FIELDS.amount), 4, "Invoice Amount");
+    results.push({ category: "Enter an operating expense invoice (ex: Utilities)", tChartRow: 2, postings: expensePosting(data, "006.002", "211.100", units, data.invoice.id) });
+}
+
+async function handlePrepaidExpense(data, results) {
+    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)" || !data.invoice.getCellValue(INVOICE_FIELDS.prepaid)) return;
+    const units = moneyUnits(data.invoice.getCellValue(INVOICE_FIELDS.amount), 4, "Invoice Amount");
+    results.push({ category: "Prepaid expense bill (pay a year up front, e.g., insurance)", tChartRow: 4, postings: expensePosting(data, "135.000", "211.100", units, data.invoice.id) });
 }
 
 async function handleTechAllowance(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Staff") return;
     const lines = await matchingInvoiceLines(data, ["005.102"]);
     if (!lines.length) return;
-    // Not yet implemented: the chart identifies ledger account 005.102 as missing in Supabase.
-    throw new Error("Not yet implemented: Expense row 6 needs Supabase account 005.102 Tech Allowance.");
+    const postings = [];
+    for (const { line } of lines) {
+        const units = moneyUnits(line.getCellValue(LINE_FIELDS.amount), 4, `Line Amount on ${line.id}`);
+        postings.push(...expensePosting(data, "005.102", "211.100", units, line.id));
+    }
+    const employeeBranches = data.invoice.getCellValue(INVOICE_FIELDS.employeeBranch) || [];
+    for (const posting of postings) posting.branch = employeeBranches;
+    results.push({ category: "Employee Tech Allowance", tChartRow: 6, postings });
 }
 
 async function handleW2Payroll(data, results) {
+    // Partial implementation - functioning: wages, payroll tax and 401k work; employee benefits remain excluded.
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Staff") return;
-    const lines = await matchingInvoiceLines(data, ["005.002", "005.005", "005.006"]);
+    const creditAccounts = { "005.002": "241.100", "005.006": "241.200", "005.005": "241.400" };
+    const lines = await matchingInvoiceLines(data, Object.keys(creditAccounts));
     if (!lines.length) return;
-    // Defined pairs: 005.002/241.100, 005.006/241.200, 005.005/241.400, using each Line Amount.
-    // Not yet implemented: the chart also lists 241.600 without its source component or amount.
-    throw new Error("Not yet implemented: Expense row 7 needs the payroll component and amount for credit account 241.600.");
+    const postings = [];
+    for (const { line, accountNumber } of lines) {
+        const units = moneyUnits(line.getCellValue(LINE_FIELDS.amount), 4, `Line Amount on ${line.id}`);
+        postings.push(...expensePosting(data, accountNumber, creditAccounts[accountNumber], units, line.id));
+    }
+    // Employee benefits 241.600 stay excluded until their counteraccount is defined.
+    results.push({ category: "Payroll - W2 payroll register (per pay date)", tChartRow: 7, postings });
 }
 
 async function handleOffshorePayroll(data, results) {
@@ -34,8 +54,8 @@ async function handleOffshorePayroll(data, results) {
     if (!lines.length) return;
     const postings = [];
     for (const { line, accountNumber } of lines) {
-        const cents = moneyCents(line.getCellValue(LINE_FIELDS.amount), `Line Amount on ${line.id}`);
-        postings.push(...expensePosting(data, accountNumber, "241.100", cents, line.id));
+        const units = moneyUnits(line.getCellValue(LINE_FIELDS.amount), 4, `Line Amount on ${line.id}`);
+        postings.push(...expensePosting(data, accountNumber, "241.100", units, line.id));
     }
     results.push({ category: "Payroll - offshore / 1099 / owner staff invoice", tChartRow: 8, postings });
 }
@@ -46,60 +66,41 @@ async function handleBonusCommission(data, results) {
     if (!lines.length) return;
     const postings = [];
     for (const { line } of lines) {
-        const cents = moneyCents(line.getCellValue(LINE_FIELDS.amount), `Line Amount on ${line.id}`);
-        postings.push(...expensePosting(data, "005.201", "241.300", cents, line.id));
+        const units = moneyUnits(line.getCellValue(LINE_FIELDS.amount), 4, `Line Amount on ${line.id}`);
+        postings.push(...expensePosting(data, "005.201", "241.300", units, line.id));
     }
     results.push({ category: "Month-end accrual - bonus & commission earned", tChartRow: 10, postings });
 }
 
-async function handleBankFees(data, results) {
-    if (data.invoiceType !== "AP") return;
-    const accounts = await invoiceAccountNumbers(data);
-    if (!accounts.includes("007.002")) return;
-    const paymentIds = linkedIds(data.invoice, INVOICE_FIELDS.payments);
-    if (!paymentIds.length) throw new Error("Bank-fee invoice needs a linked payment to identify the bank account.");
-    const payments = await readRecords(TABLES.payments, paymentIds, Object.values(PAYMENT_FIELDS));
-    const bankNumbers = [];
-    for (const payment of payments) {
-        const accountIds = linkedIds(payment, PAYMENT_FIELDS.accounts);
-        if (accountIds.length !== 1) throw new Error(`Bank-fee payment ${payment.id} must identify exactly one bank account.`);
-        const [number] = await accountNumbers(data, accountIds);
-        if (number !== "112.100" && number !== "0747") throw new Error(`Bank-fee payment ${payment.id} must use Fifth Third (112.100) or Nickel (0747).`);
-        bankNumbers.push(number);
-    }
-    if (new Set(bankNumbers).size !== 1) throw new Error("Bank-fee invoice links payments using different banks; the invoice amount cannot be split without a mapping.");
-    const credit = bankNumbers[0] === "0747" ? "112.300" : "112.100";
-    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
-    const postings = expensePosting(data, "007.002", credit, cents, data.invoice.id);
-    for (const posting of postings) posting.paymentRecordIds = paymentIds;
-    results.push({ category: "Bank fees and charges shown only on the bank statement", tChartRow: 12, postings });
-}
-
 async function handleBadDebtReserve(data, results) {
-    if (data.invoiceType !== "AP") return;
+    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
     const accounts = await invoiceAccountNumbers(data);
     if (!accounts.includes("007.005")) return;
-    // Not yet implemented: retain the chart's unresolved FIN account 121.900 clarification.
-    throw new Error("Not yet implemented: Expense row 13 needs the FIN account 121.900 clarification resolved. Planned pair: 007.005 / 121.900, Invoice Amount.");
+    const units = moneyUnits(data.invoice.getCellValue(INVOICE_FIELDS.amount), 4, "Invoice Amount");
+    results.push({ category: "Bad-debt reserve (allowance) - month-end", tChartRow: 13, postings: expensePosting(data, "007.005", "121.900", units, data.invoice.id) });
 }
 
 async function handleIncomeTaxAccrual(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
     const accounts = await invoiceAccountNumbers(data);
-    if (!accounts.some(number => number === "242.100" || number === "242.200")) return;
-    // Defined pairs: 011.001/242.100 or 011.002/242.200, using the full Invoice Amount.
-    // Not yet implemented: retain the chart's unresolved FIN account 011.001/011.002 clarification.
-    throw new Error("Not yet implemented: Expense row 14 needs FIN accounts 011.001/011.002 resolved; an invoice linking both tax accounts also needs separate amounts.");
+    const taxAccounts = accounts.filter(number => number === "242.100" || number === "242.200");
+    if (!taxAccounts.length) return;
+    if (taxAccounts.length !== 1) throw new Error("Not yet implemented: Expense row 14 requires exactly one tax account; multiple accounts need separate amounts.");
+    const credit = taxAccounts[0], debit = credit === "242.100" ? "011.001" : "011.002";
+    const units = moneyUnits(data.invoice.getCellValue(INVOICE_FIELDS.amount), 4, "Invoice Amount");
+    results.push({ category: "Income tax accrual (quarterly)", tChartRow: 14, postings: expensePosting(data, debit, credit, units, data.invoice.id) });
 }
 
 // ==================== UTILS ====================
 
-const TABLES = { invoices: "tbldQXuqNEp8G5pfs", lines: "tblV26TC0f6CKDneL", accounts: "tblJ2RF8vlOhNMBKR", payments: "tblR61NG9i0giid28" };
+const TABLES = { invoices: "tbldQXuqNEp8G5pfs", lines: "tblV26TC0f6CKDneL", accounts: "tblJ2RF8vlOhNMBKR" };
 const INVOICE_FIELDS = {
     name: "fldMZyzqDidRujeZS",          // Invoice ID (primary display name)
     type: "fld9e6yDIv0PtBDV0",          // Invoice Type
     vendorType: "fldXwodwAuXLJt5rP",    // Vendor Type (AP)
     createEntry: "fldFrvGncUen39hBY",   // Create Entry
+    prepaid: "fldckuYNfSzBXq0AX",       // Mark as Prepaid Expense?
+    employeeBranch: "fldSHm0sXlVswhqs4", // Branch Employee
     amount: "fldm5nXoW7MrwjkhW",        // Invoice Amount
     date: "fldSungTQU5nIEIvi",          // Invoice Date
     lines: "fldF0uqCMkPgwuIes",         // Invoice Lines
@@ -118,7 +119,6 @@ const LINE_FIELDS = {
     accounts: "fldwr0Pfp8OHsNj5N", // Chart of Accounts
     invoices: "fldZpOBUbuVJbuaOG", // Linked Invoice
 };
-const PAYMENT_FIELDS = { accounts: "fldCIQSOdytBGi91S" }; // Account to Pay/Receive
 const ACCOUNT_FIELDS = { number: "fldTjgAITNrJVCCWq" }; // Account Number
 
 async function main(invoiceRecordId) {
@@ -129,16 +129,17 @@ async function main(invoiceRecordId) {
         printResults(data, results, "Create Entry is unchecked.");
         return results;
     }
+    await handlePrepaidExpense(data, results);
     await handleTechAllowance(data, results);
     await handleW2Payroll(data, results);
     await handleOffshorePayroll(data, results);
     await handleBonusCommission(data, results);
-    await handleBankFees(data, results);
     await handleBadDebtReserve(data, results);
     await handleIncomeTaxAccrual(data, results);
     await handleOperatingExpense(data, results);
 
-    printResults(data, results);
+    const entries = results.flatMap(accountEntries);
+    printResults(data, entries);
     if (!results.length) return results;
     const entryDate = invoiceDate(data.invoice.getCellValue(INVOICE_FIELDS.date));
     if (!ledgerWebhookUrl) throw new Error("Map ledgerWebhookUrl to the deployed ledger-payment Edge Function URL.");
@@ -146,8 +147,9 @@ async function main(invoiceRecordId) {
         invoiceRecordId: data.invoice.id, eventType: "entry_requested", entryDate,
         source: { tableId: TABLES.invoices, recordId: data.invoice.id, recordName: data.invoice.name },
         referenceNumber: data.invoice.id,
-        categories: results.map(result => ({
+        categories: entries.map(result => ({
             ruleCode: `EXP-${String(result.tChartRow - 1).padStart(2, "0")}`,
+            entryKey: result.entryKey,
             transactionType: result.category, postings: result.postings,
         })),
     });
@@ -164,6 +166,30 @@ async function loadExpenseData(invoiceRecordId) {
         vendorType: invoice.getCellValueAsString(INVOICE_FIELDS.vendorType),
         accounts: new Map(), lines: null,
     };
+}
+
+function accountEntries(result) {
+    if (!result.postings.length) return [result];
+    const groups = new Map();
+    for (const posting of result.postings) {
+        const key = posting.debitAccount.number;
+        if (!groups.has(key)) groups.set(key, []);
+        const group = groups.get(key);
+        if (group.length && group[0].creditAccount.number !== posting.creditAccount.number) throw new Error(`Account ${key} has multiple credit mappings; separate amounts are required.`);
+        group.push(posting);
+    }
+    return [...groups].map(([entryKey, postings]) => {
+        const units = postings.reduce((total, posting) => total + moneyUnits(Number(posting.amount), 4, "Account amount"), 0);
+        if (!Number.isSafeInteger(units)) throw new Error(`Account ${entryKey} total exceeds safe money precision.`);
+        const cents = moneyCents(units / 10000, "Account total");
+        const sourceRecordIds = [...new Set(postings.map(posting => posting.sourceRecordId))].sort();
+        const posting = { ...postings[0], amount: (cents / 100).toFixed(2) };
+        if (sourceRecordIds.length > 1) {
+            posting.sourceRecordId = posting.invoiceRecordId;
+            posting.sourceRecordIds = sourceRecordIds;
+        }
+        return { ...result, entryKey, postings: [posting] };
+    });
 }
 
 function linkedIds(record, fieldId) { return [...new Set((record.getCellValue(fieldId) || []).map(link => link.id))]; }
@@ -206,12 +232,14 @@ async function matchingInvoiceLines(data, numbers) {
     return matches;
 }
 
-function moneyCents(value, label) {
+function moneyCents(value, label) { return moneyUnits(value, 2, label); }
+
+function moneyUnits(value, precision, label) {
     if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} is missing or is not a finite number.`);
     const [digits, exponent = "0"] = String(Math.abs(value)).split("e");
-    const cents = Math.sign(value) * Math.round(Number(`${digits}e${Number(exponent) + 2}`));
-    if (!Number.isSafeInteger(cents)) throw new Error(`${label} exceeds safe cent precision.`);
-    return cents === 0 ? 0 : cents;
+    const units = Math.sign(value) * Math.round(Number(`${digits}e${Number(exponent) + precision}`));
+    if (!Number.isSafeInteger(units)) throw new Error(`${label} exceeds safe money precision.`);
+    return units === 0 ? 0 : units;
 }
 
 function invoiceDate(value) {
@@ -223,9 +251,8 @@ function invoiceDate(value) {
     return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function expensePosting(data, debit, credit, cents, sourceRecordId) {
-    if (cents < 0) throw new Error(`Negative expense amount on ${sourceRecordId}; this category does not define its posting treatment.`);
-    if (!cents) return [];
+function expensePosting(data, debit, credit, units, sourceRecordId) {
+    if (!units) return [];
     const invoice = data.invoice;
     /** @type {any} */
     const context = { invoiceRecordId: invoice.id, sourceRecordId, branch: [] };
@@ -240,7 +267,7 @@ function expensePosting(data, debit, credit, cents, sourceRecordId) {
     context.stateRecordIds = states.map(link => link.id);
     context.stateNames = states.map(link => link.name);
     if (states.length === 1 && /^[A-Z]{2}$/.test(states[0].name)) context.stateCode = states[0].name;
-    return [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: (cents / 100).toFixed(2), ...context }];
+    return [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: (units / 10000).toFixed(4), ...context }];
 }
 
 async function postLedgerPayload(payload) {
@@ -259,11 +286,13 @@ await main(invoiceRecordId);
 
 function printResults(data, results, reason = "") {
     const divider = "--------------------------------------------------------";
-    const report = [divider, "EXPENSE ENTRY SUMMARY", divider, `Invoice name: ${data.invoice.name}`, `Invoice ID: ${data.invoice.id}`, "Event: Create Entry checked", `Invoice type: ${data.invoiceType || "(empty)"}`, `Vendor type: ${data.vendorType || "(empty)"}`, `Matched categories: ${results.length}`];
+    const report = [divider, "EXPENSE ENTRY SUMMARY", divider, `Invoice name: ${data.invoice.name}`, `Invoice ID: ${data.invoice.id}`, "Event: Create Entry checked", `Invoice type: ${data.invoiceType || "(empty)"}`, `Vendor type: ${data.vendorType || "(empty)"}`, `Matched categories: ${new Set(results.map(result => result.tChartRow)).size}`, `Prepared entries: ${results.length}`];
     for (const [index, result] of results.entries()) {
         report.push("", divider, `MATCH ${index + 1}`, divider, `Category: ${result.category}`, `T-Chart row: ${result.tChartRow}`);
+        if (result.entryKey) report.push(`Account entry: ${result.entryKey}`);
         for (const posting of result.postings) {
             report.push(`Amount: ${posting.amount}`, `Debit account: ${posting.debitAccount.number}`, `Credit account: ${posting.creditAccount.number}`, `Source record ID: ${posting.sourceRecordId}`);
+            for (const id of posting.sourceRecordIds || []) report.push(`Source line ID: ${id}`);
         }
         for (const id of result.postings[0]?.paymentRecordIds || []) report.push(`Linked payment ID: ${id}`);
         if (!result.postings.length) report.push("Amount: 0.00", "No monetary posting.");
@@ -273,9 +302,14 @@ function printResults(data, results, reason = "") {
 }
 
 function printPostingResponse(response) {
+    if (response.status === "pending_review" || response.status === "rejected") {
+        console.log(`Ledger: ${response.status}\nReview request: ${response.requestId}\nNo journals were posted.`);
+        return;
+    }
     const report = ["--------------------------------------------------------", "LEDGER RESULT", "--------------------------------------------------------"];
     for (const result of response.results || []) {
         report.push(`Rule: ${result.ruleCode}`, `Status: ${result.status}`);
+        if (result.entryKey) report.push(`Account entry: ${result.entryKey}`);
         if (result.journalEntryId) report.push(`Journal ID: ${result.journalEntryId}`);
     }
     console.log(report.join("\n"));
@@ -291,22 +325,33 @@ INPUTS / SECRET
   ledgerWebhookUrl: https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-payment
   Secret: Dual Ledger Webhook Secret, matching LEDGER_WEBHOOK_SECRET.
 SOURCE / MAPPING
-  T-Chart Category - Expenses, row 12 updated 5 Nov 2026, Actual Trigger / Mapping / Clarification.
-  User override: every entry uses Invoice Date, including rows whose date says PENDING.
-  Rows 8 and 10 post each matching Line Amount with its own source line ID.
-  Row 8: 005.101/005.003/005.001 -> 241.100. Row 10: 005.201 -> 241.300.
-  Round each posting to cents; zero is a category no-op. Negative or missing amounts fail.
-  Row 12: full Invoice Amount, debit 007.002, credit the linked payments' bank.
-  FIN 112.100 -> ledger 112.100; FIN 0747 -> ledger 112.300. All linked payments
-  must identify the same supported bank. No allocation by payment amount or extra Sent filter.
-  The generic operating-expense placeholder skips a matched row 12.
-  Rows 2/6/7/13/14 retain explicit Not yet implemented errors for chart clarifications.
-  Rows 3 and 4 have different primary events and do not run from this checkbox automation.
-  Rows 5/9/11 have no approved Actual Trigger and are not inferred from descriptions.
+  Category - Expenses, official Actual Trigger / Mapping from 7 Nov 2026.
+  Every entry uses Invoice Date. Branch uses Invoice.Branch, except Tech Allowance
+  uses Branch Employee; empty or multiple branches remain unassigned in the receiver.
+  Row 2: Utilities 006.002 -> 211.100, Invoice Amount, exactly one invoice account.
+  Row 4: prepaid checkbox, AP expense, Invoice Amount, 135.000 -> 211.100.
+  Row 6: 005.102 Line Amount -> 211.100.
+  Row 7: W2 salary 005.002 -> 241.100, payroll tax 005.006 -> 241.200,
+  401k 005.005 -> 241.400. Employee benefits 241.600 are excluded for now.
+  Daily 11 PM Central is documented only; native triggers remain unchanged.
+  Row 8: 005.101/005.003/005.001 Line Amount -> 241.100.
+  Row 10: 005.201 Line Amount -> 241.300.
+  Row 13: Invoice Amount, 007.005 -> 121.900, AP expense only.
+  Row 14: Invoice Amount, 011.001 -> 242.100 or 011.002 -> 242.200.
+  Exactly one tax account is required; no invented split.
+  Same-account invoice lines sum into one pair/journal. Different accounts stay separate;
+  all contributing line IDs are retained as sourceRecordIds. Amounts use checked cents.
+  Zero is a category no-op. Missing or nonfinite amounts fail; signed amounts retain their chart sides.
+  Rows 3/12 belong to Fully Paid status, rows 5/11 to their own record-created events.
+  PTO row 9 remains deferred.
 DATA / NETWORK
   Native FIN reads by stable table/field IDs; line/account queries are cached and batched.
   No Airtable record writes. All category checks finish before the first webhook request.
   One invoice-owned entry_requested packet with EXP rule codes, refs and no generated notes.
+  One entry and summed posting pair per debit account, with entryKey = that account number.
+  Repeated same-account lines sum with four-decimal precision before their total rounds to cents. Their IDs are sent in sourceRecordIds;
+  sourceRecordId is the invoice when multiple lines are aggregated. Receiver/schema must
+  support source_entry_key before deployment. Branch = Invoices.Branch; empty stays null.
   The receiver must support entry_requested as an invoice event before enabling this automation.
   Audit links open the invoice. Exact retries deduplicate; changed payloads require review.
   No automatic retries. An unresolved matching category stops the complete run before POST.

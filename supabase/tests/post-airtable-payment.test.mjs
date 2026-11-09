@@ -25,7 +25,7 @@ const lines = (id) => sql`
 `;
 
 async function failure(value, code) {
-  const sourceId = value.source?.recordId || value.invoiceRecordId || value.paymentRecordId;
+  const sourceId = value.source?.recordId || value.depreciationRecordId || value.invoiceRecordId || value.paymentRecordId;
   const count = (await entries(sourceId)).length;
   await assert.rejects(() => postPayment(sql, value), (error) => {
     if (code) assert.equal(error.code, code, error.message);
@@ -33,6 +33,161 @@ async function failure(value, code) {
   });
   assert.equal((await entries(sourceId)).length, count, "failed request leaves no partial journals");
 }
+
+test("account-keyed expense entries post separately, retain branch and deduplicate atomically", async () => {
+  const invoiceRecordId = "recAccountPayroll";
+  const value = { invoiceRecordId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [
+    { ruleCode: "EXP-07", entryKey: "005.101", transactionType: "Payroll", postings: [
+      posting("005.101", "241.100", "50.00", { sourceRecordId: invoiceRecordId, sourceRecordIds: ["recSalaryA", "recSalaryB"], branch: ["Chicago"] }),
+    ] },
+    { ruleCode: "EXP-07", entryKey: "005.003", transactionType: "Payroll", postings: [posting("005.003", "241.100", "25.00", { branch: "Chicago" })] },
+  ] };
+  const outcomes = await Promise.all([postPayment(sql, value), postPayment(sql, copy(value))]);
+  assert.equal(outcomes.reduce((n, r) => n + r.postedCount, 0), 2);
+  assert.equal(outcomes.reduce((n, r) => n + r.duplicateCount, 0), 2);
+  const journals = await entries(invoiceRecordId), stored = await lines(invoiceRecordId);
+  assert.deepEqual(journals.map(j => j.source_entry_key).sort(), ["005.003", "005.101"]);
+  assert.equal(stored.length, 4); assert.ok(stored.every(line => line.branch === "Chicago" && line.invoice_ref.length === 1 && line.invoice_ref[0] === invoiceRecordId));
+  assert.ok(stored.filter(line => line.account_code === "005.101").every(line => JSON.stringify(line.airtable_record_ids) === JSON.stringify(["recSalaryA", "recSalaryB"])));
+  const reordered = copy(value); reordered.categories[0].postings[0].sourceRecordIds = ["recSalaryB", "recSalaryA", "recSalaryB"];
+  assert.equal((await postPayment(sql, reordered)).duplicateCount, 2);
+  for (const journal of journals) {
+    const group = stored.filter(line => line.entry_id === journal.id);
+    assert.deepEqual([...new Set(group.map(line => line.account_code))].sort(), [journal.source_entry_key, "241.100"].sort());
+  }
+  for (const mutate of [
+    v => { v.categories.pop(); },
+    v => { v.categories[0].entryKey = "different-account"; },
+    v => { v.categories[0].postings[0].branch = ["Milwaukee"]; },
+    v => { v.categories[0].postings[0].sourceRecordIds = ["recDifferentLine"]; },
+    v => { delete v.categories[0].entryKey; delete v.categories[1].entryKey; v.categories[0].postings.push(...v.categories.pop().postings); },
+  ]) {
+    const changed = copy(value); mutate(changed); await failure(changed, "23505");
+  }
+  const unkeyedId = "recUnkeyedPayroll";
+  const unkeyed = { invoiceRecordId: unkeyedId, eventType: "entry_requested", entryDate: value.entryDate, categories: [copy(value.categories[0])] };
+  delete unkeyed.categories[0].entryKey;
+  await postPayment(sql, unkeyed);
+  unkeyed.categories[0].entryKey = "005.101";
+  await failure(unkeyed, "23505");
+});
+
+test("invalid account keys and branches fail without partial journals; missing branches stay null", async () => {
+  for (const [id, key, branch] of [["recMalformedBranch", "005.101", ["Chicago", 42]], ["recInvalidBranch", "005.101", 42], ["recInvalidKey", " padded ", []], ["recObjectKey", {}, []]]) {
+    const value = { invoiceRecordId: id, eventType: "entry_requested", entryDate: "2026-11-01", categories: [
+      { ruleCode: "EXP-07", entryKey: key, transactionType: "Payroll", postings: [posting("005.101", "241.100", "20.00", { branch })] },
+    ] };
+    await failure(value, "22023");
+  }
+  const value = { invoiceRecordId: "recNullableBranch", eventType: "entry_requested", entryDate: "2026-11-01", categories: [
+    { ruleCode: "EXP-07", entryKey: "005.101", transactionType: "Payroll", postings: [posting("005.101", "241.100", "20.00", { branch: [] })] },
+  ] };
+  const duplicate = copy(value); duplicate.categories.push(copy(value.categories[0])); await failure(duplicate, "22023");
+  const mixed = copy(value); mixed.categories.push({ ...copy(value.categories[0]), entryKey: "" }); await failure(mixed, "22023");
+  const invalidLater = copy(value); invalidLater.categories.push({ ...copy(value.categories[0]), entryKey: "005.003", postings: [posting("nonexistent", "241.100", "1.00")] }); await failure(invalidLater, "22023");
+  for (const ids of ["not-an-array", ["recSource", 123], [""], [{}]]) {
+    const malformed = copy(value); malformed.categories[0].postings[0].sourceRecordIds = ids; await failure(malformed, "22023");
+  }
+  await postPayment(sql, value); assert.ok((await lines(value.invoiceRecordId)).every(line => line.branch === null));
+});
+
+test("aggregate card payments with several branches keep nullable attribution without changing amounts", async () => {
+  for (const [id, branch, expected] of [["recMixedCardBranch", ["Chicago", "Milwaukee"], null], ["recSharedCardBranch", ["Chicago", "Chicago"], "Chicago"]]) {
+    const value = event(id, "PAY-17", [posting("231.100", "112.100", "15.25", { branch })]);
+    assert.equal((await postPayment(sql, value)).postedCount, 1);
+    const stored = await lines(id); assert.ok(stored.every(line => line.branch === expected));
+    assert.deepEqual(stored.map(line => [line.debit, line.credit]), [["15.25", "0.00"], ["0.00", "15.25"]]);
+    assert.equal((await postPayment(sql, value)).duplicateCount, 1);
+  }
+});
+
+test("new expense accounts retain FIN identities and are usable by the generic writer", async () => {
+  const expected = [["009.002", "recNVjoY2qo8bdQT7", "opex"], ["009.006", "recsUdNvhsEbvL9v3", "opex"], ["005.102", "recTcmhT5y78RAomk", "payroll"]];
+  for (const [code, airtableId, subtype] of expected) {
+    const [account] = await sql`select * from public.accounts where code=${code}`;
+    assert.equal(account.airtable_record_id, airtableId); assert.equal(account.account_type, "expense"); assert.equal(account.normal_balance, "debit"); assert.equal(account.subtype, subtype);
+    const value = event(`recNewAccount${code}`, "EXP-05", [posting(code, "211.100", "1.00")]);
+    assert.equal((await postPayment(sql, value)).postedCount, 1);
+  }
+});
+
+test("Fully Paid invoice event remains separate from Create Entry and replays safely", async () => {
+  const invoiceRecordId = "recStatusInvoice";
+  const value = { invoiceRecordId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [
+    { ruleCode: "EXP-03", transactionType: "Prepaid bill", postings: [posting("135.000", "211.100", "50.00")] },
+  ] };
+  assert.equal((await postPayment(sql, value)).postedCount, 1);
+  const paid = { ...copy(value), eventType: "paid", categories: [
+    { ruleCode: "EXP-02", transactionType: "Card expense", postings: [posting("009.002", "231.100", "50.00")] },
+  ] };
+  assert.equal((await postPayment(sql, paid)).postedCount, 1);
+  assert.equal((await postPayment(sql, paid)).duplicateCount, 1);
+  assert.equal((await postPayment(sql, value)).duplicateCount, 1);
+  assert.equal((await entries(invoiceRecordId)).length, 2);
+  const wrong = copy(paid); wrong.paymentRecordId = "recUnexpectedPayment";
+  await failure(wrong, "22023");
+});
+
+test("prepay creation owns its source, preserves note/branch and rejects wrong source types", async () => {
+  const id = "recPrepaidUse";
+  const value = { prepayLogRecordId: id, eventType: "created", entryDate: "2026-11-01", source: {
+    tableId: "tbl1LgiUYt7Gc492d", recordId: id, recordName: "Prepaid insurance use-up",
+  }, categories: [{ ruleCode: "EXP-04", transactionType: "Prepaid expense - monthly use-up", notes: "Prepay Log label",
+    postings: [posting("007.011", "135.000", "25.00", { sourceRecordId: id, branch: ["Chicago"] })] }] };
+  assert.equal((await postPayment(sql, value)).postedCount, 1);
+  assert.equal((await postPayment(sql, value)).duplicateCount, 1);
+  const [header] = await entries(id), stored = await lines(id);
+  assert.equal(header.notes, "Prepay Log label"); assert.equal(header.source_table, value.source.tableId);
+  assert.equal(header.audit_link, `https://airtable.com/app0Q1UMEdUeWl538/tbl1LgiUYt7Gc492d/${id}`);
+  assert.ok(stored.every(line => line.branch === "Chicago" && line.invoice_ref.length === 0 && line.airtable_record_id === id));
+  for (const mutate of [v => { v.invoiceRecordId = "recFakeInvoice"; }, v => { v.depreciationRecordId = "recFakeDep"; }, v => { v.eventType = "paid"; }, v => { v.source.tableId = "tbldQXuqNEp8G5pfs"; }]) {
+    const invalid = copy(value); mutate(invalid); await failure(invalid, "22023");
+  }
+});
+
+test("depreciation creation posts its supplied pair with its own source and audit link", async () => {
+  const id = "recDepreciationCreated";
+  const value = {
+    depreciationRecordId: id, eventType: "created", entryDate: "2037-08-15", referenceNumber: id,
+    source: { tableId: "tblC0dbO5UMXzHma9", recordId: id, recordName: "Example monthly depreciation" },
+    categories: [{ ruleCode: "EXP-10", transactionType: "Monthly depreciation of equipment, vehicles, fixtures",
+      notes: "Associated asset: Example equipment (recExampleAsset)",
+      postings: [posting("009.101", "161.000", "125.56", { sourceRecordId: id })] }],
+  };
+  const results = await Promise.all([postPayment(sql, value), postPayment(sql, copy(value))]);
+  assert.equal(results.reduce((n, result) => n + result.postedCount, 0), 1);
+  assert.equal(results.reduce((n, result) => n + result.duplicateCount, 0), 1);
+  assert.ok(results.every(result => result.depreciationRecordId === id && !("invoiceRecordId" in result) && !("paymentRecordId" in result)));
+  const [journal] = await entries(id), stored = await lines(id);
+  const audit = `https://airtable.com/app0Q1UMEdUeWl538/tblC0dbO5UMXzHma9/${id}`;
+  assert.equal(journal.source_table, value.source.tableId); assert.equal(journal.source_event_type, "created");
+  assert.equal(journal.entry_date.toISOString().slice(0, 10), value.entryDate); assert.equal(journal.notes, value.categories[0].notes);
+  assert.equal(journal.audit_link, audit); assert.equal(journal.external_ref, id);
+  assert.deepEqual(stored.map(line => [line.account_code, line.debit, line.credit]), [["009.101", "125.56", "0.00"], ["161.000", "0.00", "125.56"]]);
+  assert.ok(stored.every(line => line.invoice_ref.length === 0 && line.airtable_record_id === id && line.audit_link === audit));
+  const withoutSource = copy(value); delete withoutSource.source;
+  assert.equal((await postPayment(sql, withoutSource)).duplicateCount, 1);
+  for (const mutate of [
+    v => { v.categories[0].postings[0].amount = "126.00"; },
+    v => { v.entryDate = "2037-08-16"; },
+    v => { v.categories[0].notes = "Different asset"; },
+  ]) {
+    const changed = copy(value); mutate(changed); await failure(changed, "23505");
+  }
+  for (const mutate of [
+    v => { v.paymentRecordId = "recFakePayment"; },
+    v => { v.invoiceRecordId = "recFakeInvoice"; },
+    v => { v.eventType = "sent"; },
+    v => { v.source.recordId = "recWrongSource"; },
+    v => { v.source.tableId = "tbldQXuqNEp8G5pfs"; },
+    v => { delete v.depreciationRecordId; },
+  ]) {
+    const invalid = copy(value); mutate(invalid); await failure(invalid, "22023");
+  }
+  const zero = copy(value); zero.depreciationRecordId = zero.source.recordId = "recZeroDepreciation"; zero.categories[0].postings = [];
+  assert.equal((await postPayment(sql, zero)).results[0].status, "noop");
+  assert.equal((await entries(zero.depreciationRecordId)).length, 0);
+});
 
 test("invoice-created event posts and deduplicates without a payment", async () => {
   const value = {
@@ -48,7 +203,7 @@ test("invoice-created event posts and deduplicates without a payment", async () 
   assert.equal(journal.audit_link, `https://airtable.com/app0Q1UMEdUeWl538/tbldQXuqNEp8G5pfs/${value.invoiceRecordId}`);
   assert.equal(journal.description, value.categories[0].transactionType + " - INV - created");
   const stored = await lines(value.invoiceRecordId);
-  assert.deepEqual(stored.map(line => line.invoice_ref), [value.invoiceRecordId, value.invoiceRecordId]);
+  assert.deepEqual(stored.map(line => line.invoice_ref), [[value.invoiceRecordId], [value.invoiceRecordId]]);
   assert.ok(stored.every(line => line.audit_link === journal.audit_link));
   assert.equal((await postPayment(sql, copy(value))).duplicateCount, 1);
   const changed = copy(value); changed.categories[0].postings[0].amount = "126.00";
@@ -75,7 +230,7 @@ test("all other resolved Invoice Entry pairs use the same generic writer", async
     assert.equal(results.reduce((count, result) => count + result.duplicateCount, 0), 1);
     const stored = await lines(invoiceRecordId);
     assert.deepEqual(stored.map(line => [line.account_code, line.debit, line.credit, line.invoice_ref]), [
-      [debit, "20.00", "0.00", invoiceRecordId], [credit, "0.00", "20.00", invoiceRecordId],
+      [debit, "20.00", "0.00", [invoiceRecordId]], [credit, "0.00", "20.00", [invoiceRecordId]],
     ]);
   }
 });
@@ -106,7 +261,7 @@ test("Create Entry posts expense pairs alongside a separate creation event on th
   assert.equal(storedEntries.length, 3);
   assert.deepEqual(storedEntries.filter(entry => entry.source_event_type === "entry_requested").map(entry => entry.rule_code).sort(), ["EXP-07", "EXP-09"]);
   const storedLines = await lines(invoiceRecordId);
-  assert.ok(storedLines.every(line => line.invoice_ref === invoiceRecordId && line.audit_link.endsWith(`/${invoiceRecordId}`)));
+  assert.ok(storedLines.every(line => line.invoice_ref.length === 1 && line.invoice_ref[0] === invoiceRecordId && line.audit_link.endsWith(`/${invoiceRecordId}`)));
   assert.equal(storedLines.filter(line => line.airtable_record_id === "recSalaryLine").length, 2);
   const changed = copy(value); changed.categories[0].postings[0].amount = "100.02";
   await failure(changed, "23505");
@@ -179,17 +334,18 @@ test("direct Edge code persists the free-text type, selected accounts and audit 
   const ap = rows.find((line) => line.account_code === "211.100");
   assert.equal(ap.debit, "100.00");
   assert.equal(ap.credit, "0.00");
-  assert.equal(ap.invoice_ref, "recInvoice");
-  assert.equal(ap.vendor_ref, "recVendor");
-  assert.equal(ap.customer_ref, "recClient");
-  assert.equal(ap.order_ref, "recOrder");
-  assert.equal(ap.po_ref, "recPO");
-  assert.equal(ap.employee_ref, "recStaff");
+  assert.deepEqual(ap.invoice_ref, ["recInvoice"]);
+  assert.deepEqual(ap.vendor_ref, ["recVendor"]);
+  assert.deepEqual(ap.customer_ref, ["recClient"]);
+  assert.deepEqual(ap.order_ref, ["recOrder"]);
+  assert.deepEqual(ap.po_ref, ["recPO"]);
+  assert.deepEqual(ap.employee_ref, ["recStaff"]);
   assert.equal(ap.airtable_record_id, "recSourceLine");
   assert.equal(ap.state_code, "IL");
+  assert.ok(rows.every(row => row.branch === "Chicago"));
   const paymentAudit = `https://airtable.com/app0Q1UMEdUeWl538/tblR61NG9i0giid28/${value.paymentRecordId}`;
   assert.equal(journals[0].audit_link, paymentAudit);
-  assert.ok(rows.every(row => row.invoice_ref === "recInvoice" && row.audit_link === paymentAudit), "both legs link to the payment while retaining their invoice references");
+  assert.ok(rows.every(row => row.invoice_ref.length === 1 && row.invoice_ref[0] === "recInvoice" && row.audit_link === paymentAudit), "both legs link to the payment while retaining their invoice references");
   assert.equal(rows.find((line) => line.account_code === "112.100").credit, "100.00");
   await assert.rejects(sql`update public.journal_entries set description = 'changed' where id = ${journals[0].id}`);
 });
@@ -246,7 +402,7 @@ test("an invoice discount is independent of its triggering payment and deduplica
   assert.match(journal.description, /Test invoice - Trigger payment recDiscountTrigger$/);
   const rows = await lines(value.source.recordId);
   assert.equal(rows.length, 2);
-  assert.ok(rows.every(row => row.invoice_ref === value.source.recordId && row.airtable_record_id === "recDiscountLine"));
+  assert.ok(rows.every(row => row.invoice_ref.length === 1 && row.invoice_ref[0] === value.source.recordId && row.airtable_record_id === "recDiscountLine"));
   assert.ok(rows.every(row => row.audit_link === paymentAudit));
   assert.equal(rows.find(row => row.account_code === "211.100").debit, "2.00");
   assert.equal(rows.find(row => row.account_code === "004.011").credit, "2.00");
@@ -271,8 +427,8 @@ test("legacy invoice audit URLs do not block a retry or rewrite posted history",
       values (${value.entryDate}::date, 'PAY-10', ${value.categories[0].transactionType}, 'sent', 'Legacy invoice journal', ${legacyAudit},
         'airtable', ${value.source.tableId}, ${invoiceId}, ${invoiceId}) returning id`;
     await tx`insert into public.journal_lines (entry_id, line_no, account_code, debit, credit, invoice_ref, audit_link)
-      values (${header.id}, 1, '211.100', 2.00, 0.00, ${invoiceId}, ${legacyAudit}),
-        (${header.id}, 2, '004.011', 0.00, 2.00, ${invoiceId}, ${legacyAudit})`;
+      values (${header.id}, 1, '211.100', 2.00, 0.00, ${[invoiceId]}, ${legacyAudit}),
+        (${header.id}, 2, '004.011', 0.00, 2.00, ${[invoiceId]}, ${legacyAudit})`;
     await tx`update public.journal_entries set status='posted' where id=${header.id}`;
   });
   assert.equal((await postPayment(sql, value)).duplicateCount, 1);
@@ -306,8 +462,8 @@ test("vendor credit applications preserve distinct bill and credit-memo invoice 
     const debit = rows.find(row => Number(row.debit) > 0), credit = rows.find(row => Number(row.credit) > 0);
     assert.equal(debit.account_code, "211.100");
     assert.equal(credit.account_code, "211.100");
-    assert.equal(debit.invoice_ref, billId);
-    assert.equal(credit.invoice_ref, creditId);
+    assert.deepEqual(debit.invoice_ref, [billId]);
+    assert.deepEqual(credit.invoice_ref, [creditId]);
     const paymentAudit = `https://airtable.com/app0Q1UMEdUeWl538/tblR61NG9i0giid28/${value.paymentRecordId}`;
     assert.equal((await entries(value.source?.recordId || value.paymentRecordId))[0].audit_link, paymentAudit);
     assert.equal(debit.audit_link, paymentAudit);
@@ -346,7 +502,7 @@ test("one completed invoice posts its discount and vendor credit atomically and 
   assert.equal((await entries(billId)).length, 2);
   const rows = await lines(billId);
   assert.equal(rows.length, 4);
-  assert.equal(rows.find(row => row.invoice_ref === creditId).credit, "12.34");
+  assert.equal(rows.find(row => row.invoice_ref.length === 1 && row.invoice_ref[0] === creditId).credit, "12.34");
   const incomplete = copy(value); incomplete.categories.pop();
   await failure(incomplete, "23505");
 });
@@ -473,7 +629,7 @@ test("zero pairs are no-ops while invalid or missing money and type values fail"
   const zero = event("recZero", "PAY-07", [{ amount: "0.00" }]);
   assert.equal((await postPayment(sql, zero)).results[0].status, "noop");
   assert.equal((await entries(zero.paymentRecordId)).length, 0);
-  for (const amount of ["NaN", "Infinity", "-Infinity", "1e2", "1.001", "", "10000000000000000.00", "-1.00", null, 1]) {
+  for (const amount of ["NaN", "Infinity", "-Infinity", "1e2", "1.001", "", "10000000000000000.00", null, 1]) {
     await failure(event("recBadMoney", "PAY-07", [posting("211.100", "112.100", amount)]));
   }
   const missing = posting(); delete missing.amount; await failure(event("recMissingMoney", "PAY-07", [missing]));
@@ -488,6 +644,21 @@ test("zero pairs are no-ops while invalid or missing money and type values fail"
   assert.equal((await lines(large.paymentRecordId))[0].debit, "9999999999999999.99");
 });
 
+test("signed invoice amounts retain the supplied debit and credit sides and replay safely", async () => {
+  const value = { invoiceRecordId: "recSignedInvoice", eventType: "entry_requested", entryDate: "2026-10-29",
+    categories: [{ ruleCode: "INV-08", transactionType: "Vendor return credit", postings: [posting("211.100", "131.400", "-125.56")] }] };
+  assert.equal((await postPayment(sql, value)).postedCount, 1);
+  const rows = await lines(value.invoiceRecordId);
+  assert.deepEqual(rows.map(row => [row.account_code, row.debit, row.credit]), [["211.100", "-125.56", "0.00"], ["131.400", "0.00", "-125.56"]]);
+  assert.equal((await postPayment(sql, value)).duplicateCount, 1);
+  const changed = copy(value); changed.categories[0].postings[0].amount = "125.56";
+  await failure(changed, "23505");
+  const ledger = await sql`select account_number, offsetting_account_number from public.v_ledger where entry_id=${rows[0].entry_id}`;
+  assert.deepEqual(ledger.map(row => [row.account_number, row.offsetting_account_number]).sort(), [["131.400", "211.100"], ["211.100", "131.400"]]);
+  const [balance] = await sql`select sum(debit)-sum(credit) as net from public.journal_lines where entry_id=${rows[0].entry_id}`;
+  assert.equal(Number(balance.net), 0);
+});
+
 test("account identity resolution takes precedence and invalid selected accounts do not post", async () => {
   await sql`update public.accounts set airtable_record_id='recMappedBank' where code='112.100'`;
   const value = event("recMappedBank"); value.categories[0].postings[0].creditAccount = { recordId: "recMappedBank", number: "0747" };
@@ -495,8 +666,15 @@ test("account identity resolution takes precedence and invalid selected accounts
   assert.equal((await lines(value.paymentRecordId)).find((row) => row.account_code === "112.100").credit, "100.00");
   const bad = event("recUnknownBank"); bad.categories[0].postings[0].creditAccount.number = "missing"; await failure(bad);
   await sql`update public.accounts set active=false where code='112.300'`;
-  try { const inactive = event("recInactiveBank"); inactive.categories[0].postings[0].creditAccount.number = "0747"; await failure(inactive); }
+  try {
+    const inactive = event("recInactiveBank"); inactive.categories[0].postings[0].creditAccount.number = "0747";
+    assert.equal((await postPayment(sql, inactive)).postedCount, 1, "Account active is a label; is_postable controls posting");
+    assert.equal((await postPayment(sql, inactive)).duplicateCount, 1);
+  }
   finally { await sql`update public.accounts set active=true where code='112.300'`; }
+  await sql`update public.accounts set is_postable=false where code='112.300'`;
+  try { const blocked = event("recNotPostableBank"); blocked.categories[0].postings[0].creditAccount.number = "0747"; await failure(blocked); }
+  finally { await sql`update public.accounts set is_postable=true where code='112.300'`; }
 });
 
 test("a later invalid category rolls back all of the payment's journals", async () => {
@@ -504,6 +682,27 @@ test("a later invalid category rolls back all of the payment's journals", async 
   value.categories.push({ ruleCode: "PAY-19", transactionType: "Bad second pair", postings: [posting("missing", "112.100", "1.00")] });
   await failure(value);
   assert.equal((await entries(value.paymentRecordId)).length, 0);
+});
+
+test("all linked business references persist as arrays and reordered references replay safely", async () => {
+  const references = { vendorRecordIds: ["vendorB", "vendorA"], clientRecordIds: ["clientA", "clientB"],
+    staffRecordIds: ["staffA", "staffB"], transactionRecordIds: ["orderB", "orderA"], poRecordIds: ["poA", "poB"],
+    invoiceRecordIds: ["invoiceA", "invoiceB"], stateRecordIds: ["stateA", "stateB"], branch: ["Chicago", ""] };
+  const value = event("recReferenceArrays", "PAY-07", [posting("211.100", "112.100", "12.34", references)]);
+  await postPayment(sql, value);
+  const stored = await lines(value.paymentRecordId);
+  for (const row of stored) {
+    assert.deepEqual(row.vendor_ref, ["vendorA", "vendorB"]); assert.deepEqual(row.customer_ref, ["clientA", "clientB"]);
+    assert.deepEqual(row.employee_ref, ["staffA", "staffB"]); assert.deepEqual(row.order_ref, ["orderA", "orderB"]);
+    assert.deepEqual(row.po_ref, ["poA", "poB"]); assert.deepEqual(row.invoice_ref, ["invoiceA", "invoiceB"]);
+    assert.deepEqual(row.state_ref, ["stateA", "stateB"]); assert.equal(row.branch, null, "Unknown branch does not inherit another invoice's branch");
+  }
+  const retry = copy(value); retry.categories[0].postings[0].vendorRecordIds = ["vendorA", "vendorB", "vendorA"];
+  assert.equal((await postPayment(sql, retry)).duplicateCount, 1);
+  const changed = copy(value); changed.categories[0].postings[0].stateRecordIds = ["otherState"];
+  await failure(changed, "23505");
+  const malformed = copy(value); malformed.paymentRecordId = "recInvalidReferenceArray"; malformed.categories[0].postings[0].vendorRecordIds = "vendorA";
+  await failure(malformed, "22023");
 });
 
 test("cancel and return insert the supplied actual category without finding or reversing an original", async () => {
@@ -551,10 +750,11 @@ test("historically reversed source journals remain protected from reposting", as
   assert.equal((await entries(value.paymentRecordId)).length, 2);
 });
 
-test("a closed accounting period rejects the direct inserts transactionally", async () => {
-  await sql`insert into public.accounting_periods(period_month,status) values ('2099-01-01','closed')`;
+test("a closed accounting period retains a pending request without journal inserts", async () => {
+  await sql`insert into public.accounting_periods(period_month,status) values ('2099-01-01','closed') on conflict(period_month) do update set status='closed'`;
   const value = event("recClosed"); value.entryDate = "2099-01-20";
-  await failure(value);
+  const held=await postPayment(sql,value);
+  assert.equal(held.status,"pending_review");
   assert.equal((await entries(value.paymentRecordId)).length, 0);
 });
 

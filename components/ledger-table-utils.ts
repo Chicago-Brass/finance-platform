@@ -43,8 +43,9 @@ export function ledgerAmountParam(value: string | string[] | undefined) {
 
 export type LedgerQuery = LedgerAccountFilters & { from: string; to: string; page?: number };
 
-export function ledgerHref({ from, to, account, offset, query, side, accountType, category, min, max, page }: LedgerQuery) {
+export function ledgerHref({ from, to, account, offset, query, side, accountType, category, min, max, page, branch }: LedgerQuery) {
   const params = new URLSearchParams({ from, to });
+  if (branch) params.set("branch", branch);
   if (account) params.set("account", account);
   if (offset) params.set("offset", offset);
   const search = ledgerSearchParam(query);
@@ -59,8 +60,8 @@ export function ledgerHref({ from, to, account, offset, query, side, accountType
 }
 
 /** General Ledger for one account, from the start of the as-of year through the as-of date. */
-export function accountLedgerHref(account: string, asOf: string) {
-  return `/general-ledger${ledgerHref({ from: startOfYear(asOf), to: asOf, account })}`;
+export function accountLedgerHref(account: string, asOf: string, branch?: string) {
+  return `/general-ledger${ledgerHref({ from: startOfYear(asOf), to: asOf, account, branch })}`;
 }
 
 export function ledgerDatePresets(today: string) {

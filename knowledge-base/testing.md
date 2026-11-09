@@ -1,5 +1,13 @@
 # Verification and release workflow
 
+## Payment sender checks
+
+Run `node airtable/check.cjs`, `node airtable/check-payment-lines.cjs` and
+`node airtable/check-invoice-settlement.cjs` for current payment contracts. The older settlement
+snapshots lack invoice-line records; their incomplete cases are reported separately, not treated
+as live API or line-mapping proof. The synthetic fixtures cover current line grouping and signs.
+`sh supabase/tests/check-payment-posting.sh` uses a disposable local database only.
+
 ## Application checks
 
 ```sh
@@ -42,7 +50,9 @@ node airtable/check.cjs
 node airtable/check-invoice-settlement.cjs
 node airtable/check-invoice-created.cjs
 node airtable/check-expense-entry.cjs
-node airtable/check-expense-created.cjs
+node airtable/check-expense-fully-paid.cjs
+node airtable/check-prepay-created.cjs
+node airtable/check-depreciation-created.cjs
 ```
 
 These mock native records and webhook fetches. They do not publish scripts or create hosted

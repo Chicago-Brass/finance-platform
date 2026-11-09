@@ -9,7 +9,7 @@ import type { AccountActivityParts, ActivityFilters, DrillRange } from "@/lib/re
 import { formatDate } from "@/lib/reports/report-utils";
 import { ReportLink } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
-import { FilterBar, SearchField, SegmentedControl } from "./FilterControls";
+import { FilterBar, SearchField } from "./FilterControls";
 import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
 import { DetailDrawer } from "./DetailDrawer";
 
@@ -26,7 +26,7 @@ function Icon({ path }: { path: string }) {
 type Load = { key: string; cache: AccountActivityCache; summary?: AccountActivityParts["summary"]; lines?: AccountActivityParts["lines"]; summaryError?: boolean; linesError?: boolean };
 
 /**
- * Slide-over drill-down for one account: analytics, filters, then the posted lines behind the row.
+ * Slide-over drill-down for one account: compact totals, filters and posted lines behind the row.
  * It renders above the page and closes with Escape, the close button or a click on the backdrop.
  */
 export function AccountDrawer({ target, range, cache, accounts = [], onSelect, onClose }: {
@@ -41,20 +41,20 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   const [load, setLoad] = useState<Load | null>(null);
   const [filters, setFilters] = useState<ActivityFilters>(NO_ACTIVITY_FILTERS);
   const [attempt, setAttempt] = useState(0);
-  const { mode, from, to } = range;
-  const key = `${target.code}|${mode}|${from}|${to}|${attempt}`;
+  const { mode, from, to, branch } = range;
+  const key = `${target.code}|${mode}|${from}|${to}|${attempt}${branch ? `|${branch}` : ""}`;
 
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ key, cache });
     setFilters(NO_ACTIVITY_FILTERS);
     for (const section of ["summary", "lines"] as const) {
-      readAccountActivity(cache, { account: target.code, mode, from, to }, section, controller.signal)
+      readAccountActivity(cache, { account: target.code, mode, from, to, ...(branch ? { branch } : {}) }, section, controller.signal)
         .then(data => { if (!controller.signal.aborted) setLoad(previous => previous?.key === key ? { ...previous, [section]: data } : previous); })
         .catch(() => { if (!controller.signal.aborted) setLoad(previous => previous?.key === key ? { ...previous, [`${section}Error`]: true } : previous); });
     }
     return () => controller.abort();
-  }, [key, target.code, mode, from, to, cache]);
+  }, [key, target.code, mode, from, to, branch, cache]);
 
   const current = load?.key === key && load.cache === cache ? load : null;
   const listed = current?.lines;
@@ -102,11 +102,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
                 <div className="drill-tile"><span>Avg per month</span><strong>{money(summary.averagePerMonth)}</strong><small>{summary.months.length} months</small></div>
               </>}
             </div>
-            {listed?.truncated && <p className="drill-warning" role="note">Charts and line counts use the first {lines.length} lines. Summary amounts include all posted lines.</p>}
-            {listed ? <div className="drill-charts">
-              <MonthlyBars months={summary.months} />
-              <OffsetMix offsets={summary.offsets} />
-            </div> : <div className="drill-chart-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading charts...</span></div>}
+            {listed?.truncated && <p className="drill-warning" role="note">Line counts use the first {lines.length} lines. Summary amounts include all posted lines.</p>}
           </> : <div className="drill-summary-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading account totals...</span></div>}
         </section>
 
@@ -114,7 +110,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <SearchField label="Search lines" placeholder="Entry, offset or notes" value={filters.query} onChange={query => set({ query })} />
             <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
             <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
-            <SegmentedControl label="Entry side" value={filters.side} options={[{ value: "all", label: "All" }, { value: "debit", label: "Debit" }, { value: "credit", label: "Credit" }]} onChange={side => set({ side })} />
+            <SearchableSelect label="Entry side" value={filters.side} options={[{ value: "all", label: "All entries" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => set({ side: side as ActivityFilters["side"] })} className="drill-filter-field" />
           </FilterBar>
 
         {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-lines-loading" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="report-spinner" aria-hidden="true" /><span>Loading ledger lines...</span></section> : <>
@@ -149,7 +145,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             {data && <span>Net <strong>{money(naturalNet(totals.debit, totals.credit, data.account.normalBalance))}</strong></span>}
             {!filtered && summary?.tiesToTotals && <span className="drill-ties">✓ Lines tie to the trial balance</span>}
             {listed.truncated && <span className="drill-warning">Showing the first {lines.length} lines. Footer totals cover the visible lines only.</span>}
-            <ReportLink className="btn btn-quiet drill-ledger-link" href={`/general-ledger${ledgerHref({ from, to, account: target.code })}`} onClick={onClose}>Open in General Ledger</ReportLink>
+            <ReportLink className="btn btn-quiet drill-ledger-link" href={`/general-ledger${ledgerHref({ from, to, account: target.code, branch })}`} onClick={onClose}>Open in General Ledger</ReportLink>
           </footer>
         </>}
     </DetailDrawer>
@@ -158,38 +154,4 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
 
 function LoadError({ label, onRetry }: { label: string; onRetry: () => void }) {
   return <div className="drill-state" role="alert"><p>{label} could not be loaded.</p><button type="button" className="btn btn-quiet" onClick={onRetry}>Try again</button></div>;
-}
-
-function MonthlyBars({ months }: { months: { key: string; label: string; name: string; net: number }[] }) {
-  const max = Math.max(1, ...months.map(month => Math.abs(month.net)));
-  const labelEvery = months.length > 12 ? Math.ceil(months.length / 6) : 1;
-  return (
-    <figure className="drill-chart">
-      <figcaption>Monthly activity</figcaption>
-      <div className="drill-bars" role="img" aria-label={`Monthly activity: ${months.map(month => `${month.name} ${money(month.net)}`).join(", ")}`}>
-        {months.map(month => <span key={month.key} className={`drill-bar${month.net < 0 ? " is-negative" : ""}`} style={{ height: `${Math.max(month.net === 0 ? 0 : 3, Math.round(Math.abs(month.net) / max * 100))}%` }} title={`${month.name}: ${money(month.net)}`} />)}
-      </div>
-      <div className="drill-bar-labels" aria-hidden="true">{months.map((month, index) => <span key={month.key}>{index % labelEvery === 0 ? month.label : ""}</span>)}</div>
-    </figure>
-  );
-}
-
-const MIX_COLORS = ["#1e3a5f", "#3b6ea5", "#6f93b8", "#a9bdcf", "#d2dde6"];
-
-function OffsetMix({ offsets }: { offsets: { key: string; label: string; net: number }[] }) {
-  const top = offsets.slice(0, 4);
-  const rest = offsets.slice(4).reduce((sum, offset) => sum + offset.net, 0);
-  const items = offsets.length > 4 ? [...top, { key: "other", label: "Other accounts", net: rest }] : top;
-  const total = items.reduce((sum, item) => sum + item.net, 0);
-  const chartable = items.length > 0 && total > 0 && items.every(item => item.net >= 0);
-  return (
-    <figure className="drill-chart">
-      <figcaption>Offsetting accounts</figcaption>
-      {!items.length && <p className="drill-muted">No lines in these dates.</p>}
-      {chartable && <div className="drill-mix" aria-hidden="true">{items.map((item, index) => <span key={item.key} style={{ width: `${item.net / total * 100}%`, background: MIX_COLORS[index] }} />)}</div>}
-      <ul className="drill-legend">
-        {items.map((item, index) => <li key={item.key}><span><i style={{ background: MIX_COLORS[index] }} aria-hidden="true" />{item.label}</span><span>{money(item.net)}{chartable ? ` · ${Math.round(item.net / total * 100)}%` : ""}</span></li>)}
-      </ul>
-    </figure>
-  );
 }

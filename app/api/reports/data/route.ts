@@ -25,8 +25,8 @@ export async function GET(request: Request) {
     const screen = parseReportScreen(report === "ledger-count" ? REPORT_PATHS.ledger : REPORT_PATHS[report as ReportKind], params);
     switch (screen.kind) {
       case "income": return json(await loadIncomeStatementData(screen.options));
-      case "balance": return json(await loadBalanceSheetData(screen.options.asOf));
-      case "trial": return json(await getTrialBalance(screen.options.asOf, null));
+      case "balance": return json(await loadBalanceSheetData(screen.options.asOf, screen.options.branch));
+      case "trial": return json(await getTrialBalance(screen.options.asOf, null, screen.options.branch));
       case "ledger": {
         const { from, to, page, ...filters } = screen.options;
         if (report === "ledger-count") return json(await getLedgerCount(from, to, filters));

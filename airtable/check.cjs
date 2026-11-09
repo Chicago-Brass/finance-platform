@@ -31,6 +31,7 @@ const EXPECTED_TRANSACTION_TYPES = {
     "PAY-24": "Security deposit paid (lease)",
     "PAY-11": "Bill paid using vendor credits (no cash)",
     "PAY-27": "Credit-card rebate earned (cash back)",
+    "PAY-25": "Interest / dividends received (Fidelity)",
     "PAY-26": "Bank reconciliation rounding difference"
 };
 
@@ -54,6 +55,7 @@ async function harness(kind, config = {}, fetchResponse = {}) {
     const exportSource = source.replace(entry, `return { TABLES, PAYMENT_FIELDS,
         INVOICE_FIELDS: typeof INVOICE_FIELDS === "undefined" ? {} : INVOICE_FIELDS,
         ACCOUNT_FIELDS: typeof ACCOUNT_FIELDS === "undefined" ? {} : ACCOUNT_FIELDS,
+        LINE_FIELDS: typeof LINE_FIELDS === "undefined" ? {} : LINE_FIELDS,
         main,
         moneyCents: typeof moneyCents === "undefined" ? null : moneyCents,
         moneyString: typeof moneyString === "undefined" ? null : moneyString,
@@ -135,13 +137,15 @@ async function harness(kind, config = {}, fetchResponse = {}) {
                 assert.equal(category.transactionType, EXPECTED_TRANSACTION_TYPES[category.ruleCode], "Transaction types retain the approved T-Chart wording with normalized whitespace and hyphens");
                 assert.equal("components" in category, false);
                 assert.equal("notes" in category, false, "Category notes are not sent");
+                assert.ok(new Set(category.postings.map(posting => posting.debitAccount.number)).size <= 1, "Each journal has one debit account");
+                assert.ok(new Set(category.postings.map(posting => posting.creditAccount.number)).size <= 1, "Each journal has one credit account");
                 for (const posting of category.postings) {
                     assert.equal("kind" in posting, false, "No component routing is delegated to Supabase");
                     assert.equal("notes" in posting, false, "Audit context uses structured references only");
                     assert.ok(posting.debitAccount && posting.creditAccount);
                     assert.equal(typeof posting.debitAccount.number, "string");
                     assert.equal(typeof posting.creditAccount.number, "string");
-                    assert.match(posting.amount, /^\d+\.\d{2}$/);
+                    assert.match(posting.amount, /^-?\d+\.\d{2}$/);
                 }
             }
         }
@@ -163,10 +167,10 @@ const rows = matches => matches.map(match => { coveredRows.add(match.tChartRow);
 async function main() {
     let h = await harness("sent");
     const { PAYMENT_FIELDS: P, ACCOUNT_FIELDS: A } = h;
-    // Old invoice-line inputs are negative fixtures: production must not use them to invent splits.
+    // Invoice-only routes still reject undefined splits; payroll and debt use explicit line amounts.
     const T = { ...h.TABLES, lines: "tblV26TC0f6CKDneL" };
     const I = { ...h.INVOICE_FIELDS, lines: "fldF0uqCMkPgwuIes" };
-    const L = { amount: "fldkhhHCD2qKD71rI", type: "fldchdpL3w2aXfm4P", accounts: "fldwr0Pfp8OHsNj5N" };
+    const L = h.LINE_FIELDS;
     assert.equal(h.moneyCents(0.005, "test"), 1);
     assert.equal(h.moneyCents(-0.005, "test"), -1);
     assert.equal(h.moneyCents(10.075, "test"), 1008);
@@ -231,52 +235,34 @@ async function main() {
     await assert.rejects(h.main("payment"), /does not define a payment split/);
     assert.equal(h.calls.length, 0, "No invoice-line allocation formula is invented outside the chart");
 
-    h = await harness("sent");
-    h.payment({ [P.vendorType]: select("AP - Staff"), [P.vendorTypesAP]: ["AP - Staff"], [P.amount]: 50 }); h.bank();
-    h.invoice("invoice", { [I.accounts]: [link("salary")], fld2YNpvvqweloE6S: select("Fully Unpaid"), [I.lines]: [link("feeLine")] });
-    h.add(T.accounts, "salary", { [A.number]: "005.101" }); h.add(T.accounts, "fee", { [A.number]: "007.002" });
-    h.add(T.lines, "feeLine", { [L.type]: select("Non-Discount"), [L.amount]: 10, [L.accounts]: [link("fee")] });
-    await assert.rejects(h.main("payment"), /row 16 is blocked/);
-    assert.equal(h.calls.length, 0, "Staff split cannot be invented from invoice lines");
-    assert.ok(h.reads.filter(read => read.table === T.invoices).every(read => !read.fields.includes("fld2YNpvvqweloE6S")), "Staff routing no longer reads the removed manual-status filter");
-
-    h = await harness("sent");
-    h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"] }); h.bank();
-    h.invoice("invoice", { [I.accounts]: [link("loan")] }); h.add(T.accounts, "loan", { [A.number]: "232.100" });
-    assert.deepEqual(rows(await h.main("payment")), [17]);
-    assert.deepEqual(pairs(h), [["232.100", "112.100", "100.00"]], "One principal account receives its invoice payment share");
-
-    for (const [principalNumber, expectedRow] of [["232.100", 17], ["231.200", 19]]) {
-        h = await harness("sent");
-        h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.amount]: 379.68, [P.invoices]: [link("principal"), link("interest")] }); h.bank();
-        h.invoice("principal", { [I.amountToPay]: 716.92, [I.accounts]: [link("principalAccount")] });
-        h.invoice("interest", { [I.amountToPay]: 42.44, [I.accounts]: [link("interestAccount")] });
-        h.add(T.accounts, "principalAccount", { [A.number]: principalNumber }); h.add(T.accounts, "interestAccount", { [A.number]: "007.003" });
-        assert.deepEqual(rows(await h.main("payment")), [expectedRow], "Shared interest does not trigger both debt categories");
-        assert.deepEqual(pairs(h), [[principalNumber, "112.100", "358.46"], ["007.003", "112.100", "21.22"]], "A partial payment uses separate invoice weights and preserves the payment total");
-        assert.equal(h.reads.filter(read => read.table === T.lines).length, 0, "No invoice-line split is inferred");
-
-        h = await harness("sent");
-        h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.amount]: 0 }); h.bank();
-        h.invoice("invoice", { [I.accounts]: [link("principalAccount"), link("interestAccount")] });
-        h.add(T.accounts, "principalAccount", { [A.number]: principalNumber }); h.add(T.accounts, "interestAccount", { [A.number]: "007.003" });
-        await assert.rejects(h.main("payment"), /must link exactly one chart of account/);
-        assert.equal(h.calls.length, 0, "Multiple invoice accounts fail even for a zero payment");
+    for (const [number, row] of [["232.100", 17], ["231.200", 19]]) {
+        h = await harness("sent"); h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.amount]: 40 }); h.bank();
+        h.invoice("invoice", { [I.lines]: [link("principalA"), link("principalB"), link("interest")] });
+        h.add(T.accounts, "principalAccount", { [A.number]: number }); h.add(T.accounts, "interestAccount", { [A.number]: "007.003" });
+        for (const [id, account, amount] of [["principalA", "principalAccount", 50], ["principalB", "principalAccount", 20], ["interest", "interestAccount", -2]]) h.add(T.lines, id, { [L.invoices]: [link("invoice")], [L.accounts]: [link(account)], [L.amount]: amount });
+        assert.deepEqual(rows(await h.main("payment")), [row, row]);
+        const categories = h.calls[0].body.categories;
+        assert.deepEqual(categories.map(c => c.entryKey), ["007.003", number]);
+        assert.deepEqual(pairs(h), [["007.003", "112.100", "-2.00"], [number, "112.100", "70.00"]], "Signed line totals, not Payment.Amount, supply debt components");
+        assert.deepEqual(categories[1].postings[0].sourceRecordIds, ["principalA", "principalB"]);
+        assert.equal(h.reads.filter(read => read.table === T.lines).length, 1, "Both debt handlers reuse the line read");
     }
+    h = await harness("sent"); h.payment({ [P.vendorType]: select("AP - Staff"), [P.vendorTypesAP]: ["AP - Staff"] }); h.bank();
+    const salaryAccounts = { "005.101": "241.100", "005.003": "241.100", "005.001": "241.100", "005.002": "241.100", "005.006": "241.200", "005.005": "241.400" };
+    h.invoice("invoice", { [I.lines]: [...Object.keys(salaryAccounts).map(link), link("salaryExtra"), link("wireFee"), link("benefits")] });
+    for (const number of [...Object.keys(salaryAccounts), "007.002", "241.600"]) h.add(T.accounts, number, { [A.number]: number });
+    for (const number of Object.keys(salaryAccounts)) h.add(T.lines, number, { [L.invoices]: [link("invoice")], [L.accounts]: [link(number)], [L.amount]: 10 });
+    h.add(T.lines, "salaryExtra", { [L.invoices]: [link("invoice")], [L.accounts]: [link("005.101")], [L.amount]: 2 });
+    for (const [id, number] of [["wireFee", "007.002"], ["benefits", "241.600"]]) h.add(T.lines, id, { [L.invoices]: [link("invoice")], [L.accounts]: [link(number)], [L.amount]: 3 });
+    assert.deepEqual(rows(await h.main("payment")), Array(6).fill(16));
+    assert.deepEqual(h.calls[0].body.categories.map(c => [c.entryKey, c.postings[0].debitAccount.number, c.postings[0].amount]), Object.keys(salaryAccounts).sort().map(number => [number, salaryAccounts[number], number === "005.101" ? "12.00" : "10.00"]));
 
-    h = await harness("sent");
-    h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.invoices]: [link("loan"), link("loc"), link("interest")] }); h.bank();
+    h = await harness("sent"); h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"] }); h.bank();
+    h.invoice("invoice", { [I.lines]: [link("loan"), link("loc"), link("interest")] });
     for (const [id, number] of [["loan", "232.100"], ["loc", "231.200"], ["interest", "007.003"]]) {
-        h.invoice(id, { [I.accounts]: [link(id + "Account")] }); h.add(T.accounts, id + "Account", { [A.number]: number });
+        h.add(T.accounts, id, { [A.number]: number }); h.add(T.lines, id, { [L.invoices]: [link("invoice")], [L.accounts]: [link(id)], [L.amount]: 10 });
     }
-    await assert.rejects(h.main("payment"), /explicit interest allocation/);
-    assert.equal(h.calls.length, 0, "Ambiguous interest is never posted twice");
-
-    h = await harness("sent");
-    h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"] }); h.bank();
-    h.invoice("invoice", { [I.accounts]: [link("interestAccount")] }); h.add(T.accounts, "interestAccount", { [A.number]: "007.003" });
-    assert.deepEqual(await h.main("payment"), [], "An interest-only account cannot establish loan versus LOC ownership");
-    assert.equal(h.calls.length, 0);
+    await assert.rejects(h.main("payment"), /explicit interest allocation/); assert.equal(h.calls.length, 0);
 
     h = await harness("sent");
     h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.amount]: 10 }); h.bank();
@@ -292,7 +278,7 @@ async function main() {
         h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"], [P.amount]: amount, [P.invoices]: [link("federalBill"), link("stateBill")] }); h.bank();
         h.invoice("federalBill", { [I.amountToPay]: 60, [I.accounts]: [link("federal")] }); h.invoice("stateBill", { [I.amountToPay]: 40, [I.accounts]: [link("state")] });
         h.add(T.accounts, "federal", { [A.number]: "242.100" }); h.add(T.accounts, "state", { [A.number]: "242.200" });
-        assert.deepEqual(rows(await h.main("payment")), [23]);
+        assert.deepEqual(rows(await h.main("payment")), [23, 23]);
         assert.deepEqual(pairs(h), amount ? [["242.100", "112.100", "60.00"], ["242.200", "112.100", "40.00"]] : [], "Separate tax invoices use their own account shares; zero stays a no-op");
     }
 
@@ -319,7 +305,7 @@ async function main() {
         assert.equal(h.calls[0].body.eventType, "sent");
         assert.equal(h.calls[0].body.entryDate, "2026-10-01", "AP returns use Payment Date");
         assert.equal(h.calls[0].body.paymentAmount, amount.toFixed(2));
-        assert.deepEqual(pairs(h), amount ? [["112.100", "211.100", "100.00"]] : [], "AP returns post the current amount to the chart's Fifth Third account without looking up an original journal");
+        assert.deepEqual(pairs(h), amount ? [["112.100", "211.100", amount.toFixed(2)]] : [], "AP returns post the current amount to the chart's Fifth Third account without looking up an original journal");
         assert.deepEqual(h.reads.map(read => read.table), [T.payments], "An unlinked AP return needs no invoice/account records");
     }
 
@@ -353,7 +339,7 @@ async function main() {
     h.invoice("invoice", { [I.amountToPay]: -25, [I.application]: select("Cash Refund") }); h.bank();
     assert.deepEqual(rows(await h.main("payment")), [6]);
     assert.equal(h.calls[0].body.eventType, "sent", "The AP return checkbox never overrides AR routing");
-    assert.deepEqual(pairs(h), [["221.100", "112.100", "25.00"]]);
+    assert.deepEqual(pairs(h), [["221.100", "112.100", "-25.00"]]);
 
     h = await harness("sent"); h.payment({ [P.vendorType]: null, [P.invoices]: [] }); h.bank();
     assert.deepEqual(await h.main("payment"), []);
@@ -407,8 +393,8 @@ async function main() {
     matches = await h.main("payment");
     assert.deepEqual(rows(matches), [6]);
     assert.equal(h.calls[0].body.paymentAmount, "-25.00");
-    assert.equal(postings(h)[0].amount, "25.00");
-    assert.deepEqual(pairs(h), [["221.100", "112.100", "25.00"]]);
+    assert.equal(postings(h)[0].amount, "-25.00");
+    assert.deepEqual(pairs(h), [["221.100", "112.100", "-25.00"]]);
     assert.equal(postings(h)[0].clientRecordId, "client");
 
     // One payment may be a deposit for one invoice and a shipped receipt for another.
@@ -442,7 +428,7 @@ async function main() {
     }
 
     h = await harness("sent");
-    h.payment({ [P.method]: select("CC - Visa"), [P.invoices]: Array.from({ length: 101 }, (_, i) => link(`i${String(i).padStart(3, "0")}`)) }); h.bank();
+    h.payment({ [P.method]: select("CC - Visa"), [P.invoices]: Array.from({ length: 101 }, (_, i) => link(`i${String(i).padStart(3, "0")}`)) }); h.bank("bank", "231.100");
     for (let i = 0; i < 101; i++) h.invoice(`i${String(i).padStart(3, "0")}`, { [I.amountToPay]: 1 });
     assert.deepEqual(rows(await h.main("payment")), [9]);
     assert.equal(h.reads.filter(read => read.table === T.invoices).length, 2);
@@ -458,10 +444,7 @@ async function main() {
 
     // Every account-routed category keeps its original classification and computes its own component.
     for (const [vendorType, accountNumber, expectedRow] of [
-        ["AP - Staff", "005.101", 16],
-        ["AP - Expenses (Non-Sales Tax)", "232.100", 17],
         ["AR - Non-Product", "231.200", 18],
-        ["AP - Expenses (Non-Sales Tax)", "231.200", 19],
         ["AP - Expenses (Non-Sales Tax)", "316.100", 21],
         ["AR - Non-Product", "311.200", 22],
         ["AP - Expenses (Non-Sales Tax)", "242.100", 23],
@@ -512,10 +495,10 @@ async function main() {
     h.invoice("invoice", { [I.amountToPay]: -100, [I.application]: select("Credit to Another Order") }); h.bank();
     assert.deepEqual(rows(await h.main("payment")), [14]);
     assert.equal(h.calls[0].body.categories[0].ruleCode, "PAY-13");
-    assert.deepEqual(pairs(h), [["112.100", "211.100", "100.00"]]);
+    assert.deepEqual(pairs(h), [["112.100", "211.100", "-100.00"]]);
 
     h = await harness("sent");
-    h.payment({ [P.method]: select("CC - Visa") }); h.invoice(); h.bank();
+    h.payment({ [P.method]: select("CC - Visa") }); h.invoice(); h.bank("bank", "231.100");
     assert.deepEqual(rows(await h.main("payment")), [9]);
     assert.equal(h.calls[0].body.categories[0].ruleCode, "PAY-08");
     assert.deepEqual(pairs(h), [["211.100", "231.100", "100.00"]]);
@@ -543,6 +526,14 @@ async function main() {
     assert.deepEqual(rows(await h.main("payment")), [20]);
     assert.deepEqual(pairs(h), [["112.100", "0747", "100.00"]], "Transfers follow the chart Notes: payment bank debit, invoice bank credit");
 
+    for (const number of ["112.100", "0747", "112.200"]) {
+        h = await harness("sent");
+        h.payment({ [P.vendorType]: select("AP - Expenses (Non-Sales Tax)"), [P.vendorTypesAP]: ["AP - Expenses (Non-Sales Tax)"] });
+        h.bank("bank", number); h.invoice("invoice", { [I.accounts]: [link("bank")] });
+        assert.deepEqual(await h.main("payment"), [], "A transfer requires different payment and invoice bank accounts");
+        assert.equal(h.calls.length, 0);
+    }
+
     h = await harness("sent");
     h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Product"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Product"], [P.overpaid]: 0.5 }); h.invoice(); h.bank();
     assert.deepEqual(rows(await h.main("payment")), [2, 5]);
@@ -551,11 +542,11 @@ async function main() {
     assert.equal(roundingPosting.creditAccount.number, "121.100");
     assert.equal(roundingPosting.amount, "0.50");
 
-    for (const [overpaid, expected] of [[-0.01, null], [0, null], [0.004, null], [0.005, "0.01"], [0.01, "0.01"], [1, "1.00"], [4.99, "4.99"], [4.999, "5.00"], [5, null], [5.01, null]]) {
+    for (const [overpaid, expected] of [[-0.01, null], [0, null], [0.004, null], [0.005, "0.01"], [0.01, "0.01"], [1, "1.00"], [4.99, null], [4.999, null], [5, null], [5.01, null]]) {
         h = await harness("sent");
         h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Product"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Product"], [P.amount]: 100 + overpaid, [P.overpaid]: overpaid });
         h.invoice(); h.bank();
-        assert.deepEqual(rows(await h.main("payment")), overpaid > 0 && overpaid < 5 ? [2, 5] : [2], "Eligibility uses the raw field; only posted money is rounded to cents");
+        assert.deepEqual(rows(await h.main("payment")), overpaid > 0 && overpaid <= 1 ? [2, 5] : [2], "Eligibility uses the raw field; only posted money is rounded to cents");
         if (expected) assert.equal(h.calls[0].body.categories.find(category => category.ruleCode === "PAY-04").postings[0].amount, expected, "Only the excess is posted as rounding");
     }
 
@@ -577,12 +568,13 @@ async function main() {
     h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Refund/Credit"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Refund/Credit"], [P.amount]: -20, [P.overpaid]: 99 });
     h.invoice("invoice", { [I.amountToPay]: -20, [I.application]: select("Credit to Another Order") }); h.bank();
     assert.deepEqual(rows(await h.main("payment")), [4]);
-    assert.equal(postings(h)[0].amount, "20.00");
-    assert.deepEqual(pairs(h), [["112.100", "221.300", "20.00"]]);
+    assert.equal(postings(h)[0].amount, "-20.00");
+    assert.deepEqual(pairs(h), [["112.100", "221.300", "-20.00"]]);
 
     h = await harness("sent");
     h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Non-Product"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Non-Product"] });
-    h.invoice("invoice", { [I.amountToPay]: 200, fldde9LpRBshHfqCE: "Fully Paid", fldyTbRUtFof1IByi: 20, [I.lines]: [link("rebateOwnedByInvoiceAutomation")] }); h.bank();
+    h.add(T.accounts, "rebateAccount", { [A.number]: "004.011" });
+    h.invoice("invoice", { [I.accounts]: [link("rebateAccount")], [I.amountToPay]: 200, fldde9LpRBshHfqCE: "Fully Paid", fldyTbRUtFof1IByi: 20, [I.lines]: [link("rebateOwnedByInvoiceAutomation")] }); h.bank();
     assert.deepEqual(rows(await h.main("payment")), [28], "The consolidated Sent script handles full invoice rebates");
     assert.equal(h.calls.length, 1);
     assert.equal(h.calls[0].body.source.tableId, T.invoices);
@@ -605,7 +597,7 @@ async function main() {
     assert.equal(h.calls[0].body.entryDate, "2026-10-29", "Cancellation timestamps use the Chicago calendar day");
     assert.equal(h.calls[0].body.paymentAmount, "-75.00");
     assert.equal(h.calls[0].body.categories[0].ruleCode, "PAY-12");
-    assert.deepEqual(pairs(h), [["112.100", "211.100", "75.00"]], "AP cancellation is a new current-amount entry");
+    assert.deepEqual(pairs(h), [["112.100", "211.100", "-75.00"]], "AP cancellation is a new current-amount entry");
 
     h = await harness("events", { eventType: "cancelled" }); E = h.PAYMENT_FIELDS;
     h.payment({ [E.cancelled]: true, [E.cancelledDate]: "2026-10-29", [E.amount]: null });
@@ -638,7 +630,7 @@ async function main() {
     h.invoice("b", { [I.amountToPay]: 1, [I.firstShipDate]: "10/28/2026" });
     h.invoice("c", { [I.amountToPay]: 1, [I.firstShipDate]: "10/29/2026" });
     await h.main("payment", "cancelled");
-    assert.deepEqual(pairs(h), [["221.100", "112.100", "3.34"], ["121.100", "112.100", "3.33"], ["221.100", "112.100", "3.33"]], "Each cancelled invoice share uses its own shipment state while preserving every cent");
+    assert.deepEqual(pairs(h), [["221.100", "112.100", "3.34"], ["221.100", "112.100", "3.33"], ["121.100", "112.100", "3.33"]], "Each cancelled account has its own journal, preserving every invoice share and cent");
 
     h = await harness("events", { eventType: "cancelled" }); E = h.PAYMENT_FIELDS;
     h.payment({ [E.cancelled]: true, [E.cancelledDate]: "2026-10-29", [E.type]: select("AR"), [E.vendorType]: select("AR - Product"), [E.vendorTypesAP]: [], [E.vendorTypesAR]: ["AR - Product"] }); h.bank();
@@ -655,18 +647,18 @@ async function main() {
     h.payment({ [E.reconciled]: true, [E.discrepancy]: -2, [E.amount]: null, [E.reconciledDate]: "2026-10-29" });
     h.bank();
     assert.deepEqual(rows(await h.main("payment", "reconciled")), [27]);
-    assert.deepEqual(pairs(h), [["007.002", "112.100", "2.00"]]);
+    assert.deepEqual(pairs(h), [["007.002", "112.100", "-2.00"]]);
     assert.ok(h.reads.every(read => !read.fields.includes("fldT1UF3K2uO9mFjB")), "Reconciliation uses the discrepancy field instead of recalculating from Reconciled Amount");
 
     h = await harness("events", { eventType: "reconciled" }); E = h.PAYMENT_FIELDS;
     h.payment({ [E.type]: select("AR"), [E.vendorType]: select("AR - Product"), [E.vendorTypesAP]: [], [E.vendorTypesAR]: ["AR - Product"], [E.reconciled]: true, [E.discrepancy]: -2, [E.reconciledDate]: "2026-10-29" }); h.bank();
     await h.main("payment", "reconciled");
-    assert.deepEqual(pairs(h), [["007.002", "112.100", "2.00"]], "The chart pair is unchanged by AR/AP");
+    assert.deepEqual(pairs(h), [["007.002", "112.100", "-2.00"]], "The chart pair is unchanged by AR/AP");
 
     h = await harness("events", { eventType: "reconciled" }); E = h.PAYMENT_FIELDS;
     h.payment({ [E.reconciled]: true, [E.discrepancy]: -6, [E.reconciledDate]: "2026-10-29" }); h.bank();
     await h.main("payment", "reconciled");
-    assert.deepEqual(pairs(h), [["007.002", "112.100", "6.00"]], "Actual Triggers does not specify a suspense threshold");
+    assert.deepEqual(pairs(h), [["007.002", "112.100", "-6.00"]], "Actual Triggers does not specify a suspense threshold");
 
     h = await harness("events", { eventType: "reconciled" }); E = h.PAYMENT_FIELDS;
     h.payment({ [E.vendorType]: select("AP - Credit"), [E.vendorTypesAP]: ["AP - Credit"], [E.amount]: -100, [E.reconciled]: true, [E.discrepancy]: 2, [E.reconciledDate]: "2026-10-29" }); h.bank();
@@ -692,7 +684,7 @@ async function main() {
     assert.equal(h.calls[0].body.entryDate, "2025-01-03");
     assert.equal(h.calls[0].body.paymentAmount, "-75.00");
     assert.deepEqual(h.calls[0].body.categories.map(category => category.ruleCode), ["PAY-12"]);
-    assert.deepEqual(pairs(h), [["112.100", "211.100", "75.00"]]);
+    assert.deepEqual(pairs(h), [["112.100", "211.100", "-75.00"]]);
     assert.deepEqual(h.reads.map(read => read.table), [T.payments], "The native unlinked return posts its chart pair under Sent");
 
     h = await harness("events", { eventType: "cancelled" }); E = h.PAYMENT_FIELDS;
@@ -710,16 +702,29 @@ async function main() {
     assert.deepEqual(pairs(h), [["112.100", "211.100", "100.00"]], "A return restores bank and AP without an offsetting outgoing entry");
     h = await harness("sent"); h.payment({ [P.vendorType]: select("AP - Credit"), [P.vendorTypesAP]: ["AP - Credit"], [P.amount]: -100 });
     h.invoice("invoice", { [I.amountToPay]: -100 }); h.bank("bank", "0747"); await h.main("payment");
-    assert.deepEqual(pairs(h), [["112.100", "211.100", "100.00"]], "Row 14 debits the chart's Fifth Third account even when its filter allows Nickel");
+    assert.deepEqual(pairs(h), [["0747", "211.100", "-100.00"]], "Row 14 uses the selected bank and signed Payment.Amount");
 
-    for (const [vendorType, account, sheetRow] of [["AP - Staff", "005.101", 16], ["AR - Non-Product", "122.100", 24]]) {
+    for (const [vendorType, account, sheetRow] of [["AR - Non-Product", "122.100", 24]]) {
         h = await harness("sent"); const ar = vendorType.startsWith("AR");
         h.payment({ [P.amount]: 0, [P.type]: select(ar ? "AR" : "AP"), [P.vendorType]: select(vendorType), [P.vendorTypesAP]: ar ? [] : [vendorType], [P.vendorTypesAR]: ar ? [vendorType] : [] });
         h.invoice("invoice", { [I.accounts]: [link("purpose")] }); h.bank(); h.add(T.accounts, "purpose", { [A.number]: account });
         await assert.rejects(h.main("payment"), new RegExp(`Not yet implemented.*row ${sheetRow}`));
         assert.equal(h.calls.length, 0);
     }
-    assert.deepEqual([...coveredRows].sort((a, b) => a - b), [2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28]);
+    for (const remaining of [0, 0.01, 5, 5.001, -0.01]) {
+        h = await harness("sent"); h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Product"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Product"] }); h.bank();
+        h.invoice("invoice", { [I.amountToPay]: 200, [I.totalPaid]: 200 - remaining, [I.remaining]: remaining });
+        await h.main("payment");
+        const writeOff = h.calls.find(c => c.body.source?.recordId === "invoice");
+        assert.equal(Boolean(writeOff), remaining > 0 && remaining <= 5);
+        if (writeOff) assert.equal(writeOff.body.categories[0].postings[0].amount, remaining.toFixed(2));
+    }
+    h = await harness("sent"); h.payment({ [P.type]: select("AR"), [P.vendorType]: select("AR - Non-Product"), [P.vendorTypesAP]: [], [P.vendorTypesAR]: ["AR - Non-Product"], [P.amount]: 1 }); h.bank();
+    h.invoice("invoice", { [I.accounts]: [link("interestIncome")], [I.amount]: -12.34 }); h.add(T.accounts, "interestIncome", { [A.number]: "010.003" });
+    assert.deepEqual(rows(await h.main("payment")), [26]);
+    assert.equal(h.calls[0].body.source.recordId, "invoice");
+    assert.deepEqual(pairs(h), [["112.200", "010.003", "-12.34"]]);
+    assert.deepEqual([...coveredRows].sort((a, b) => a - b), [2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]);
     console.log("Passed: loan/LOC account conditions, separate-invoice allocations, explicit chart blockers, literal account pairs, raw thresholds, all-match Sent routing, native dates and webhook errors.");
 }
 

@@ -11,10 +11,27 @@ must be verified separately from source or migration history.
 | `accounts` | Code/name, type/subtype, normal balance, bank/postable/active flags and FIN account identity |
 | `journal_entries` | UUID, unique entry number, accounting date/period, status, description, rule, source identity, transaction/event metadata, optional notes/audit URL and posting timestamps |
 | `journal_lines` | Entry ID, ordered line number, account/offset code, debit/credit, notes/audit URL, vendor/customer/order/PO/invoice/employee/state references and nullable branch |
-| `accounting_periods` | Month/status and close metadata enforced by posting guards |
+| `accounting_periods` | Explicit Open/Closed months and close metadata |
+| `ledger_posting_requests` | Captured packets, review decisions, target/result journal IDs and link-repair state |
+| `ledger_period_history` | Append-only period/review actions and closing account-balance snapshots |
 | `ledger_rules`, `ledger_rule_lines` | Rule catalog and descriptive debit/credit mappings |
+
+The deployed ledger sync webhook uses `ledger_daily_runs` for a global unfinished-run check,
+renewable run leases and JSON checkpoints. Its migration was applied and recorded on DUAL ENTRY
+on 10 November 2026. It adds no
+database posting function, frontend grants or active schedule.
+
+Business references use text arrays: vendor_ref, customer_ref, order_ref, po_ref, invoice_ref,
+employee_ref and state_ref. The 7 November reference migration preserves prior single links as
+one-item arrays. Missing links use empty arrays. State record IDs are separate from state_code.
+The writer retains every supplied link; array order and duplicate IDs do not affect replay equality.
+No historical links previously omitted by the receiver are inferred or backfilled.
+
+Account active is a label; is_postable controls posting eligibility. App-user activation and
+authorization remain enforced independently. The account-active migration changes only the
+account label condition in the existing line guard; posted immutability and financial guards remain.
 | `account_selectors`, `account_selector_members` | Catalog account groupings |
-| `app_users` | Approved email, role and active application membership |
+| `app_users` | Approved email, role, active membership and `can_manage_periods` capability |
 
 Base tables use RLS. Reporting views use security-invoker semantics. Report requests run with the
 signed-in identity, never a service-role key. `accounts.active` is a descriptive flag;
@@ -24,16 +41,33 @@ signed-in identity, never a service-role key. `accounts.active` is a descriptive
 
 The generic `ledger-payment` Edge Function uses parameterized Postgres.js inside one transaction.
 It resolves account identities, locks the source, checks replay equality, inserts a draft header
-and lines, then posts the entry. Database guards enforce valid references, one positive monetary
+and lines, then posts the entry. Database guards enforce valid references, one nonzero monetary
 side per line, balance, posting periods and posted immutability.
+
+Whole-journal deletion is allowed by `20261109224024_allow_journal_entry_deletion.sql`.
+Delete the `journal_entries` row; its `journal_lines` are removed by the existing cascading
+foreign key. Posted-entry updates and direct posted-line updates/deletes remain blocked.
+
+The posting service uses this permission only for journals newly created by the failing call.
+A targeted Airtable read must first confirm none of those IDs was saved. A full three-field match
+is success; unreadable or partial outcomes are reported without assuming rollback. Compensation
+shares the source advisory lock and never deletes older or duplicate journal IDs. Daily processing
+reports source errors and continues; run-budget exhaustion still pauses for resume. There is no
+cross-system transaction, so interrupted or late-write outcomes can require manual reconciliation.
+An original with a linked reversal must have the reversal removed first, as required by the
+existing foreign key. This schema capability does not add automatic deletion to any webhook
+or clear Airtable metadata.
 
 Account lookup accepts account number or FIN record ID. FIN Nickel `0747` maps to ledger `112.300`;
 card clearing is `231.100`. Category calculations and amount splits remain in Airtable.
 Exact replay is a duplicate/no-op; a changed financial packet conflicts. Runtime secrets and the
 verified-TLS database connection stay in the Edge environment.
 
-`journal_lines.branch` is reserved for attribution; the writer leaves it unpopulated and reports
-have no branch filter. Names are labels; UUIDs, source references and entry/line identities are
+The writer stores nullable `journal_lines.branch`. The four financial reports filter this value
+through optional `p_branch` parameters on the trial-balance and ledger read functions. Consolidated
+includes all lines, including NULL and branches outside the named dropdown options. The account-entry migration adds `journal_entries.source_entry_key` to journal
+identity so one source/category can have separate account entries. Existing whole-category entries
+keep an empty key. Migration and receiver deployment are pending. Names are labels; UUIDs, source references and entry/line identities are
 used for lookup. Line money remains numeric in storage and is converted to checked integer cents
 for report calculations.
 
@@ -77,3 +111,13 @@ hosted schema/history before applying changes; see [baseline procedures](../docs
 
 Legacy create/post/reverse database functions remain in the schema. The generic Edge writer does
 not call them. Preserve their grants and guards unless removal is specifically authorized.
+
+## Signed journal amounts
+
+Invoice Entry preserves signed source amounts. `20261107000900_signed_journal_amounts.sql`
+removes the nonnegative line checks, retains one nonzero side per line, and updates ledger
+side/offset queries to use the populated column rather than its sign. The generic Edge writer
+stores equal signed debit/credit pairs on Airtable's stated accounts. Balance, closed-period,
+RLS and posted-entry immutability guards remain unchanged. Existing journals are not rewritten.
+
+Period review and request-scoped approvals are documented in [Period management](../docs/period-management.md). Period services remain in Edge code; database triggers enforce immutability, explicitly open periods and transaction-bound approval exceptions.

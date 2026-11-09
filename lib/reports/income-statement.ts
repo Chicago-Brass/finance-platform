@@ -1,9 +1,10 @@
+import { branchLabel, branchParam } from "./branch";
 import { todayChicago } from "../dates";
 import type { Report, ReportCheck, ReportLine } from "./types";
 import { accountGroup, amountLine, formatDate, monthEnd, monthStart, one, periodHeading, section, subtractAmounts, sumAmounts } from "./report-utils";
 import type { Period, Snapshot } from "./report-utils";
 
-export type IncomeStatementOptions = { year: number; from: number; to: number; grain: "month" | "quarter" | "year"; summary: boolean };
+export type IncomeStatementOptions = { branch?: string; year: number; from: number; to: number; grain: "month" | "quarter" | "year"; summary: boolean };
 
 export function parseIncomeStatementParams(sp: Record<string, string | string[] | undefined>, today = todayChicago()): IncomeStatementOptions {
   const year = Number(one(sp.year));
@@ -16,7 +17,7 @@ export function parseIncomeStatementParams(sp: Record<string, string | string[] 
   let to = month(one(sp.to), selectedYear === Number(today.slice(0, 4)) ? Number(today.slice(5, 7)) : 12);
   if (from > to) [from, to] = [to, from];
   const grain = one(sp.grain);
-  return { year: selectedYear, from, to, grain: grain === "quarter" || grain === "year" ? grain : "month", summary: one(sp.layout) === "summary" };
+  return { branch: branchParam(one(sp.branch)), year: selectedYear, from, to, grain: grain === "quarter" || grain === "year" ? grain : "month", summary: one(sp.layout) === "summary" };
 }
 
 export function incomeStatementPeriods(options: IncomeStatementOptions): Period[] {
@@ -75,7 +76,7 @@ export function getIncomeStatement(options: IncomeStatementOptions, snapshots: S
   const totalKey = includeTotal ? "total" : keys[0];
   if (sales.total[totalKey]) checks.push({ label: "Gross margin", ok: true, detail: `${(grossProfit[totalKey] / sales.total[totalKey] * 100).toFixed(1)}% for the selected period` });
   return {
-    title: options.summary ? "Income Statement (summary)" : "Income Statement", entity: "Chicago Brass Inc. - Consolidated",
+    title: options.summary ? "Income Statement (summary)" : "Income Statement", entity: `Chicago Brass Inc. - ${branchLabel(options.branch)}`,
     periodLabel: `${formatDate(snapshots[0].period.from)} to ${formatDate(snapshots[snapshots.length - 1].period.to)}`,
     basis: "Accrual basis - Posted ledger actuals",
     columns: snapshots.map(snapshot => ({ key: snapshot.period.key, label: periodHeading(snapshot.period.to, options.grain), sublabel: options.grain === "year" ? "Selected period" : String(options.year), kind: "amount" as const })).concat(includeTotal ? [{ key: "total", label: "Total", sublabel: "Selected period", kind: "amount" as const }] : []),

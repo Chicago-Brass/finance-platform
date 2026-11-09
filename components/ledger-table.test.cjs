@@ -229,7 +229,7 @@ test('Rapid account, side, offset and date changes merge into the newest request
   assert.equal(picker().props.side,'debit','an older account-only response cannot remove the pending side');
   picker().props.onChange({offset:'211.100'});fixture.render();
   assert.equal(fixture.params().account,'112.300');assert.equal(fixture.params().side,'debit');assert.equal(fixture.params().offset,'211.100');
-  assert.deepEqual(period().props.preserve,{account:'112.300',offset:'211.100',q:'vendor',side:'debit',type:undefined,category:undefined,min:undefined,max:undefined});
+  assert.deepEqual(period().props.preserve,{branch:undefined,account:'112.300',offset:'211.100',q:'vendor',side:'debit',type:undefined,category:undefined,min:undefined,max:undefined});
   period().props.onRangeChange({from:'2026-07-01',to:'2026-09-30'});fixture.render();
   assert.deepEqual(fixture.params(),{from:'2026-07-01',to:'2026-09-30',account:'112.300',offset:'211.100',q:'vendor',side:'debit',page:'1'});
   fixture.find(node=>node.type==='button'&&node.props.children==='Reset filters').props.onClick();fixture.render();

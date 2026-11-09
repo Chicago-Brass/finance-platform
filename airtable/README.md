@@ -1,30 +1,76 @@
 # FIN ledger automation scripts
 
+The reversal-only script `ledger-reversal.js` is published for Payments and Invoices.
+It stamps a blank manual Reverse Date once, calls the separate `ledger-reversal` endpoint and
+refreshes the original/reversal journal ID fields. Unchecking does nothing. All eight fields,
+both ON automations and the dedicated Supabase endpoint were verified on 9 November 2026.
+Live checks passed for two payments and one invoice: five test journals reversed, 14 lines
+preserved with debit/credit swapped, original journals unchanged and no duplicates on retry.
+See the [reversal setup and contract](../docs/ledger-reversal.md).
+
+Payments and Invoices also have a backfilled `Ledger Postings` JSON field containing
+`{rule, key, datetime, id}` objects. It supports category exclusion filters and is separate from
+the reversal ID arrays. The posting/reversal Edge services now maintain both formats and
+independently verify Airtable writeback using server secret `AIRTABLE_PAT`.
+This extension is deployed as `ledger-payment` v16 / `ledger-reversal` v5; the native scripts
+and triggers stay unchanged. The daily worker remains undeployed and unscheduled. See
+[posting metadata](../docs/ledger-reversal.md#posting-metadata) for field IDs and ownership.
+
 Native Airtable scripts use CORE / UTILS / HELPER sections. Category functions own their
 chart filters. Shared reads use FIN table/field IDs. HELPER only formats console output.
 The flow is read data, evaluate every category, prepare posting payloads, post, then log results.
 Sent prints its match summary before posting and logs each acknowledgement immediately, so a
 later request failure retains the journal IDs already acknowledged. It does not buffer responses.
 Both sources use postLedgerPayload for HTTP/authentication/error handling. The Sent source shares
-that sender between payment-owned and invoice-owned packets. Payment senders do not read invoice
-lines. Expense Create Entry reads matching invoice lines; accounts and amounts are finalized in CORE/UTILS.
+that sender between payment-owned and invoice-owned packets. Payment Sent reads invoice lines for staff, loan/LOC repayments and the pending discount category. Expense Create Entry reads matching invoice lines; accounts and amounts are finalized in CORE/UTILS.
 Invoice and source-credit reads explicitly select Invoice ID (fldMZyzqDidRujeZS), the primary
 field required for native record.name to supply the invoice label in descriptions and logs.
-Audit references use structured record ID fields and arrays only. The senders do not generate
-or send category/posting notes. Existing Supabase notes and receiver support remain unchanged;
+Payment and invoice audit references use structured record ID fields and arrays only. Those senders
+do not generate or send category/posting notes. Existing Supabase notes and receiver support remain unchanged;
 replaying an older entry that contains notes can conflict with the new notes-free payload.
+
+## Depreciation Created
+
+`depreciation-created.js` implements Category - Expenses row 11 / EXP-10 for a record-created
+event in FIN Depreciation Table (`tblC0dbO5UMXzHma9`). The sender and receiver are published. Creation posts immediately,
+preserving Date even when it is in the future; no scheduled-date filter is added.
+
+Target: [Expense - Depreciation Created](https://airtable.com/app0Q1UMEdUeWl538/wflncSEohUJfvRn8m/wacJduHfXZZAbR4uF?editorMode=configuration).
+The native record-created trigger, script inputs and existing secret were inspected before publication.
+
+| Mapping | Source / destination |
+| --- | --- |
+| Amount | Amount Depreciated (`fld58fd0YHB0YRxC1`) |
+| Date | Date (`fldQ299tE4wJB4SmH`), passed unchanged |
+| Debit | 009.101 Depreciation Expense |
+| Credit | 161.000 Accumulated Depreciation |
+| Notes | Associated Asset (`fldLXqVZ4TUaxq8kF`) names and record IDs |
+
+Inputs are `depreciationRecordId` from the trigger and the existing `ledgerWebhookUrl`;
+the secret remains `Dual Ledger Webhook Secret`. The source and audit link identify the
+depreciation record, with no payment or invoice identity. This category includes the
+requested asset note; prepaid use-up separately includes Prepay Log text. A zero amount sends a no-op; signed amounts are preserved. Missing or nonfinite amounts fail before posting.
+Run `node airtable/check-depreciation-created.cjs` for the native mock check.
+
+Current cross-automation review: [infrastructure audit](../docs/automation-infrastructure-audit.md).
 
 ## Deployed automation ownership
 
 | Automation | Source | Primary event | Categories |
 | --- | --- | --- | --- |
-| Payment Sent | payment-sent.js | Payments.Sent checked | PAY-01-05, PAY-07-13, PAY-15-24, PAY-27 |
+| Payment Sent | payment-sent.js | Payments.Sent checked | PAY-01-05, PAY-07-13, PAY-15-25, PAY-27 |
 | Payment Cancelled | payment-events.js | Payments.Cancel Payment checked | PAY-06 and PAY-12 |
 | Payment Reconciled | payment-events.js | Payments.Reconciled checked | PAY-26 |
-| Invoice Entry - Create Entry | invoice-entry.js | Invoices.Create Entry checked | INV-01/03/04/06/07/08/10; INV-09 blocked |
-| Invoice Entry - Invoice Created | invoice-created.js | FIN Invoices record created | INV-05 blocked |
-| Expense - Invoice Created | expense-created.js | FIN Invoices record created | EXP-03 prepaid expense |
-| Expense - Invoice Create Entry | expense-entry.js | Invoices.Create Entry checked | EXP-01/05/06/07/09/11/12/13; EXP-07, EXP-09 and EXP-11 currently post |
+| Invoice Entry - Create Entry | invoice-entry.js | Invoices.Create Entry checked | INV-01/03/04/06/07/08/09/10 |
+| Invoice Entry - Invoice Created | invoice-created.js | FIN Invoices record created | INV-05 |
+| Expense - Invoice Create Entry | expense-entry.js | Invoices.Create Entry checked | EXP-01/03/05/06/07/09/12/13; benefits excluded |
+| Invoice Full Paid | expense-fully-paid.js | Payment Invoice Status Fully Paid | EXP-02/11 |
+| Expense - Depreciation Created | depreciation-created.js | Depreciation Table record created | EXP-10 |
+| Expense - Pre-pay Amortization Created | prepay-created.js | Prepay Expenses Log record created | EXP-04 |
+
+Expense ownership was refreshed from the live automation editors on 7 November 2026.
+The old Expense - Invoice Created automation was deleted after moving prepaid bills to Create Entry.
+See the [Expense audit](../docs/expense-audit.md) for exact current mappings and test scope.
 
 The three payment automations and Invoice Created were observed ON on 4 November 2026.
 Expense - Invoice Create Entry was observed ON on 5 November 2026, with one saved script action. Payment Sent has one script action. The former Invoice
@@ -58,13 +104,13 @@ notes do not add filters, amount formulas, sign changes or suspense routing.
 - Every matching Sent category is evaluated. Row 8 requires Return Payment (AP) unchecked,
   so a returned vendor payment does not also post an outgoing bank payment. Other categories,
   including invoice-owned categories, retain their existing filters.
-- Row 5 qualifies from raw Overpaid Amount > 0 and < 5; it posts Dr 007.002 / Cr 121.100.
-- Vendor refunds debit Fifth Third 112.100, following the chart's account column.
-- Reconciliation uses discrepancy magnitude, Dr 007.002 / Cr payment bank. No AP/AR sign flip or
+- Row 5 uses 0 < Overpaid Amount <= 1 per payment, or 0 < Invoice Remaining Balance <= 5 once per invoice. The shortfall must reconcile to Amount To Pay minus Total Paid Amount. Both branches retain Dr 007.002 / Cr 121.100.
+- Vendor refunds debit the selected payment account and credit AP 211.100.
+- Reconciliation uses the signed discrepancy, Dr 007.002 / Cr payment bank. No AP/AR sign flip or
   undocumented $5 suspense threshold is applied.
 - Payments.Amount supplies the payment movement. Previously agreed invoice allocation uses Amount
-  To Pay and conserves cents. Native negative amounts become positive ledger magnitudes; account
-  columns determine direction. Money is rounded to cents only for posting.
+  To Pay and conserves signed cents. Negative source amounts remain negative on the chart-selected
+  sides. Staff and loan/LOC line amounts instead sum by source account before posting.
 - Vendor credits use full Credits Applied with distinct bill/source-credit invoice references.
   Card rebates use full Purchased Discounts & Rebate Total. They retain invoice-owned identities
   after consolidation, preventing a later payment from reposting the same invoice total.
@@ -77,27 +123,31 @@ filters match but their multiple-account split remains undefined:
 | Sheet row / code | Category | Missing definition |
 | --- | --- | --- |
 | 11 / PAY-10 | Early vendor discount | Amount source is Discount Lines Total; bank versus discount credit scope/split is unclear |
-| 16 / PAY-15 | Offshore/1099/owner staff | Salary versus fee amounts |
 | 24 / PAY-23 | Insurance payout | Bank versus recovery amounts; chart also marks account 122.100 unresolved |
 
-PAY-16 and PAY-18 debit the single account on each linked principal/interest invoice and credit
-the payment account. Their principal account (232.100 or 231.200) must be present on the payment's
-linked invoices to establish the category. Separate invoice amounts weight the shared payment;
-invoice-line amounts are not used. Multiple accounts on one qualifying invoice throw, including
-zero payments. Both principal types with shared interest also throw because its owner is ambiguous.
-An interest-only payment cannot establish either category. Accounts 232.200/232.300 are outside
-the official row mappings and are not silently treated as Auto Loan Payable.
+PAY-15 is working but partial: staff line accounts 005.101/005.003/005.001/005.002 debit
+241.100; payroll tax 005.006 debits 241.200; 401k 005.005 debits 241.400. Each credits the
+selected bank. Benefits and wire/FX fees are excluded pending their source/mapping.
 
-Invoice purpose allocation with multiple linked accounts also throws instead of inventing an
-invoice-line weighting formula. Single-account cases retain their chart-defined amount/account.
+PAY-16 and PAY-18 read invoice lines for principal 232.100 / 231.200 and interest 007.003.
+Staff and debt lines sum by source account into separate journals using entryKey, preserving
+every source line ID and each invoice/branch reference. Lines retain four-decimal precision
+until their grouped invoice/account subtotal rounds to cents. A partial payment currently posts
+the chart's full line totals, not an inferred percentage of them. Ambiguous shared interest fails.
+Other multi-account invoice-purpose splits remain blocked rather than inventing an allocation.
 
-Payroll PAY-14 (row 15) and Fidelity income PAY-25 (row 26) have no primary trigger/filter mapping.
-Their commented category stubs throw if called, but are not routed by guessed conditions.
+PAY-25 qualifies AR Non-Product invoices linked to Interest and Dividends 010.003. The signed
+Invoice Amount posts once per invoice, debit Fidelity 112.200 and credit 010.003, on Payment Date.
+PAY-14 payroll remains deferred and is not routed by guessed conditions.
+
+The Payment workbook proposes daily 11 PM America/Chicago with the existing event checkboxes
+inside Filters. That schedule is documentation only; native payment triggers remain unchanged.
+See [Payment audit](../docs/payment-category-audit.md) for the current scope and remaining issues.
 
 ## Posting and validation
 
 One consolidated Sent run prepares every category before the first webhook. It then sends one
-payment-owned packet, followed by invoice-owned packets for vendor-credit/rebate totals. Reads and
+payment-owned packet, followed by invoice-owned packets for shortfalls, credits, interest and rebates. Reads and
 helpers are shared; there is no second automation or second script action for invoice totals.
 
 A blocked category throws before this run posts anything. A later network/receiver failure can
@@ -113,61 +163,76 @@ their audit links open the source invoice. Invoice ownership and invoice referen
 
 ## Invoice Entry - Create Entry / Invoice Created
 
-The 4 November chart update moves worksheet rows 2/4/5/7/8/9/10/11 to
-Invoices.Create Entry checked. Automation wflGhhBFp5RFocKAC / wacOwcm9tAerUy2NA
-uses invoice-entry.js, invoiceRecordId from the trigger, ledgerWebhookUrl and the
-existing Dual Ledger Webhook Secret. It sends invoice-owned entry_requested events.
+The 7 November chart review retains existing native automation triggers. Create Entry owns
+rows 2/4/5/7/8/9/10/11 in `invoice-entry.js`; Invoice Created retains row 6 in
+`invoice-created.js`. The workbook proposes daily 11 PM America/Chicago processing, but
+that schedule and the per-category posted-invoice selector are deferred. No daily sweep runs.
 
-Rows 2 and 4 use Total Received Not Yet Invoiced (fldUFz9w6y184Sn7h) > 0 / = 0.
-They post Invoice Amount, Dr 211.200 / Cr 211.100 or Dr 132.100 / Cr 211.100.
-A blank rollup does not qualify as numeric zero. Row 5 retains its official broad AP Product
-filter and can match alongside row 2 or 4. No freight-only condition is inferred.
-Rows 5/7/8/9/11 retain their previous amounts/accounts; credits use ABS(Invoice Amount).
-Invoice Date supplies every entry date. Row 10 still throws until its credit-account
-selection is resolved. Rows 3 and 12 remain unmapped.
+| Row | Qualifying condition after AP/AR and vendor type | Amount | Debit / credit |
+| --- | --- | --- | --- |
+| 2 | AP Product, Total Received Not Yet Invoiced > 0 | Invoice Amount | 211.200 / 211.100 |
+| 4 | AP Product, Related Purchase Order Status = Confirmed, Latest Purchase Order Received Date empty | Invoice Amount | 132.100 / 211.100 |
+| 5 | AP Product | Freight | 131.100 / 211.100 |
+| 6 | AP non-sales-tax expense, linked account 004.013 | Invoice Amount | 004.013 / 211.100 |
+| 7 | AP sales-tax expense | Invoice Amount | 212.100 / 211.100 |
+| 8 | AP Assets | Invoice Amount | 143.300 / 211.100 |
+| 9 | AP Credit, Related Purchase Order present | Invoice Amount | 211.100 / 131.400 |
+| 10 | AP Credit, Related Purchase Order empty | Invoice Amount | 211.100 / 004.010 |
+| 11 | AR Non-Product, linked account 010.001 | Invoice Amount | 121.100 / 010.001 |
 
-invoice-created.js retains only row 6, which throws pending the freight-cost source.
-All migrated handlers were removed from its CORE and main. Both scripts retain native
-FIN field-ID reads and the same CORE / UTILS / HELPER infrastructure. No notes or
-Airtable record writes are added. No webhook occurs if a matching blocker throws.
+The two new PO fields are native invoice rollups from Related Purchase Order. Use their field
+IDs rather than a guessed legacy PO alias. Row 6 uses only the AP expense/account filters, without any vendor-name restriction.
+The chart row remains yellow for user review; its current mapping is implemented.
+Rows 3 and 12 remain deferred. All applicable handlers run; the chart's broad product/freight
+matches are retained. Invoice Date supplies the date and Invoices.Branch supplies nullable branch.
 
-Existing source/rule journal identity is preserved. Re-requesting an INV rule already
-posted under created can conflict on its event metadata; journals are not rewritten.
-The focused check covers both scripts with mocked fetches and no live financial writes.
+Amounts retain their source sign, including AP credits. No category-level ABS or account-side
+swap is used. The generic Edge writer and signed-journal migration retain equal signed debit and
+credit values on the supplied accounts. Zero is a no-op; missing/invalid amounts still fail.
+No notes or Airtable record writes are added. The same source/rule replay identity remains;
+changed financial data conflicts rather than rewriting a posted journal.
 
-## Expense Create Entry - 4 November 2026
+Run `node airtable/check-invoice-created.cjs` for both senders. Its fetches are mocked; the database
+posting and report-read runners verify signed pairs and account-side filters in disposable databases.
 
-Only the Create Entry group from the current Category - Expenses sheet is installed in this phase.
-The separate Fully Paid card-expense path remains deferred. Prepaid creation is now handled by expense-created.js.
-All entries use Invoice Date, including chart dates marked PENDING. Existing payment and invoice
-creation sources were read from their browser editors and matched the local files without replacement.
+## Expense automation implementation
 
-| Expense row / rule | Behavior |
-| --- | --- |
-| 2 / EXP-01 | Blocks: operating-account eligibility is PENDING |
-| 6 / EXP-05 | Blocks: ledger account 005.102 is missing in Supabase |
-| 7 / EXP-06 | Blocks: 241.600 payroll component/amount is undefined |
-| 8 / EXP-07 | Each matching 005.101/005.003/005.001 Line Amount debits its account and credits 241.100 |
-| 10 / EXP-09 | Each matching 005.201 Line Amount debits 005.201 and credits 241.300 |
-| 12 / EXP-11 | Full Invoice Amount debits 007.002 and credits the bank on linked payments: FIN 112.100 -> ledger 112.100; FIN 0747 -> ledger 112.300 |
-| 13 / EXP-12 | Blocks: the chart's missing FIN 121.900 clarification remains unresolved |
-| 14 / EXP-13 | Blocks: the chart's missing FIN 011.001/011.002 clarification remains unresolved; a two-account invoice has no defined split |
+`expense-entry.js` handles Create Entry categories. `expense-fully-paid.js` handles EXP-02 card
+expenses and EXP-11 bank fees, using the existing invoice event `paid`. Both native inputs are
+invoiceRecordId and ledgerWebhookUrl with the standard Dual Ledger Webhook Secret.
 
-The eight CORE handlers own their filters. UTILS caches native invoice-line/account reads, batches
-linked IDs, calculates integer cents and posts one packet. HELPER formats logs only. Each qualifying
-line links one account and belongs only to the triggering invoice; no whole-line amount is duplicated
-across accounts or invoices. Offshore payroll and bonus categories can post together atomically.
-Any matching blocker throws before the first webhook, even after an earlier category was prepared.
+Utilities is 006.002 only. Prepaid bills moved to Create Entry. Tech Allowance uses Branch Employee;
+other invoice categories use Branch. Bank fees moved out of Create Entry to Fully Paid.
+The chart's AP expense spellings normalize to the live choice AP - Expenses (Non-Sales Tax), and
+Credit Card Clearing is the live FIN account 231.100. Card expenses check the linked payment
+account, not its Method. Bank fees require one consistent supported bank across linked payments:
+FIN 112.100 -> ledger 112.100; FIN 0747 -> ledger 112.300.
 
-The entry_requested invoice event is independent from created, so the same invoice can have both
-events without confusing category-set replay checks. Existing EXP rule codes are used. No schema,
-catalog or Airtable financial-record changes were made. Source line IDs and invoice/vendor/staff/
-transaction/PO refs are passed without generated notes. Zero lines are no-ops; missing, negative or
-nonfinite amounts fail. There is no automatic retry or live posting test in this phase.
+CORE category functions own filters, UTILS caches reads/calculates/posts, HELPER formats logs.
+All matching categories prepare before a single POST. Invoice Amount mappings remain one-to-one;
+line amounts sum at four-decimal precision by invoice/account, round each subtotal to cents,
+and produce a separate journal per account. All contributing line
+IDs persist in airtable_record_ids. Missing/mixed account amounts never get an invented split.
 
-Local checks cover filters, amounts, shared reads, blockers, no partial posting, date conversion,
-source ownership, large linked-record batches and HTTP failures. The disposable database check covers
-created plus entry_requested on one invoice, concurrent delivery, exact retries and changed-payload conflicts.
+W2 payroll posts salary 005.002 -> 241.100, payroll tax 005.006 -> 241.200 and 401k 005.005 ->
+241.400, one journal per debit account with same-account lines summed. Employee benefits
+241.600 are excluded for now, so the chart remains Partially implemented. PTO stays deferred.
+Zero amounts are no-ops; signed amounts are preserved. Missing and nonfinite amounts fail. No live Test action or
+historical financial record was retriggered for this update.
+
+## Prepay Expenses Log Created
+
+`prepay-created.js` uses prepayLogRecordId from the record-created trigger and the standard URL/secret.
+Amount Deducted / Applied Date post Dr 007.011 / Cr 135.000; Notes is Prepay Log. The log owns the
+journal and audit link. Linked invoice IDs are references, with every linked invoice retained in the invoice_ref array. Branch comes from linked Invoices.Branch; empty or mixed stays NULL.
+No Monthly Amortization recalculation, schedule condition or additional checkbox filter is inferred.
+
+## Receiver deployment dependency
+
+Migration 20261106191953 adds source_entry_key and aggregated source-line refs. It was applied before
+receiver publication. The published receiver accepts depreciationRecordId and prepayLogRecordId for
+created events, and retains paid for invoice Fully Paid. Existing journals remain immutable; changed
+event/grouping/branch packets can conflict and need review. See the webhook contract.
 
 ## Checks
 
@@ -176,40 +241,9 @@ node airtable/check.cjs
 node airtable/check-invoice-settlement.cjs
 node airtable/check-invoice-created.cjs
 node airtable/check-expense-entry.cjs
-node airtable/check-expense-created.cjs
+node airtable/check-expense-fully-paid.cjs
+node airtable/check-depreciation-created.cjs
+node airtable/check-prepay-created.cjs
 ```
 
-The second check now exercises invoice categories inside payment-sent.js. It does not correspond
-to a separate deployed sender. Fetch is mocked; fixture/account snapshots are local. No live
-payment was toggled or retriggered during this cutover.
-
-## Expense Invoice Created - 4 November 2026
-
-Expense | Invoice Created is ON with one script action, expense-created.js. The input invoiceRecordId
-is the native trigger record ID, with the standard ledgerWebhookUrl and existing Dual Ledger Webhook
-Secret. The native event remains record creation in FIN Invoices; the CORE handler requires AP,
-AP - Expenses (Non-Sales Tax), and Mark as Prepaid Expense? checked.
-
-Category - Expenses row 4 / EXP-03 posts the full Invoice Amount, Dr 135.000 / Cr 211.100, on Invoice
-Date. Fixed ledger account numbers need no FIN account link. Both ledger accounts and the EXP-03 rule
-exist. Zero amounts produce no monetary posting; negative or missing amounts fail. Structured invoice
-and related-record refs are sent without notes. Existing created-event idempotency is reused.
-
-Six focused mocked behavior checks passed. Saved browser source was compared with local source;
-inputs, attached secret and ON state were verified. No live invoice or ledger test was created.
-The separate Invoice Entry row 6 AP-expense handler remains blocked on its freight source; it can also
-match a prepaid invoice but is outside this installation's scope.
-
-## Bank fees - 5 November 2026
-
-Expense row 12 / EXP-11 now reads Invoices.Linked Payments and each payment's Account to Pay/Receive
-on demand. Each payment must identify one supported bank, and all linked payments must use the same
-bank. It posts the full Invoice Amount once on Invoice Date, debit 007.002 and credit 112.100 for
-Fifth Third or 112.300 for FIN Nickel code 0747. Payment amounts do not allocate or multiply the fee;
-Sent is not an extra filter. Missing, unsupported or mixed banks fail before the webhook.
-
-The generic operating-expense placeholder skips a row 12 match so an otherwise valid AP expense
-bank-fee invoice can post. Other unresolved categories keep their existing fail-before-post behavior.
-The invoice remains the journal owner/audit source; linked payment IDs travel as structured refs.
-Nineteen focused native mocked checks passed. Saved source, unchanged inputs/secret and ON state
-were read back after publishing. No live invoice checkbox or posting test was run.
+Native fetches are mocked. Receiver posting checks use the disposable local database only.

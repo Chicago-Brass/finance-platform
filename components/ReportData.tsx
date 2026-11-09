@@ -75,5 +75,6 @@ export function useReportQuery<T>(url: string | null): ReportQuery<T> {
   return { data, pending: url !== null && data === undefined && !error, error, retry };
 }
 
+export function useReportRevision() { return useData().revision; }
 export function useReportRefresh() { return useData().refresh; }
 export function useReportFetching() { return useData().fetching; }

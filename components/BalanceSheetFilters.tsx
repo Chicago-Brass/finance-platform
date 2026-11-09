@@ -9,7 +9,7 @@ import { CalendarMark } from "./ReportViewControls";
 import { FilterField } from "./FilterControls";
 
 export function BalanceSheetFilters({ options }: { options: BalanceSheetOptions }) {
-  const params = { asof: options.asOf, grain: options.grain, layout: options.summary ? "summary" : "detail" };
+  const params = { ...(options.branch ? { branch: options.branch } : {}), asof: options.asOf, grain: options.grain, layout: options.summary ? "summary" : "detail" };
   const presets = balanceDatePresets();
   return <FilterField label="As of" className="statement-period-controls">
     <DismissibleMenu className="period-picker" key={options.asOf}>
@@ -19,6 +19,7 @@ export function BalanceSheetFilters({ options }: { options: BalanceSheetOptions 
         <ReportForm aria-label="Custom Balance Sheet date">
           <FilterField label="As of date" htmlFor="b-asof"><input id="b-asof" name="asof" type="date" min="1900-01-01" defaultValue={options.asOf} required /></FilterField>
           <input type="hidden" name="grain" value={options.grain} /><input type="hidden" name="layout" value={params.layout} />
+          {options.branch && <input type="hidden" name="branch" value={options.branch} />}
           <button className="btn btn-primary" type="submit">Apply date</button>
         </ReportForm>
       </div>

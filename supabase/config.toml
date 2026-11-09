@@ -2,3 +2,12 @@ project_id = "finance-platform"
 
 [functions.ledger-payment]
 verify_jwt = false # The function authenticates Airtable's x-ledger-secret.
+
+[functions.ledger-reversal]
+verify_jwt = false # Dedicated endpoint using the same x-ledger-secret authentication.
+
+[functions.ledger-daily]
+verify_jwt = false # Authenticated by the existing ledger secret. No cron is enabled.
+
+[functions.ledger-periods]
+verify_jwt = true # User JWT plus live app_users.can_manage_periods, never the webhook secret.

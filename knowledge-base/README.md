@@ -11,7 +11,11 @@ pipeline. These guides describe the repository, data contracts and operating pro
 | [Design patterns](design-patterns.md) | Accounting invariants, layer responsibilities and coding conventions |
 | [Database](database.md) | Tables, read interfaces, writer, security and migrations |
 | [Airtable triggers](airtable-triggers.md) | Automation editors, script ownership, mappings and unresolved categories |
+| [Period management](../docs/period-management.md) | Closing, review queue, permissions, exceptions and audit history |
 | [Testing](testing.md) | Local checks, browser review and release verification |
+| [Ledger sync webhook](../supabase/functions/ledger-daily/README.md) | Deployed webhook for all three category sheets, global lock, checkpoints and writeback; external scheduler not activated |
+
+The full category/query/field mapping is in the [ledger sync plan](../docs/ledger-sync-plan.md).
 
 ## Source of truth
 
@@ -22,6 +26,8 @@ pipeline. These guides describe the repository, data contracts and operating pro
 - [Airtable source reference](../airtable/README.md), [webhook contract](../docs/ledger-webhook-contract.md),
   [report mappings](../docs/ledger-reporting.md), [database baseline](../docs/database-baseline.md)
   and [Edge function](../supabase/functions/ledger-payment/README.md) hold detailed contracts.
+- [Infrastructure audit](../docs/automation-infrastructure-audit.md) records the cross-automation
+  review, working partial categories and unresolved accounting questions.
 - [Ledger status](../docs/ledger-current-status.md) contains dated operational evidence. Re-read
   live state before treating any status observation as current.
 

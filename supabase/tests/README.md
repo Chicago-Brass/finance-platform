@@ -1,5 +1,19 @@
 # Direct Edge payment posting checks
 
+The runner also executes `reverse-airtable-ledger.test.mjs` for the locally prepared dedicated
+`ledger-reversal` endpoint. Its seven database tests cover multi-journal and signed reversal,
+preserved metadata, concurrent retries, payment/invoice ownership, incomplete cached ID lists,
+dates, closed periods, nonreversible rules and rollback after a later failure. The legacy
+reversal database function is removed before these tests run. No hosted journals are touched.
+
+Reversal setup and native mock checks: [reversal guide](../../docs/ledger-reversal.md).
+
+The runner also executes `daily-payment-worker.test.mjs`: new categories on an existing source,
+strict existing-journal replay, UTC journal metadata, bulk preflight, exclusive run leases,
+checkpoint recovery and private backend-only checkpoint access. The daily worker is not deployed
+or scheduled. Its API/reader/runner and native-calculation parity checks are documented in the
+[worker README](../functions/ledger-daily/README.md).
+
 Run from the repository root:
 
 ```sh
@@ -11,9 +25,10 @@ The runner creates a disposable PostgreSQL 17 container using the pinned Supabas
 The runner loads `fixtures/supabase-platform.sql` for Supabase-managed auth dependencies, the actual
 `initial_ledger` migration, and `supabase/seed.sql` for reference accounts/rules. It then removes the
 legacy journal-creation/reversal RPCs, so those functions cannot write on behalf of the Edge code.
+Before removing them, a rolled-back SQL fixture verifies their reference-array preservation.
 Existing table constraints and trigger guards remain active. Tests call the Edge `postPayment()`
 TypeScript function using a real Postgres.js connection. No new stored posting or mapping function
-is loaded. The 26 posting tests therefore verify the schema that a fresh installation actually uses.
+is loaded. The posting tests therefore verify the schema that a fresh installation actually uses.
 
 The checks pass explicit Airtable-selected debit/credit pairs for 21 category fixtures and prove that an unfamiliar free-text transaction type and arbitrary valid account pair can be posted without a new PAY mapping. They also cover actual cancellation/return categories without an original journal, exact money/date validation, zero pairs, account identity resolution, split allocations, unchanged and changed retries, whole-event category-set conflicts, zero-after-post conflicts, closed periods, all-category rollback and concurrent retries. Synthetic journals exist only in the disposable database, which is removed on exit.
 
@@ -23,8 +38,10 @@ equality; retries retain the originally saved URL. A cancellation replayed as a 
 even when its date, transaction wording and lines are unchanged. Source event type also scopes the
 complete category set. A header payment-name rename alone returns the original journal without
 changing its static description. The receiver retains notes support, while Airtable does not send
-notes. Branch values remain payload context. The nullable journal_lines.branch field exists but is
-not populated while branch reporting is deferred.
+notes. Supplied branches persist as nullable line values and participate in replay equality.
+Account-keyed expense tests cover separate journals under one category, same-account source lines,
+concurrent deduplication, missing/changed components, legacy whole-category conflicts, malformed
+keys/branches and atomic rollback. New account fixtures verify FIN IDs and report classifications.
 
 Invoice-source tests cover a discount alongside the triggering payment's cash settlement, exact
 replay, replay through a different triggering payment, strict changed-discount/date/line conflicts,
@@ -40,7 +57,9 @@ delivery. Catalog rows come from the reference seed; hosted catalog/account data
 
 Vendor-credit application tests use Dr AP / Cr AP with separate bill and credit-memo invoice
 references and payment-targeted audit URLs. They verify payment, bill or credit ownership, strict changed-leg replay
-conflicts, rejection of an unrelated invoice source and preservation of legacy shared references.
+conflicts, rejection of an unrelated invoice source and preservation of legacy shared references. All business references, including states, persist as
+arrays. Tests cover multi-reference replay, inactive account labels, non-postable rejection and
+unknown branch attribution. The posting suite has 35 tests.
 One complete invoice packet also posts PAY-10 and PAY-11 together, rolls back both for invalid
 data, deduplicates them together across payment triggers and rejects an incomplete replay.
 
@@ -64,3 +83,23 @@ and exclude drafts, that invalid batches fail with SQLSTATE 22023, that `anon` c
 and that it runs as SECURITY INVOKER under the caller's real allowlist policies. It also checks all
 nine tables have RLS, six views are security invoker, and new tables/functions are not accessible
 to anon/authenticated by default. There are five report/security tests.
+
+Signed-amount regression checks preserve negative invoice pairs without swapping accounts, verify
+exact replay and changed-sign conflicts, and check ledger side filters, offsets, counts and trial
+balance totals. Every test journal remains inside the disposable local database.
+# Native posting/reversal metadata writeback
+
+`journal-deletion.test.mjs` verifies whole-journal deletion with cascading lines, preservation of
+unrelated journals, posted edit/direct-line protection, reversal references and anonymous access.
+It runs only in the same disposable local database; no hosted financial records are deleted.
+
+`ledger-writeback.test.mjs` runs through the disposable `check-payment-posting.sh` runner. It
+uses real local journal transactions with a mocked Airtable transport: payment/invoice ownership,
+multiple account journals, UTC posting metadata, complete cross-event links, readback verification,
+writeback failure/retry, reversal retry and source-lock serialization. It makes no live Airtable writes.
+
+The writeback suite injects lost PATCH responses both before and after save, confirmed rejections,
+partial metadata saves, unreadable verification and failed compensating deletes. It checks that
+only new journals/lines are removed and that prior journals survive. Runner checks include a
+failure on source 10 of 100, continued processing, correct counts and later normal-run eligibility.
+All financial writes in these checks use disposable local PostgreSQL and synthetic Airtable mocks.

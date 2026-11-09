@@ -27,9 +27,9 @@ export async function getLedgerAccounts(): Promise<LedgerAccountOption[]> {
   });
 }
 
-export async function getTrialBalance(asOf: string, from: string | null) {
+export async function getTrialBalance(asOf: string, from: string | null, branch?: string) {
   return ledgerRead(async supabase => {
-    const { data, error } = await supabase.rpc("get_trial_balance", { p_as_of: asOf, p_from: from });
+    const { data, error } = await supabase.rpc("get_trial_balance", { p_as_of: asOf, p_from: from, p_branch: branch ?? null });
     if (error) throw new Error(`Trial balance query failed: ${error.message}`);
     return (data ?? []) as TbRow[];
   });
@@ -41,10 +41,10 @@ export type TrialBalanceRequest = { asOf: string; from: string | null };
  * Several trial balances in one round trip (public.get_trial_balances), in request order. Each set
  * equals getTrialBalance(asOf, from): the database function calls get_trial_balance for every pair.
  */
-export async function getTrialBalances(requests: TrialBalanceRequest[]): Promise<TbRow[][]> {
+export async function getTrialBalances(requests: TrialBalanceRequest[], branch?: string): Promise<TbRow[][]> {
   if (requests.length === 0) return [];
   return ledgerRead(async supabase => {
-    const { data, error } = await supabase.rpc("get_trial_balances", { p_as_of: requests.map(item => item.asOf), p_from: requests.map(item => item.from) });
+    const { data, error } = await supabase.rpc("get_trial_balances", { p_as_of: requests.map(item => item.asOf), p_from: requests.map(item => item.from), p_branch: branch ?? null });
     if (error) throw new Error(`Trial balances query failed: ${error.message}`);
     const rows = (data ?? []) as { period_index: number; accounts: TbRow[] }[];
     if (rows.length !== requests.length || rows.some((row, index) => row.period_index !== index + 1)) throw new Error("Trial balances query returned unexpected periods.");
@@ -52,9 +52,10 @@ export async function getTrialBalances(requests: TrialBalanceRequest[]): Promise
   });
 }
 
-export async function countPostedEntries(asOf: string, from: string | null) {
+export async function countPostedEntries(asOf: string, from: string | null, branch?: string) {
   return ledgerRead(async supabase => {
-    let q = supabase.from("v_journal_entries").select("id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
+    let q = supabase.from("journal_entries").select(branch ? "id,journal_lines!inner(branch)" : "id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
+    if (branch) q = q.eq("journal_lines.branch", branch);
     if (from) q = q.gte("entry_date", from);
     const { count, error } = await q;
     if (error) throw new Error(`Posted entry count failed: ${error.message}`);
@@ -82,11 +83,11 @@ export const LEDGER_PAGE_SIZE = 100;
 const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no";
 
 export type LedgerSide = "all" | "debit" | "credit";
-export type LedgerAccountFilters = { account?: string; offset?: string; query?: string; side?: LedgerSide; accountType?: TbRow["account_type"]; category?: string; min?: number; max?: number };
+export type LedgerAccountFilters = { branch?: string; account?: string; offset?: string; query?: string; side?: LedgerSide; accountType?: TbRow["account_type"]; category?: string; min?: number; max?: number };
 
 function ledgerFilterArgs(from: string, to: string, filters: LedgerAccountFilters) {
   return {
-    p_from: from, p_to: to, p_query: filters.query?.trim().slice(0, 200) || "",
+    p_branch: filters.branch ?? null, p_from: from, p_to: to, p_query: filters.query?.trim().slice(0, 200) || "",
     p_account: filters.account ?? null, p_offset: filters.offset ?? null,
     p_side: filters.side === "debit" || filters.side === "credit" ? filters.side : "all",
     p_account_type: filters.accountType ?? null, p_category: filters.category ?? null,

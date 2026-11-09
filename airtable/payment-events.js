@@ -6,6 +6,7 @@
 // Each category checks its filters, then handles and logs a match.
 
 async function handleClientPaymentCancelled(data, results) {
+    // Partial implementation - functioning: current cancellation entry works; the new cancellation/deletion workflow is deferred.
     const { payment, eventType, invoiceType, vendorType } = data;
     if (
         eventType !== "cancelled" ||
@@ -14,7 +15,7 @@ async function handleClientPaymentCancelled(data, results) {
         vendorType !== "AR - Product"
     ) return;
 
-    const cents = Math.abs(moneyCents(payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount"));
+    const cents = moneyCents(payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount");
     const postings = [];
     const invoiceDetails = [];
     if (cents) {
@@ -39,18 +40,23 @@ async function handleClientPaymentCancelled(data, results) {
         }
     }
 
-    results.push({
-        category: "Client payment voided / bounced", tChartRow: 7, postings,
-        invoices: invoiceDetails,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.cancelled, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.date, PAYMENT_FIELDS.amount]),
-    });
+    const accounts = [...new Set(postings.map(posting => posting.debitAccount.number))];
+    for (const entryKey of accounts.length ? accounts : [""]) {
+        results.push({
+            category: "Client payment voided / bounced", tChartRow: 7, entryKey,
+            postings: postings.filter(posting => posting.debitAccount.number === entryKey),
+            invoices: invoiceDetails.filter(invoice => invoice.account === entryKey),
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.cancelled, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.date, PAYMENT_FIELDS.amount]),
+        });
+    }
 }
 
 async function handleVendorPaymentCancelled(data, results) {
+    // Partial implementation - functioning: current cancellation entry works; the new cancellation/deletion workflow is deferred.
     const { payment, eventType, invoiceType } = data;
     if (eventType !== "cancelled" || !payment.getCellValue(PAYMENT_FIELDS.cancelled) || invoiceType !== "AP") return;
 
-    const cents = Math.abs(moneyCents(payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount"));
+    const cents = moneyCents(payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount");
 
     results.push({
         category: "Vendor payment cancelled / returned", tChartRow: 13,
@@ -67,7 +73,7 @@ async function handleBankReconciliationDifference(data, results) {
         (payment.getCellValue(PAYMENT_FIELDS.discrepancy) || 0) === 0
     ) return;
 
-    const amount = Math.abs(moneyCents(payment.getCellValue(PAYMENT_FIELDS.discrepancy), "Reconciled Amount Discrepancy"));
+    const amount = moneyCents(payment.getCellValue(PAYMENT_FIELDS.discrepancy), "Reconciled Amount Discrepancy");
     const bank = amount ? await loadPaymentAccount(data) : null;
     results.push({
         category: "Bank reconciliation rounding difference", tChartRow: 27,
@@ -149,8 +155,8 @@ async function main(paymentRecordId, eventType) {
     await handleVendorPaymentCancelled(data, results);
     await handleBankReconciliationDifference(data, results);
 
-    const postingResponse = await pushWebhook(data, results, eventType);
     printResults(results, data, eventType, results.length ? "" : getNoMatchReason(data));
+    const postingResponse = await pushWebhook(data, results, eventType);
     if (postingResponse) printPostingResponse(postingResponse);
     return results;
 }
@@ -175,13 +181,14 @@ function invoiceShares(totalCents, invoices) {
     const parts = ordered.map(weight => {
         const product = totalCents * weight.cents;
         if (!Number.isSafeInteger(product)) throw new Error("Allocation exceeds safe cent precision.");
-        return { id: weight.id, cents: Math.floor(product / sum), remainder: product % sum };
+        return { id: weight.id, cents: Math.trunc(product / sum), remainder: product % sum };
     });
+    const direction = Math.sign(totalCents);
     let remainder = totalCents - parts.reduce((total, part) => total + part.cents, 0);
-    for (const part of [...parts].sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id))) {
+    for (const part of [...parts].sort((a, b) => direction * (b.remainder - a.remainder) || a.id.localeCompare(b.id))) {
         if (!remainder) break;
-        part.cents++;
-        remainder--;
+        part.cents += direction;
+        remainder -= direction;
     }
     return new Map(parts.map(part => [part.id, part.cents]));
 }
@@ -232,7 +239,7 @@ async function pushWebhook(data, results, eventType) {
         invoiceType: data.invoiceType,
         paymentMethod: data.payment.getCellValueAsString(PAYMENT_FIELDS.method) || data.payment.getCellValueAsString(PAYMENT_FIELDS.methodAR),
         paymentAccount: data.paymentAccount || null,
-        categories: results.map(result => ({ ruleCode: `PAY-${String(result.tChartRow - 1).padStart(2, "0")}`, transactionType: result.category.trim().replace(/[\u2013\u2014]/g, "-"), postings: result.postings })),
+        categories: results.map(result => ({ ruleCode: `PAY-${String(result.tChartRow - 1).padStart(2, "0")}`, entryKey: result.entryKey, transactionType: result.category.trim().replace(/[\u2013\u2014]/g, "-"), postings: result.postings })),
     };
     return postLedgerPayload(payload);
 }
@@ -252,6 +259,10 @@ await main(paymentRecordId, eventType);
 
 // ==================== HELPER ====================
 function printPostingResponse(response) {
+    if (response.status === "pending_review" || response.status === "rejected") {
+        console.log(`Ledger: ${response.status}\nReview request: ${response.requestId}\nNo journals were posted.`);
+        return;
+    }
     const report = ["--------------------------------------------------------", "LEDGER RESULT", "--------------------------------------------------------"];
     for (const result of response.results || []) {
         report.push(`Rule: ${result.ruleCode}`, `Status: ${result.status}`);
@@ -293,9 +304,10 @@ function formatValue(value) {
 function printResults(results, data, eventType, reason = "") {
     const divider = "--------------------------------------------------------";
     const eventName = "Payment " + eventType.charAt(0).toUpperCase() + eventType.slice(1);
-    const report = [divider, "PAYMENT SUMMARY", divider, `Payment ID: ${data.payment.id}`, `Event: ${eventName}`, `Matched categories: ${results.length}`];
+    const report = [divider, "PAYMENT SUMMARY", divider, `Payment ID: ${data.payment.id}`, `Event: ${eventName}`, `Matched categories: ${new Set(results.map(result => result.tChartRow)).size}`, `Prepared journals: ${results.length}`];
     for (const [index, match] of results.entries()) {
         report.push("", divider, `MATCH ${index + 1}`, divider, `Category: ${match.category}`, `T-Chart row: ${match.tChartRow}`, "", "PAYMENT FILTERS");
+        if (match.entryKey) report.push(`Account entry: ${match.entryKey}`);
         for (const [name, value] of Object.entries(match.paymentFilters)) report.push(`${name}: ${formatValue(value)}`);
         for (const invoice of match.invoices || []) report.push("", "INVOICE", `Invoice name: ${invoice.name}`, `Invoice ID: ${invoice.id}`, `First shipment date: ${invoice.shipOutDate || "(empty)"}`, `Allocated amount: ${invoice.amount}`, `Debit account: ${invoice.account}`);
     }
@@ -323,12 +335,12 @@ DATES
   Missing event dates fail before the POST. No financial date is inferred from posted_at.
 OWNERSHIP / NETWORK
   Native FIN reads only; no Airtable records are written. One POST after qualification.
-  Cancellation uses current Payment Amount magnitude. AP debits Fifth Third Bank
+  Cancellation uses signed current Payment Amount. AP debits Fifth Third Bank
   112.100 and credits AP 211.100, matching the T-Chart. AR debits deposits 221.100 for blank dates or payments
   on/before first shipment, otherwise AR 121.100, and credits the selected bank.
   Multi-invoice AR amounts allocate by Amount To Pay with exact cent conservation.
   Zero amounts are no-ops; missing amounts or invoice/account context fail.
-  Reconciliation uses the discrepancy magnitude: debit 007.002 and credit the
+  Reconciliation uses the signed discrepancy: debit 007.002 and credit the
   payment bank, following the chart. No AP/AR sign flip or suspense threshold is added.
   No original-journal lookup is made.
   No automatic retries. A repeat uses the same source/category identity at Supabase.

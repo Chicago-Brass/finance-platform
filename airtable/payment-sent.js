@@ -6,9 +6,10 @@
 // Each category checks its filters, then handles and logs a match.
 
 async function handleVendorPaymentReturned(data, results) {
+    // Partial implementation - functioning: current return entry works; the new cancellation/deletion workflow is deferred.
     if (data.invoiceType !== "AP" || !data.payment.getCellValue(PAYMENT_FIELDS.returned)) return;
 
-    const cents = Math.abs(moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount"));
+    const cents = moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount");
 
     results.push({
         category: "Vendor payment cancelled / returned", tChartRow: 13,
@@ -52,6 +53,7 @@ async function handleCustomerPaymentAfterShipment(data, results) {
 }
 
 async function handleClientOverpayment(data, results) {
+    // Partial implementation - functioning: credit-payment mapping works; overlap with the original receipt remains under review.
     if (data.invoiceType !== "AR" || data.vendorType !== "AR - Refund/Credit") return;
     const matches = data.invoices.filter(invoice => invoice.getCellValueAsString(INVOICE_FIELDS.application) === "Credit to Another Order");
     if (!matches.length) return;
@@ -66,14 +68,24 @@ async function handleClientOverpayment(data, results) {
 async function handleSmallPaymentDifference(data, results) {
     if (data.invoiceType !== "AR" || data.vendorType !== "AR - Product") return;
     const overpaid = data.payment.getCellValue(PAYMENT_FIELDS.overpaid) || 0;
-    if (overpaid <= 0 || overpaid >= 5) return;
-    const overpaidCents = moneyCents(overpaid, "Overpaid Amount");
-
-    results.push({
-        postings: postingPairs({ number: "007.002" }, { number: "121.100" }, amountComponents(data, data.invoices, overpaidCents)),
-        category: "Small short-pay / rounding difference written off", tChartRow: 5,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.overpaid]),
-    });
+    if (overpaid > 0 && overpaid <= 1) {
+        results.push({
+            postings: postingPairs({ number: "007.002" }, { number: "121.100" }, amountComponents(data, data.invoices, moneyCents(overpaid, "Overpaid Amount"))),
+            category: "Small short-pay / rounding difference written off", tChartRow: 5,
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.overpaid]),
+        });
+    }
+    for (const invoice of data.invoices) {
+        const remaining = invoice.getCellValue(INVOICE_FIELDS.remaining);
+        if (!(remaining > 0 && remaining <= 5)) continue;
+        const expected = moneyUnits(invoice.getCellValue(INVOICE_FIELDS.amountToPay), 4, "Invoice Amount To Pay") - moneyUnits(invoice.getCellValue(INVOICE_FIELDS.totalPaid), 4, "Total Paid Amount");
+        if (Math.abs(moneyUnits(remaining, 4, "Invoice Remaining Balance") - expected) > 1) throw new Error(`Invoice ${invoice.id} Remaining Balance does not reconcile to Amount To Pay minus Total Paid Amount.`);
+        results.push({
+            invoice, ruleCode: "PAY-04", category: "Small short-pay / rounding difference written off", tChartRow: 5,
+            postings: postingPairs({ number: "007.002" }, { number: "121.100" }, [postingComponent(data, invoice, moneyCents(remaining, "Invoice Remaining Balance"))]),
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType], [invoice], [INVOICE_FIELDS.remaining, INVOICE_FIELDS.amountToPay, INVOICE_FIELDS.totalPaid]),
+        });
+    }
 }
 
 async function handleClientCashRefund(data, results) {
@@ -113,7 +125,7 @@ async function handleVendorCardPayment(data, results) {
         data.invoiceType !== "AP" ||
         data.vendorType !== "AP - Product" ||
         payment.getCellValueAsString(PAYMENT_FIELDS.recordType) !== "Regular Payment" ||
-        !["CC - Amex", "CC - Visa"].includes(payment.getCellValueAsString(PAYMENT_FIELDS.method))
+        !getLinkedRecords(payment, PAYMENT_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "231.100")
     ) return;
     const matches = data.invoices.filter(invoice => getLinkedRecords(invoice, INVOICE_FIELDS.purchaseOrders).length > 0 || getLinkedRecords(invoice, INVOICE_FIELDS.vendors).length > 0);
     if (!matches.length) return;
@@ -121,7 +133,7 @@ async function handleVendorCardPayment(data, results) {
     results.push({
         postings: postingPairs({ number: "211.100" }, CREDIT_CARD_ACCOUNT, invoiceComponents(data, matches)),
         category: "Pay a vendor with the company credit card", tChartRow: 9,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.recordType, PAYMENT_FIELDS.method], matches, [INVOICE_FIELDS.purchaseOrders, INVOICE_FIELDS.vendors]),
+        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.recordType, PAYMENT_FIELDS.accounts], matches, [INVOICE_FIELDS.purchaseOrders, INVOICE_FIELDS.vendors]),
     });
 }
 
@@ -141,39 +153,30 @@ async function handleCreditCardStatementPayment(data, results) {
 }
 
 async function handleVendorRefund(data, results) {
-    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit" || !data.paymentHasBankAccount) return;
+    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit") return;
 
     results.push({
-        postings: postingPairs({ number: "112.100" }, { number: "211.100" }, invoiceComponents(data, data.invoices)),
+        postings: postingPairs(paymentAccountSource(data), { number: "211.100" }, invoiceComponents(data, data.invoices)),
         category: "Vendor sends us a refund", tChartRow: 14,
         ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.accounts]),
     });
 }
 
 async function handleStaffPayment(data, results) {
+    // Partial implementation - functioning: mapped payroll liabilities work; bank wire/FX fees and employee benefits are excluded.
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Staff") return;
-    const matches = data.invoices.filter(invoice =>
-        getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => ["005.101", "005.003", "005.001"].includes(data.accountNumbersById.get(account.id) || ""))
-    );
-    if (!matches.length) return;
-
-    // Not yet implemented: the chart has not defined the salary/fee split.
-    throw new Error("Not yet implemented: T-Chart row 16 is blocked: Actual Triggers does not define how Payments.Amount splits into salary and bank-fee amounts.");
+    const liabilityAccounts = { "005.101": "241.100", "005.003": "241.100", "005.001": "241.100", "005.002": "241.100", "005.006": "241.200", "005.005": "241.400" };
+    const lines = await readInvoiceLines(data, Object.keys(liabilityAccounts));
+    if (!lines.length) return;
+    // Bank wire and FX fees stay excluded until their source and amount are defined.
+    addLineAccountEntries(data, results, lines, liabilityAccounts, 16, "Pay offshore / 1099 / owner staff (Wise, ACH)");
 }
 
 async function handleLoanPayment(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
-    if (!data.invoices.some(invoice => getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "232.100"))) return;
-    const matches = data.invoices.filter(invoice =>
-        getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => ["232.100", "007.003"].includes(data.accountNumbersById.get(account.id)))
-    );
-
-    const components = repaymentComponents(data, matches);
-    results.push({
-        postings: components.flatMap(component => postingPairs(component.invoiceAccount, paymentAccountSource(data), [component])),
-        category: "Loan payment (principal + interest)", tChartRow: 17,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.accounts], matches, [INVOICE_FIELDS.accounts, INVOICE_FIELDS.amountToPay]),
-    });
+    const lines = await readInvoiceLines(data, ["232.100", "231.200", "007.003"]);
+    if (!lines.some(item => item.accountNumber === "232.100")) return;
+    addLineAccountEntries(data, results, repaymentLines(lines, "232.100"), { "232.100": "232.100", "007.003": "007.003" }, 17, "Loan payment (principal + interest)");
 }
 
 async function handleLineOfCreditDraw(data, results) {
@@ -192,23 +195,16 @@ async function handleLineOfCreditDraw(data, results) {
 
 async function handleLineOfCreditRepayment(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)") return;
-    if (!data.invoices.some(invoice => getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "231.200"))) return;
-    const matches = data.invoices.filter(invoice =>
-        getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => ["231.200", "007.003"].includes(data.accountNumbersById.get(account.id)))
-    );
-
-    const components = repaymentComponents(data, matches);
-    results.push({
-        postings: components.flatMap(component => postingPairs(component.invoiceAccount, paymentAccountSource(data), [component])),
-        category: "Line of credit - repay", tChartRow: 19,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.accounts], matches, [INVOICE_FIELDS.accounts, INVOICE_FIELDS.amountToPay]),
-    });
+    const lines = await readInvoiceLines(data, ["232.100", "231.200", "007.003"]);
+    if (!lines.some(item => item.accountNumber === "231.200")) return;
+    addLineAccountEntries(data, results, repaymentLines(lines, "231.200"), { "231.200": "231.200", "007.003": "007.003" }, 19, "Line of credit - repay");
 }
 
 async function handleBankTransfer(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Non-Sales Tax)" || !data.paymentHasBankAccount) return;
+    const paymentAccountId = getLinkedRecords(data.payment, PAYMENT_FIELDS.accounts)[0].id;
     const matches = data.invoices.filter(invoice =>
-        getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => BANK_ACCOUNT_NUMBERS.includes(data.accountNumbersById.get(account.id) || ""))
+        getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => BANK_ACCOUNT_NUMBERS.includes(data.accountNumbersById.get(account.id) || "") && account.id !== paymentAccountId)
     );
     if (!matches.length) return;
 
@@ -217,13 +213,13 @@ async function handleBankTransfer(data, results) {
         if (banks.length !== 1) throw new Error(`Invoice ${invoice.id} must identify one source bank account.`);
     }
     const calculated = purposeComponents(data, matches);
-    results.push({
-        postings: calculated.flatMap(component => postingPairs(
-            paymentAccountSource(data), component.invoiceAccount, [component],
-        )),
-        category: "Move money between our own bank accounts", tChartRow: 20,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.accounts], matches, [INVOICE_FIELDS.accounts]),
-    });
+    for (const [entryKey, components] of groupByInvoiceAccount(calculated)) {
+        results.push({
+            entryKey, postings: postingPairs(paymentAccountSource(data), components[0].invoiceAccount, components),
+            category: "Move money between our own bank accounts", tChartRow: 20,
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType, PAYMENT_FIELDS.accounts], matches.filter(invoice => components.some(component => component.invoiceRecordId === invoice.id)), [INVOICE_FIELDS.accounts]),
+        });
+    }
 }
 
 async function handleOwnerDistribution(data, results) {
@@ -262,17 +258,17 @@ async function handleIncomeTaxPayment(data, results) {
     if (!matches.length) return;
 
     const calculated = purposeComponents(data, matches);
-    results.push({
-        postings: calculated.flatMap(component => postingPairs(
-            { number: component.invoiceAccount?.number },
-            paymentAccountSource(data), [component],
-        )),
-        category: "Income tax payment", tChartRow: 23,
-        ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType], matches, [INVOICE_FIELDS.accounts]),
-    });
+    for (const [entryKey, components] of groupByInvoiceAccount(calculated)) {
+        results.push({
+            entryKey, postings: postingPairs(components[0].invoiceAccount, paymentAccountSource(data), components),
+            category: "Income tax payment", tChartRow: 23,
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType], matches.filter(invoice => components.some(component => component.invoiceRecordId === invoice.id)), [INVOICE_FIELDS.accounts]),
+        });
+    }
 }
 
 async function handleInsuranceClaimReceipt(data, results) {
+    // Partial implementation - not functioning: known filters are implemented; matching invoices throw Not yet implemented until the debit mapping is defined.
     if (data.invoiceType !== "AR" || data.vendorType !== "AR - Non-Product") return;
     const matches = data.invoices.filter(invoice =>
         getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "122.100")
@@ -298,13 +294,16 @@ async function handleSecurityDepositPayment(data, results) {
 }
 
 async function handleEarlyPaymentDiscount(data, results) {
+    // Partial implementation - not functioning: known filters are implemented; matching invoices throw Not yet implemented until the credit mapping is defined.
     if (data.invoiceType !== "AP") return;
     for (const invoice of data.invoices) {
         if (invoice.getCellValueAsString(INVOICE_FIELDS.paymentStatus) !== "Fully Paid") continue;
         const amount = invoice.getCellValue(INVOICE_FIELDS.discountTotal);
         if (amount == null || amount === 0) continue;
-        // Not yet implemented: Amount is Discount Lines Total, but the credit column lists bank and rebates without a split.
-        throw new Error("Not yet implemented: T-Chart row 11 is blocked: the bank and discount credit split is not defined. Invoice amount source is Invoices.Discount Lines Total.");
+        const lines = (await readInvoiceLines(data)).filter(item => item.invoice?.id === invoice.id && item.line.getCellValueAsString(LINE_FIELDS.type) === "Discount" && item.line.getCellValueAsString(LINE_FIELDS.discountStatus) !== "Expired");
+        if (!lines.length) throw new Error(`Not yet implemented: T-Chart row 11 has Discount Lines Total but no qualifying discount lines on invoice ${invoice.id}.`);
+        // Not yet implemented: sum Line Amount by account; the discount credit account is pending.
+        throw new Error("Not yet implemented: T-Chart row 11 is blocked: the credit account is pending. Sum qualifying Invoice Lines.Line Amount by Chart of Accounts.");
     }
 }
 
@@ -340,7 +339,7 @@ async function handleVendorCreditApplication(data, results) {
         if (!Number.isSafeInteger(availableUnits)) throw new Error("Source credit total exceeds safe precision.");
         if (applied > 0 || -applied > Math.round(availableUnits / 100)) throw new Error(`Invoice ${invoice.id} has an invalid applied-credit amount for its source credits.`);
         // Credits Applied = ROUND(SUM(Available Credits) * bill proportion, 4), so all sources share the same factor.
-        const allocations = allocateCents(-applied, weights);
+        const allocations = allocateCents(applied, weights);
         results.push({
             invoice, tChartRow: 12, ruleCode: "PAY-11", category: "Bill paid using vendor credits (no cash)",
             credits: sources.map(credit => ({ id: credit.id, name: credit.name, cents: allocations.get(credit.id) })),
@@ -357,11 +356,12 @@ async function handleVendorCreditApplication(data, results) {
 async function handleCreditCardRebate(data, results) {
     if (data.invoiceType !== "AR" || data.vendorType !== "AR - Non-Product") return;
     for (const invoice of data.invoices) {
+        if (!getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "004.011")) continue;
         if (invoice.getCellValueAsString(INVOICE_FIELDS.paymentStatus) !== "Fully Paid") continue;
         const amount = invoice.getCellValue(INVOICE_FIELDS.rebateTotal);
         if (amount == null || amount === 0) continue;
         const cents = moneyUnits(amount, 2, `Invoice ${invoice.id} Purchased Discounts & Rebate Total`);
-        if (cents < 0) throw new Error(`Invoice ${invoice.id} has a negative rebate; its reversal treatment must be specified before posting.`);
+
         results.push({
             invoice, tChartRow: 28, ruleCode: "PAY-27", category: "Credit-card rebate earned (cash back)",
             postings: cents ? [{ debitAccount: { number: "231.100" }, creditAccount: { number: "004.011" }, amount: moneyString(cents), ...componentContext(data, invoice) }] : [],
@@ -370,15 +370,23 @@ async function handleCreditCardRebate(data, results) {
     }
 }
 
-// These categories are not called until the chart supplies their primary triggers and filters.
+// Payroll row 15 remains deferred until its filters and amount are defined.
 async function handlePayrollPayment() {
     // Not yet implemented: T-Chart row 15 has no Actual Triggers definition.
     throw new Error("Not yet implemented: T-Chart row 15 payroll trigger and amount mapping are undefined.");
 }
 
-async function handleFidelityIncome() {
-    // Not yet implemented: T-Chart row 26 has no Actual Triggers definition.
-    throw new Error("Not yet implemented: T-Chart row 26 Fidelity income trigger and amount mapping are undefined.");
+async function handleFidelityIncome(data, results) {
+    if (data.invoiceType !== "AR" || data.vendorType !== "AR - Non-Product") return;
+    for (const invoice of data.invoices) {
+        if (!getLinkedRecords(invoice, INVOICE_FIELDS.accounts).some(account => data.accountNumbersById.get(account.id) === "010.003")) continue;
+        const cents = moneyCents(invoice.getCellValue(INVOICE_FIELDS.amount), `Invoice ${invoice.id} Invoice Amount`);
+        results.push({
+            invoice, ruleCode: "PAY-25", tChartRow: 26, category: "Interest / dividends received (Fidelity)",
+            postings: postingPairs({ number: "112.200" }, { number: "010.003" }, [postingComponent(data, invoice, cents)]),
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType], [invoice], [INVOICE_FIELDS.accounts, INVOICE_FIELDS.amount]),
+        });
+    }
 }
 
 // ==================== UTILS ====================
@@ -388,6 +396,7 @@ const TABLES = {
     payments: "tblR61NG9i0giid28",
     invoices: "tbldQXuqNEp8G5pfs",
     accounts: "tblJ2RF8vlOhNMBKR",
+    lines: "tblV26TC0f6CKDneL",
 };
 
 const PAYMENT_FIELDS = {
@@ -410,7 +419,12 @@ const PAYMENT_FIELDS = {
     invoices: "fldzPDwsJ1ZT2tVIs",         // Master Invoice Table
     miniPayments: "fldnR14dyPcbdOeap",     // Linked Mini-Payments from This Batch
 };
+const LINE_FIELDS = { amount: "fldkhhHCD2qKD71rI", accounts: "fldwr0Pfp8OHsNj5N", invoices: "fldZpOBUbuVJbuaOG", type: "fldchdpL3w2aXfm4P", discountStatus: "fldU0H6S3D9uAFwBs" };
 const INVOICE_FIELDS = {
+    amount: "fldm5nXoW7MrwjkhW",
+    totalPaid: "fldjIeCk9utD91Rq6",
+    remaining: "fldnPvmnWzmfgBq3m",
+    lines: "fldF0uqCMkPgwuIes",
     name: "fldMZyzqDidRujeZS",         // Invoice ID (primary display name)
     rebateTotal: "fldyTbRUtFof1IByi",  // Purchased Discounts & Rebate Total
     sourceCredits: "fldQ6CZ4bMQjpCKoh", // From field: Credit Invoice Apply to What?
@@ -524,6 +538,7 @@ async function main(paymentRecordId) {
     await handleEarlyPaymentDiscount(data, results);
     await handleVendorCreditApplication(data, results);
     await handleCreditCardRebate(data, results);
+    await handleFidelityIncome(data, results);
 
     const reason = !results.length && !data.vendorType ? "Payments.Vendor Type is blank; no vendor-specific category qualifies." : "";
     printResults(results, data, "sent", reason);
@@ -552,33 +567,37 @@ function moneyUnits(value, precision, label) {
 function moneyString(cents) { return (cents / 100).toFixed(2); }
 
 function allocateCents(totalCents, weights) {
-    const ordered = [...weights].sort((a, b) => a.id.localeCompare(b.id));
+    if (!Number.isSafeInteger(totalCents) || weights.some(weight => !Number.isSafeInteger(weight.cents))) throw new Error("Allocation exceeds safe cent precision.");
+    if (new Set(weights.filter(weight => weight.cents).map(weight => Math.sign(weight.cents))).size > 1) throw new Error("Mixed-sign invoice amounts require an explicit allocation before posting.");
+    const sign = Math.sign(weights.find(weight => weight.cents)?.cents || 1);
+    const ordered = weights.map(weight => ({ ...weight, cents: weight.cents * sign })).sort((a, b) => a.id.localeCompare(b.id));
     const sum = ordered.reduce((total, weight) => total + weight.cents, 0);
-    if (totalCents < 0 || ordered.some(weight => weight.cents < 0)) throw new Error("Allocation weights and total must be nonnegative cents.");
+    if (!Number.isSafeInteger(sum)) throw new Error("Allocation exceeds safe cent precision.");
     if (!sum && totalCents) throw new Error("Cannot allocate a payment against zero invoice amounts.");
     const parts = ordered.map(weight => {
         const product = totalCents * weight.cents;
         if (!Number.isSafeInteger(product)) throw new Error("Allocation exceeds safe cent precision.");
-        return { id: weight.id, cents: sum ? Math.floor(product / sum) : 0, remainder: sum ? product % sum : 0 };
+        return { id: weight.id, cents: sum ? Math.trunc(product / sum) : 0, remainder: sum ? product % sum : 0 };
     });
+    const direction = Math.sign(totalCents);
     let remainder = totalCents - parts.reduce((total, part) => total + part.cents, 0);
-    for (const part of [...parts].sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id))) {
+    for (const part of [...parts].sort((a, b) => direction * (b.remainder - a.remainder) || a.id.localeCompare(b.id))) {
         if (!remainder) break;
-        part.cents++;
-        remainder--;
+        part.cents += direction;
+        remainder -= direction;
     }
-    return new Map(parts.map(part => [part.id, part.cents]));
+    return new Map(parts.map(part => [part.id, part.cents === 0 ? 0 : part.cents]));
 }
 
 function invoiceWeights(invoices) {
     const values = invoices.map(invoice => ({ id: invoice.id, cents: moneyCents(invoice.getCellValue(INVOICE_FIELDS.amountToPay), `Invoice ${invoice.id} Amount To Pay`) }));
     if (new Set(values.filter(value => value.cents).map(value => Math.sign(value.cents))).size > 1) throw new Error("Mixed-sign invoice amounts require an explicit allocation before posting.");
-    return values.map(value => ({ id: value.id, cents: Math.abs(value.cents) }));
+    return values;
 }
 
 function invoiceAllocations(data) {
     if (!data.invoiceAllocations) {
-        const amount = Math.abs(moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount"));
+        const amount = moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount");
         if (data.invoices.length === 1) data.invoiceAllocations = new Map([[data.invoices[0].id, amount]]);
         else data.invoiceAllocations = amount ? allocateCents(amount, invoiceWeights(data.invoices)) : new Map(data.invoices.map(invoice => [invoice.id, 0]));
     }
@@ -636,9 +655,9 @@ function invoiceComponents(data, invoices) {
 }
 
 function amountComponents(data, invoices, totalCents) {
-    if (!invoices.length) return [postingComponent(data, null, Math.abs(totalCents))];
-    if (invoices.length === 1) return [postingComponent(data, invoices[0], Math.abs(totalCents))];
-    const shares = totalCents ? allocateCents(Math.abs(totalCents), invoiceWeights(invoices)) : new Map(invoices.map(invoice => [invoice.id, 0]));
+    if (!invoices.length) return [postingComponent(data, null, totalCents)];
+    if (invoices.length === 1) return [postingComponent(data, invoices[0], totalCents)];
+    const shares = totalCents ? allocateCents(totalCents, invoiceWeights(invoices)) : new Map(invoices.map(invoice => [invoice.id, 0]));
     return invoices.map(invoice => postingComponent(data, invoice, shares.get(invoice.id)));
 }
 
@@ -653,14 +672,69 @@ function purposeComponents(data, invoices) {
     });
 }
 
-function repaymentComponents(data, invoices) {
-    for (const invoice of invoices) {
-        if (getLinkedRecords(invoice, INVOICE_FIELDS.accounts).length !== 1) throw new Error(`Invoice ${invoice.id} must link exactly one chart of account for principal or interest.`);
+function groupByInvoiceAccount(components) {
+    const groups = new Map();
+    for (const component of components) {
+        const key = component.invoiceAccount.number;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(component);
     }
-    const numbers = new Set(data.invoices.flatMap(invoice => getLinkedRecords(invoice, INVOICE_FIELDS.accounts).map(account => data.accountNumbersById.get(account.id))));
-    // Interest is shared by both categories; the account alone cannot identify its owner.
-    if (numbers.has("232.100") && numbers.has("231.200") && numbers.has("007.003")) throw new Error("Not yet implemented: a payment linking both auto-loan and LOC principal needs an explicit interest allocation.");
-    return purposeComponents(data, invoices);
+    return groups;
+}
+
+async function readInvoiceLines(data, accountNumbers) {
+    if (!data.invoiceLines) {
+        const ids = data.invoices.flatMap(invoice => linkedIds(invoice, INVOICE_FIELDS.lines));
+        const lines = await readRecords(TABLES.lines, ids, Object.values(LINE_FIELDS));
+        const accountIds = lines.flatMap(line => linkedIds(line, LINE_FIELDS.accounts)).filter(id => !data.accountNumbersById.has(id));
+        for (const account of await readRecords(TABLES.accounts, accountIds, Object.values(ACCOUNT_FIELDS))) data.accountNumbersById.set(account.id, account.getCellValueAsString(ACCOUNT_FIELDS.number));
+        data.invoiceLines = lines.map(line => {
+            const invoices = data.invoices.filter(invoice => linkedIds(invoice, INVOICE_FIELDS.lines).includes(line.id));
+            const accounts = getLinkedRecords(line, LINE_FIELDS.accounts);
+            return { line, invoice: invoices[0], invoices, accountNumbers: accounts.map(account => data.accountNumbersById.get(account.id)), accountNumber: accounts.length === 1 ? data.accountNumbersById.get(accounts[0].id) : "" };
+        });
+    }
+    const matches = accountNumbers ? data.invoiceLines.filter(item => item.accountNumbers.some(number => accountNumbers.includes(number))) : data.invoiceLines;
+    for (const item of matches) {
+        if (item.invoices.length !== 1 || !linkedIds(item.line, LINE_FIELDS.invoices).includes(item.invoice.id)) throw new Error(`Invoice line ${item.line.id} must belong to one linked invoice with reciprocal links.`);
+        if (item.accountNumbers.length !== 1) throw new Error(`Invoice line ${item.line.id} must identify one chart of account before posting.`);
+    }
+    return matches;
+}
+
+function repaymentLines(lines, principal) {
+    const otherPrincipal = principal === "232.100" ? "231.200" : "232.100";
+    return lines.filter(item => {
+        if (item.accountNumber === principal) return true;
+        if (item.accountNumber !== "007.003") return false;
+        const invoiceAccounts = new Set(lines.filter(line => line.invoice.id === item.invoice.id).map(line => line.accountNumber));
+        if (invoiceAccounts.has(principal) && !invoiceAccounts.has(otherPrincipal)) return true;
+        if (invoiceAccounts.has(otherPrincipal) && !invoiceAccounts.has(principal)) return false;
+        if (lines.some(line => line.accountNumber === otherPrincipal)) throw new Error("Not yet implemented: a payment linking both auto-loan and LOC principal needs an explicit interest allocation.");
+        return true;
+    });
+}
+
+function addLineAccountEntries(data, results, lines, debitAccounts, tChartRow, category) {
+    const groups = new Map();
+    for (const { line, invoice, accountNumber } of lines) {
+        if (!groups.has(accountNumber)) groups.set(accountNumber, new Map());
+        const invoices = groups.get(accountNumber);
+        if (!invoices.has(invoice.id)) invoices.set(invoice.id, { invoice, units: 0, sourceRecordIds: [] });
+        const group = invoices.get(invoice.id);
+        group.units += moneyUnits(line.getCellValue(LINE_FIELDS.amount), 4, `Line ${line.id} Amount`);
+        if (!Number.isSafeInteger(group.units)) throw new Error(`Account ${accountNumber} total exceeds safe money precision.`);
+        group.sourceRecordIds.push(line.id);
+    }
+    for (const [entryKey, invoices] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+        results.push({
+            tChartRow, category, entryKey,
+            postings: postingPairs({ number: debitAccounts[entryKey] }, paymentAccountSource(data), [...invoices.values()].map(group => ({
+                ...postingComponent(data, group.invoice, moneyCents(group.units / 10000, "Account line total")), sourceRecordId: undefined, sourceRecordIds: group.sourceRecordIds.sort(),
+            }))),
+            ...formatMatchDetails(data, [PAYMENT_FIELDS.sent, PAYMENT_FIELDS.type, PAYMENT_FIELDS.vendorType], [...invoices.values()].map(group => group.invoice), [INVOICE_FIELDS.lines]),
+        });
+    }
 }
 
 async function cardStatementComponents(data) {
@@ -673,12 +747,11 @@ async function cardStatementComponents(data) {
         if (!groups.has(method)) groups.set(method, { id: method, cents: 0, miniPaymentRecordIds: [], invoiceRecordIds: [] });
         const group = groups.get(method);
         const cents = moneyCents(mini.getCellValue(PAYMENT_FIELDS.amount), `Mini-payment ${mini.id} Amount`);
-        if (cents < 0) throw new Error(`Mini-payment ${mini.id} has a negative amount; a net statement allocation is required.`);
         group.cents += cents;
         group.miniPaymentRecordIds.push(mini.id);
         group.invoiceRecordIds.push(...getLinkedRecords(mini, PAYMENT_FIELDS.invoices).map(link => link.id));
     }
-    const total = Math.abs(moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount"));
+    const total = moneyCents(data.payment.getCellValue(PAYMENT_FIELDS.amount), "Payment Amount");
     const allocations = allocateCents(total, [...groups.values()]);
     const invoiceIds = [...new Set([...groups.values()].flatMap(group => group.invoiceRecordIds))];
     const invoices = await readRecords(TABLES.invoices, invoiceIds, [INVOICE_FIELDS.branch]);
@@ -687,7 +760,7 @@ async function cardStatementComponents(data) {
         amount: moneyString(allocations.get(group.id)), paymentMethod: group.id,
         sourceRecordId: data.payment.id, miniPaymentRecordIds: group.miniPaymentRecordIds,
         invoiceRecordIds: [...new Set(group.invoiceRecordIds)],
-        branch: [...new Set(group.invoiceRecordIds.map(id => branches.get(id)).filter(Boolean))],
+        branch: [...new Set(group.invoiceRecordIds.map(id => branches.get(id) || ""))],
     }));
 }
 
@@ -703,7 +776,7 @@ async function pushInvoicePackets(data, results) {
             paymentRecordId: data.payment.id, paymentName: data.payment.name, eventType: "sent", entryDate,
             source: { tableId: TABLES.invoices, recordId: invoice.id, recordName: invoice.name },
             referenceNumber: invoice.id,
-            categories: matches.map(result => ({ ruleCode: result.ruleCode, transactionType: result.category, postings: result.postings })),
+            categories: matches.map(result => ({ ruleCode: result.ruleCode, entryKey: result.entryKey, transactionType: result.category, postings: result.postings })),
         };
         await postLedgerPayload(payload);
     }
@@ -725,7 +798,7 @@ async function pushWebhook(data, results, eventType) {
         paymentAmount: amount, invoiceType: data.invoiceType,
         paymentMethod: data.payment.getCellValueAsString(PAYMENT_FIELDS.method) || data.payment.getCellValueAsString(PAYMENT_FIELDS.methodAR),
         paymentAccount: accounts.length ? accountSource(data, accounts[0]) : null,
-        categories: results.map(result => ({ ruleCode: `PAY-${String(result.tChartRow - 1).padStart(2, "0")}`, transactionType: result.category.trim().replace(/[\u2013\u2014]/g, "-"), postings: result.postings })),
+        categories: results.map(result => ({ ruleCode: `PAY-${String(result.tChartRow - 1).padStart(2, "0")}`, entryKey: result.entryKey, transactionType: result.category.trim().replace(/[\u2013\u2014]/g, "-"), postings: result.postings })),
     };
     return postLedgerPayload(payload);
 }
@@ -747,9 +820,14 @@ await main(paymentRecordId);
 
 // ==================== HELPER ====================
 function printPostingResponse(response) {
+    if (response.status === "pending_review" || response.status === "rejected") {
+        console.log(`Ledger: ${response.status}\nReview request: ${response.requestId}\nNo journals were posted.`);
+        return;
+    }
     const report = ["--------------------------------------------------------", "LEDGER RESULT", "--------------------------------------------------------"];
     for (const result of response.results || []) {
         report.push(`Rule: ${result.ruleCode}`, `Status: ${result.status}`);
+        if (result.entryKey) report.push(`Account entry: ${result.entryKey}`);
         for (const id of result.journalEntryIds || (result.journalEntryId ? [result.journalEntryId] : [])) report.push(`Journal ID: ${id}`);
     }
     console.log(report.join("\n"));
@@ -779,7 +857,7 @@ function formatValue(value) {
 function printResults(results, data, eventType, reason = "") {
     const divider = "--------------------------------------------------------";
     const eventName = "Payment " + eventType.charAt(0).toUpperCase() + eventType.slice(1);
-    const report = [divider, "PAYMENT SUMMARY", divider, `Payment ID: ${data.payment.id}`, `Event: ${eventName}`, `Matched categories: ${results.length}`];
+    const report = [divider, "PAYMENT SUMMARY", divider, `Payment ID: ${data.payment.id}`, `Event: ${eventName}`, `Matched categories: ${new Set(results.map(result => result.tChartRow)).size}`, `Prepared journals: ${results.length}`];
     const addFields = fields => {
         for (const [name, value] of Object.entries(fields)) {
             if (name === "Linked Mini-Payments from This Batch") {
@@ -791,6 +869,7 @@ function printResults(results, data, eventType, reason = "") {
     };
     for (const [index, match] of results.entries()) {
         report.push("", divider, `MATCH ${index + 1}`, divider, `Category: ${match.category}`, `T-Chart row: ${match.tChartRow}`);
+        if (match.entryKey) report.push(`Line account: ${match.entryKey}`);
         const fields = Object.entries(match.paymentFilters).filter(([name]) => name !== "Sent" || eventType !== "sent");
         if (fields.length) {
             report.push("", "PAYMENT FILTERS");
@@ -821,7 +900,7 @@ DATA / OWNERSHIP
   All reads use native FIN tables and immutable IDs. No Airtable record writes.
   Sent + Return Payment (AP) + Invoice Type AP adds its category alongside every
   other matching Sent category. Payment Date is its accounting date.
-  Current Amount supplies the magnitude: debit Fifth Third
+  Current Amount retains its sign: debit Fifth Third
   112.100, credit AP 211.100 as specified by the T-Chart. Zero is a no-op; missing Amount fails. There is
   no original-journal lookup, reversal or deletion. The console identifies Sent as the trigger.
   Amount is the event movement. Invoice Amount To Pay determines proportional
@@ -847,14 +926,17 @@ NETWORK / RETRIES
   No automatic retries. On failure, the run fails; a repeat uses the same payment
   and category identity so Supabase can verify or reject a duplicate.
 LIMITS
-  Rows 11, 16 and 24 are blocked until Actual Triggers defines bank/discount,
-  salary/fee and insurance component amounts. Rows 17/19 use one linked account per
-  principal/interest invoice and proportional invoice shares. Multiple invoice accounts
-  or shared interest with both principal types fail; interest alone cannot select a category.
-  Multi-account invoice purpose splits are also blocked until explicitly defined.
-  Row 5 follows Dr 007.002 / Cr 121.100; its threshold uses the raw Overpaid Amount.
-  Vendor refunds debit Fifth Third 112.100 as specified in the chart.
-  Branch is payload data pending its future database column. No UI changes.
+  Rows 11 and 24 remain blocked by pending credit/bank/recovery mappings. Row 15 is deferred.
+  Staff lines clear their original payroll liabilities, including W2 wages, payroll tax and
+  401k. Benefits and bank wire/FX fees are excluded pending their mappings/source.
+  Staff and loan/LOC lines sum by source account, with a separate keyed journal per account.
+  Shared interest needs an unambiguous principal owner. Other invoice-purpose splits remain blocked.
+  Row 5 uses 0 < Overpaid Amount <= 1 per payment, or 0 < Remaining Balance <= 5 per invoice.
+  Underpayment balances are checked against Amount To Pay minus Total Paid Amount.
+  Row 26 uses Invoice Amount, debit Fidelity 112.200, credit Interest and Dividends 010.003.
+  Vendor credits, rebates, interest and underpaid write-offs retain invoice-owned identities.
+  Vendor refunds debit the selected payment account. All monetary sources retain their sign.
+  Branch is nullable payload data. No Airtable data writes or UI changes.
 LOCAL CHECK
   node airtable/check.cjs
 */

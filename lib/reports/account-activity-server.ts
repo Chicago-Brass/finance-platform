@@ -1,3 +1,4 @@
+import { branchParam } from "./branch";
 import { ledgerAccountParam } from "@/components/ledger-table-utils";
 import { cleanDate } from "@/lib/dates";
 import { dayBefore, naturalNet, shiftYears, toActivityLine } from "./account-activity";
@@ -13,16 +14,16 @@ export function accountActivityInput(input: Record<string, string | undefined>):
   const mode = input.mode === "balance" ? "balance" : input.mode === "period" ? "period" : null;
   const days = from && to ? (Date.parse(to) - Date.parse(from)) / 86_400_000 : -1;
   if (!account || !mode || days < 0 || days > 3700) throw new RangeError("Invalid account drill-down request.");
-  return { account, from, to, mode };
+  return { account, from, to, mode, branch: branchParam(input.branch) };
 }
 
 /** Only two requested periods, in one round trip, independently of the line list. */
-export async function getAccountActivitySummary({ account, from, to, mode }: AccountActivityInput): Promise<AccountActivitySummary> {
+export async function getAccountActivitySummary({ account, from, to, mode, branch }: AccountActivityInput): Promise<AccountActivitySummary> {
   const previousFrom = shiftYears(from, -1), previousTo = shiftYears(to, -1);
   const [current, comparison] = await getTrialBalances([
     { asOf: to, from },
     mode === "balance" ? { asOf: dayBefore(from), from: null } : { asOf: previousTo, from: previousFrom },
-  ]);
+  ], branch);
   const row = current.find(row => row.account_number === account);
   if (!row) throw new Error("Account is not available in the chart of accounts.");
   const normalBalance = row.normal_balance === "credit" ? "credit" : "debit";
@@ -38,10 +39,10 @@ export async function getAccountActivitySummary({ account, from, to, mode }: Acc
 }
 
 /** Preserve the 2,000-line cap, using up to four 500-line reads instead of twenty 100-line reads. */
-export async function getAccountActivityLines({ account, from, to }: AccountActivityInput): Promise<AccountActivityLines> {
+export async function getAccountActivityLines({ account, from, to, branch }: AccountActivityInput): Promise<AccountActivityLines> {
   const lines: AccountActivityLines["lines"] = [];
   for (let page = 1; page <= 4; page++) {
-    const result = await getGeneralLedger(from, to, page, { account }, 500);
+    const result = await getGeneralLedger(from, to, page, { account, branch }, 500);
     lines.push(...result.rows.map(toActivityLine));
     if (!result.hasNext) return { lines, truncated: false };
   }

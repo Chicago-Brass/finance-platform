@@ -22,7 +22,7 @@ test("optimized ledger offsets and filters equal the initial view, including spl
     for (const clause of ["", "where account_number='112.100'", "where date between '2026-01-01' and '2026-07-31'", "where offsetting_account_number='112.200'"]) {
       const expected = await sql.unsafe(`select * from (${original}) old_view ${clause} order by line_id`);
       const actual = await sql.unsafe(`select * from public.v_ledger ${clause} order by line_id`);
-      assert.deepEqual([...actual], [...expected]);
+      assert.deepEqual(actual.map(({ state_ref, ...row }) => { assert.deepEqual(state_ref, []); return row; }), [...expected]);
     }
     const rows = await sql`select line_no, offsetting_account_number, offset_is_split from public.v_ledger where entry_id=${entry.id} order by line_no`;
     assert.equal(rows[0].offsetting_account_number, '112.200');
@@ -129,10 +129,12 @@ test("only signed-in users may call it, and it runs under the caller's row-level
 
 test("the baseline keeps RLS, invoker views and restricted default privileges", async () => {
   const tables = await sql`select relname, relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r'`;
-  assert.equal(tables.length, 9);
+  assert.ok(tables.length >= 9);
+  for (const name of ["ledger_posting_requests","ledger_period_history"]) assert.ok(tables.some(table => table.relname === name));
   assert.ok(tables.every(table => table.relrowsecurity));
   const views = await sql`select relname, reloptions from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'v'`;
-  assert.equal(views.length, 6);
+  assert.ok(views.length >= 6);
+  assert.ok(views.some(view => view.relname === "v_period_overview"));
   assert.ok(views.every(view => view.reloptions.includes('security_invoker=true')));
   await sql.begin(async tx => {
     await tx`create table public.default_privilege_check (id integer)`;

@@ -7,7 +7,7 @@ import { cents } from "./report-utils";
  */
 
 export type DrillMode = "period" | "balance";
-export type DrillRange = { mode: DrillMode; from: string; to: string };
+export type DrillRange = { mode: DrillMode; from: string; to: string; branch?: string };
 export type NormalBalance = "debit" | "credit";
 
 export type AccountActivityLine = {

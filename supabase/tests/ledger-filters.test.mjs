@@ -57,6 +57,29 @@ test("all ledger filters combine before pagination, preserve cents and remain ca
   }).catch(error=>{if(error.message!=='rollback')throw error;});
 });
 
+test("negative lines retain their account side in ledger reads, counts and trial balances", async () => {
+  await sql.begin(async tx => {
+    const [entry] = await tx`insert into public.journal_entries(entry_date,description,rule_code)
+      values ('2032-03-01','Signed invoice filter fixture','INV-08') returning id`;
+    await tx`insert into public.journal_lines(entry_id,line_no,account_code,debit,credit) values
+      (${entry.id},1,'211.100',-25.55,0),(${entry.id},2,'131.400',0,-25.55)`;
+    await tx`update public.journal_entries set status='posted' where id=${entry.id}`;
+    for (const scope of [{side:'debit'},{side:'credit'},{side:'debit',query:'Signed invoice'},{side:'credit',offset:'211.100'}]) {
+      const rows = await filter(tx,scope);
+      assert.equal(rows.length,1);
+      assert.equal(await count(tx,scope),1);
+      assert.equal(rows[0].account_number,scope.side==='debit'?'211.100':'131.400');
+    }
+    const search = await tx`select * from public.search_ledger('2032-01-01','2032-12-31','Signed invoice',null,null,'debit',0,101)`;
+    assert.equal(search.length,1);assert.equal(search[0].debit,'-25.55');
+    const conformance = await tx`select line_no,side::text,matches_rule from public.v_rule_conformance where entry_id=${entry.id} order by line_no`;
+    assert.deepEqual(conformance.map(row=>row.side),['debit','credit']);
+    const balances = await tx`select * from public.get_trial_balance('2032-12-31','2032-01-01')`;
+    assert.equal(Number(balances.find(row=>row.account_number==='211.100').total_debit),-25.55);
+    throw new Error('rollback');
+  }).catch(error=>{if(error.message!=='rollback')throw error;});
+});
+
 test("ledger filter bounds reject malformed inputs and do not permit anonymous access", async () => {
   for (const options of [{type:'unknown'},{category:"PAY-08' OR true"},{min:-1},{max:'NaN'},{min:'Infinity'},{max:'1.001'},{min:'999999999999999999'},{take:502},{skip:-1}]) {
     await assert.rejects(()=>filter(sql,options),error=>error.code==='22023');

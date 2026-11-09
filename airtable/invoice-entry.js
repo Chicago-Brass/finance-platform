@@ -14,7 +14,7 @@ async function handleReceivedProductInvoice(data, results) {
 }
 
 async function handleVendorDepositInvoice(data, results) {
-    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product" || data.invoice.getCellValue(INVOICE_FIELDS.receivedNotInvoiced) !== 0) return;
+    if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product" || data.invoice.getCellValueAsString(INVOICE_FIELDS.poStatus) !== "Confirmed" || data.invoice.getCellValue(INVOICE_FIELDS.poReceivedDate)) return;
     const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
     results.push({
         category: "Vendor DEPOSIT invoice - billed before the goods ship", tChartRow: 4,
@@ -24,7 +24,7 @@ async function handleVendorDepositInvoice(data, results) {
 
 async function handleInboundFreightInvoice(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product") return;
-    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
+    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.freight), "Freight");
     results.push({
         category: "Vendor invoice for inbound freight / handling on a PO", tChartRow: 5,
         postings: invoicePosting(data, "131.100", "211.100", cents),
@@ -51,7 +51,7 @@ async function handleAssetInvoice(data, results) {
 
 async function handleVendorReturnCredit(data, results) {
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit" || !getLinkedRecords(data.invoice, INVOICE_FIELDS.purchaseOrders).length) return;
-    const cents = Math.abs(moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount"));
+    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
     results.push({
         category: "Vendor CREDIT MEMO - returned goods (RGA return for credit)", tChartRow: 9,
         postings: invoicePosting(data, "211.100", "131.400", cents),
@@ -59,10 +59,13 @@ async function handleVendorReturnCredit(data, results) {
 }
 
 async function handleVendorPriceCredit(data, results) {
+    // Partial implementation - functioning: the approved COGS 004.010 mapping works; original-expense-account credits remain outside this mapping.
     if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit" || getLinkedRecords(data.invoice, INVOICE_FIELDS.purchaseOrders).length) return;
-    // Not yet implemented: COGS versus the original expense account is not selected by the chart.
-    throw new Error("Not yet implemented: Invoice Entry row 10 needs the rule selecting COGS or the original expense account.");
-    // TODO: post ABS(Invoice Amount), debit AP 211.100 and credit the confirmed account.
+    const cents = moneyCents(data.invoice.getCellValue(INVOICE_FIELDS.amount), "Invoice Amount");
+    results.push({
+        category: "Vendor CREDIT MEMO - price credit, no goods returned", tChartRow: 10,
+        postings: invoicePosting(data, "211.100", "004.010", cents),
+    });
 }
 
 async function handleCustomerNonProductInvoice(data, results) {
@@ -85,8 +88,11 @@ const INVOICE_FIELDS = {
     vendorTypeAP: "fldXwodwAuXLJt5rP",  // Vendor Type (AP)
     vendorTypeAR: "fldbMLaxgnu81a0O0",  // Vendor Type (AR)
     amount: "fldm5nXoW7MrwjkhW",        // Invoice Amount
+    freight: "fldYDH7AJbrrPZpt9",       // Freight
     date: "fldSungTQU5nIEIvi",          // Invoice Date
     createEntry: "fldFrvGncUen39hBY",   // Create Entry
+    poStatus: "fldQy8xHW49sFGnJY",       // Related Purchase Order Status
+    poReceivedDate: "flduniMtBFi84pUsc", // Latest Purchase Order Received Date
     receivedNotInvoiced: "fldUFz9w6y184Sn7h", // Total Received Not Yet Invoiced
     accounts: "fldT5u0prSS8G1H4x",      // Linked Chart of Accounts
     purchaseOrders: "fldcIaoLYHgegP17m", // Related Purchase Order
@@ -171,7 +177,6 @@ function invoiceDate(value) {
 }
 
 function invoicePosting(data, debit, credit, cents) {
-    if (cents < 0) throw new Error(`Invoice ${data.invoice.id} has a negative amount; this category does not define its negative posting treatment.`);
     if (!cents) return [];
     const invoice = data.invoice;
     /** @type {any} */
@@ -222,6 +227,10 @@ function printResults(data, results) {
 }
 
 function printPostingResponse(response) {
+    if (response.status === "pending_review" || response.status === "rejected") {
+        console.log(`Ledger: ${response.status}\nReview request: ${response.requestId}\nNo journals were posted.`);
+        return;
+    }
     const report = ["--------------------------------------------------------", "LEDGER RESULT", "--------------------------------------------------------"];
     for (const result of response.results || []) {
         report.push(`Rule: ${result.ruleCode}`, `Status: ${result.status}`);
@@ -240,15 +249,17 @@ INPUTS / SECRET
   ledgerWebhookUrl: https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-payment
   Secret: Dual Ledger Webhook Secret.
 SOURCE / MAPPING
-  Category - Invoice Entry, Actual Trigger and Mapping columns, 4 Nov 2026.
-  Create Entry must be checked. Rows 2/4 use Total Received Not Yet Invoiced
-  > 0 / = 0 respectively, but post Invoice Amount, not the received rollup.
-  Rows 2/4/5/7/8/9/11 implement INV-01/03/04/06/07/08/10.
-  Row 10 has known filters but throws until its credit-account selection is resolved.
+  Category - Invoice Entry, Actual Trigger and Mapping columns, 7 Nov 2026.
+  Daily 11 PM Central is documented only; retain the existing native trigger for now.
+  Create Entry must be checked. Row 2 requires Total Received Not Yet Invoiced > 0.
+  Row 4 requires Related Purchase Order Status = Confirmed and no Latest Purchase
+  Order Received Date. Both post Invoice Amount, not the received rollup.
+  Rows 2/4/5/7/8/9/10/11 implement INV-01/03/04/06/07/08/09/10.
+  Row 10 now credits COGS 004.010, following the current Mapping column.
   Row 5 retains the chart's broad AP Product filter; independent matches are retained.
   Rows 3/12 remain unmapped; row 6 stays in Invoice Created.
-  Amount = Invoice Amount; credit rows use ABS. Date = Invoice Date.
-  Round once to cents. Zero produces a no-op; missing/negative ordinary amounts fail.
+  Amount = Freight for row 5; Invoice Amount for the other rows. Preserve its sign.
+  Date = Invoice Date. Round once to cents. Zero is a no-op; missing amounts fail.
 DATA / NETWORK
   Native FIN reads by field IDs; no Airtable record writes or checkbox reset.
   Read linked accounts only for AR non-product. Retain source refs/branch, no notes.
