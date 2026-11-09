@@ -12,8 +12,12 @@ Internal financial reporting (income statement, balance sheet) on Next.js + Verc
   signed-in user. Existing RLS and approved-user controls apply. No service key is used.
 - The report builders use the live account catalog and checked integer cents. Balance Sheet
   includes prior-year and current-year earnings. The existing renderer and exports stay intact.
-- Reports are consolidated. Historical branch controls are hidden because the current read RPC
-  does not return branch balances. Static workbook modules remain unused historical reference.
+- Original branch controls are available on both reports, including side-by-side branch columns.
+  Branch views read posted `journal_lines` under the signed-in user's RLS, filter by its stored
+  branch and sum debit/credit amounts in integer cents. Unassigned entries remain visible in their
+  own column and Consolidated. Corporate is included because it exists in the ledger.
+- Consolidated balances still use the batched read RPC. Branch reads are paginated; Balance Sheet
+  prior-year earnings use the same branch selection. Static workbook modules remain unused reference.
 - This connection does not change Supabase schema, Airtable automations or journal records.
 
 ## Focused checks

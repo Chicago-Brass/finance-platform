@@ -2,12 +2,13 @@ import { cleanDate, todayChicago } from "../dates";
 import type { Report } from "./types";
 import { accountCents, accountGroup, amountLine, formatDate, monthEnd, monthStart, one, periodHeading, section, subtractAmounts, sumAmounts } from "./report-utils";
 import type { AccountBalance, Period, Snapshot } from "./report-utils";
+import { parseBranchView, type BranchView } from "./branches";
 
-export type BalanceSheetOptions = { asOf: string; grain: "single" | "month" | "quarter" | "year"; summary: boolean };
+export type BalanceSheetOptions = { asOf: string; grain: "single" | "month" | "quarter" | "year"; summary: boolean; view?: BranchView };
 
 export function parseBalanceSheetParams(sp: Record<string, string | string[] | undefined>, today = todayChicago()): BalanceSheetOptions {
   const date = cleanDate(sp.asof, today), grain = one(sp.grain);
-  return { asOf: Number(date.slice(0, 4)) >= 1900 ? date : today, grain: grain === "month" || grain === "quarter" || grain === "year" ? grain : "single", summary: one(sp.layout) === "summary" };
+  return { asOf: Number(date.slice(0, 4)) >= 1900 ? date : today, grain: grain === "month" || grain === "quarter" || grain === "year" ? grain : "single", summary: one(sp.layout) === "summary", view: parseBranchView(one(sp.view)) };
 }
 
 export function balanceSheetPeriods(options: BalanceSheetOptions): Period[] {

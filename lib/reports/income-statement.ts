@@ -2,8 +2,9 @@ import { todayChicago } from "../dates";
 import type { Report, ReportCheck, ReportLine } from "./types";
 import { accountGroup, amountLine, formatDate, monthEnd, monthStart, one, periodHeading, section, subtractAmounts, sumAmounts } from "./report-utils";
 import type { Period, Snapshot } from "./report-utils";
+import { parseBranchView, type BranchView } from "./branches";
 
-export type IncomeStatementOptions = { year: number; from: number; to: number; grain: "month" | "quarter" | "year"; summary: boolean };
+export type IncomeStatementOptions = { year: number; from: number; to: number; grain: "month" | "quarter" | "year"; summary: boolean; view?: BranchView };
 
 export function parseIncomeStatementParams(sp: Record<string, string | string[] | undefined>, today = todayChicago()): IncomeStatementOptions {
   const year = Number(one(sp.year));
@@ -16,7 +17,7 @@ export function parseIncomeStatementParams(sp: Record<string, string | string[] 
   let to = month(one(sp.to), selectedYear === Number(today.slice(0, 4)) ? Number(today.slice(5, 7)) : 12);
   if (from > to) [from, to] = [to, from];
   const grain = one(sp.grain);
-  return { year: selectedYear, from, to, grain: grain === "quarter" || grain === "year" ? grain : "month", summary: one(sp.layout) === "summary" };
+  return { year: selectedYear, from, to, grain: grain === "quarter" || grain === "year" ? grain : "month", summary: one(sp.layout) === "summary", view: parseBranchView(one(sp.view)) };
 }
 
 export function incomeStatementPeriods(options: IncomeStatementOptions): Period[] {

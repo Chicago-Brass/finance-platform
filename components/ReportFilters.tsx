@@ -1,12 +1,12 @@
 "use client";
 
 import type { IncomeStatementOptions } from "@/lib/reports/income-statement";
+import { BRANCHES } from "@/lib/reports/branches";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Report filters as a plain GET form: the URL holds the view, so it can be bookmarked and shared. */
 export function ReportFilters({ options }: { options: IncomeStatementOptions }) {
-  const years = [...new Set([options.year, ...Array.from({ length: 6 }, (_, index) => new Date().getFullYear() - index)])].sort((a, b) => b - a);
   return (
     <form
       method="get"
@@ -14,13 +14,15 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
       onChange={(e) => e.currentTarget.requestSubmit()}
       aria-label="Report filters"
     >
+      <input type="hidden" name="year" value={options.year} />
       <div className="filter">
-        <label htmlFor="f-year">Year</label>
-        <select id="f-year" name="year" defaultValue={options.year}>
-          {years.map(year => <option key={year} value={year}>{year}</option>)}
+        <label htmlFor="f-view">Branch</label>
+        <select id="f-view" name="view" defaultValue={options.view ?? "ALL"}>
+          <option value="ALL">Consolidated</option>
+          {BRANCHES.map(branch => <option key={branch.code} value={branch.code}>{branch.name}</option>)}
+          <option value="BY_BRANCH">Side by side by branch</option>
         </select>
       </div>
-
       <div className="filter">
         <label htmlFor="f-from">Start</label>
         <select id="f-from" name="from" defaultValue={options.from}>
@@ -45,7 +47,7 @@ export function ReportFilters({ options }: { options: IncomeStatementOptions }) 
 
       <div className="filter">
         <label htmlFor="f-grain">Columns</label>
-        <select id="f-grain" name="grain" defaultValue={options.grain}>
+        <select id="f-grain" name="grain" defaultValue={options.grain} disabled={options.view === "BY_BRANCH"}>
           <option value="month">Monthly</option>
           <option value="quarter">Quarterly</option>
           <option value="year">Annual</option>
