@@ -1,42 +1,101 @@
-# Invoice Entry review - 7 November 2026
+# Invoice Entry rules
 
-The current T-Chart Actual Trigger and Mapping columns plus the user's refinements define this update.
-The downloaded workbook is a private local artifact and is not committed to this public repository.
+Source: [live T-Chart](https://chicagobrass.sharepoint.com/:x:/r/Intranet/_layouts/15/Doc.aspx?sourcedoc=%7BF609079B-B392-421C-A170-878D5E60CD60%7D&file=T-Chart.xlsx&action=default&mobileredirect=true), downloaded 12 November 2026.
 
-| Row | Implementation change |
-| --- | --- |
-| 2 | Keep AP Product and received-not-invoiced > 0; post Invoice Amount |
-| 3 | Deferred; no guessed price-variance split |
-| 4 | Replace received rollup = 0 with Related Purchase Order Status = Confirmed and Latest Purchase Order Received Date empty |
-| 5 | Replace Invoice Amount with Freight |
-| 6 | AP, AP - Expenses (Non-Sales Tax), linked account 004.013 only; remove vendor blocker; post Invoice Amount |
-| 7 | Keep sales-tax Invoice Amount mapping |
-| 8 | Keep asset Invoice Amount mapping |
-| 9 | Remove credit ABS; preserve source sign |
-| 10 | Replace missing-account error with AP / COGS 004.010, preserving sign |
-| 11 | Keep AR Non-Product and linked account 010.001 |
-| 12 | Deferred; no guessed return-credit split |
+The daily webhook owns discovery and named category handlers. Its external scheduler remains
+unconfigured. Each rule keeps the existing stable code; deleted rows never reuse earlier codes.
+Payment and Expense business rules are unchanged by this revision.
 
-Create Entry and Invoice Created remain the native triggers. Daily 11 PM America/Chicago is
-an Excel specification only, pending the per-category posted-record selection/backlink design.
-No nightly sweep or historical retrigger was added. Existing script inputs and the shared secret remain.
+| Row | Code | Entry record | Final debit / credit | Status |
+| --- | --- | --- | --- | --- |
+| 2 | INV-12 | Invoices | AR 121.100 / Client Deposits 221.100 | Fully |
+| 3 | INV-13 | Payments | Selected payment account / AR 121.100 | Fully |
+| 4 | INV-14 | Shipping Record | Client Deposits 221.100 / Product Revenue 004.001 | Working partial |
+| 5 | INV-15 | Invoices | AR 121.100 / Product Revenue 004.001 | Fully |
+| 6 | INV-16 | Payments | Selected payment account / AR 121.100 | Fully |
+| 7 | Excluded | Black price-variance row | No registered rule | Excluded |
+| 8 | INV-07 | Invoices | Linked asset account / AP 211.100 | Working partial |
+| 9 | INV-17 | Payments | AP 211.100 / Selected payment account | Working partial |
+| 10 | INV-08 | Deferred | Vendor return credit | Not yet |
+| 11 | INV-09 | Deferred | Vendor price credit | Not yet |
+| 12 | INV-10 | Invoices | AR 121.100 / Linked invoice account | Fully |
+| 13 | INV-18 | Payments | Selected payment account / AR 121.100 | Fully |
+| 14 | Excluded | Black customer-return row | No registered rule | Excluded |
 
-The two new PO rollups are native invoice fields fldQy8xHW49sFGnJY and flduniMtBFi84pUsc.
-Account 004.013 is FIN Freight Cost. Its linked vendors do not restrict row 6.
-Rows 2/4/5 may still overlap under the chart's independent filters. If Invoice Amount includes
-Freight, the row 5 component needs accounting review; the workbook retains that risk note.
+## Filters and amounts
 
-Signed amounts retain the chart's account sides. The generic Edge receiver and migration
-20261107000900_signed_journal_amounts permit signed debit/credit values while preserving exactly
-one populated side per line, exact journal balance, period guards, RLS, posted immutability and
-strict replay checks. The migration also updates ledger offsetting-account and side queries.
-Existing journal data is untouched; replaying an old ABS-normalized credit with a new sign can
-conflict and must be reviewed rather than rewritten automatically.
+Deposit, Full and Balance rules require Invoice Type AR and Vendor Type AR - Product. Non-product
+invoices use AR - Non-Product without a fixed linked-account filter. These scopes are separate.
+Payments require Sent, use Payment Date, and post the full signed Payments.Amount once with all
+qualifying invoice references. Invoice events use Invoice Amount and Invoice Date. No absolute
+value, line allocation or inferred final-payment selection is applied.
 
-The related Expense W2 handler now posts salary 005.002/241.100, payroll tax 005.006/241.200,
-and 401k 005.005/241.400. Employee benefits 241.600 are excluded. Repeated same-account lines
-sum into one pair/journal; different accounts have separate entryKey values and journals.
+Both fixed-asset rules currently qualify only 143.300 and exclude Mark as Prepaid Asset? invoices,
+which belong to Expense. The linked account supplies the debit. Additional asset accounts require
+an approved chart update. FIN Coordination Fees Charged 004.002 is a matching revenue account in
+the migration; non-product handlers resolve the actual selected account rather than substituting
+Miscellaneous Income.
 
-Focused verification: 21 Invoice Entry native checks, 22 Expense Create Entry checks, 11 Fully
-Paid checks, 6 depreciation checks, 6 prepaid-use checks, 34 real disposable database posting
-checks, 12 report/filter checks, and 10 HTTP/auth checks. No hosted financial sample was posted.
+Shipping requires Ship Out and Ship Out Date. It sums linked MTAs.Extended Sell Price in checked
+four-decimal units, then rounds the total to cents. This field is already extended; multiplying by
+Quantity would overstate it. Missing valuations fail before posting. The cap against the paid
+deposit is explicitly deferred, so this working partial can recognize more than the deposit.
+
+Shipping Record currently links to MTAs (Deprecated) and Transactions (Deprecated). The worker
+uses those actual FIN link targets. Transaction and state references retain their actual source
+IDs. Branch comes from linked MTAs; missing attribution stays empty. Replacement tables and the
+deposit linkage must be resolved before imposing a cap.
+
+## Source ownership and deployment
+
+Shipping Record owns the same five ledger-link and reverse fields as the existing five source
+tables. Its prepared events carry shippingRecordId and eventType created. The shared writer,
+source lock, period review, journal writeback and dedicated reversal service recognize that source.
+The native reversal script template accepts the Shipping Record table ID. Creating or publishing
+a separate native checkbox automation is a distinct deployment step.
+
+Rules INV-01, INV-03, INV-04, INV-05 and INV-06 are removed from worker discovery. Their historical
+catalog rows and journals remain. Deferred rules have named throwing functions but are excluded
+from ordinary runs. Catalog refreshes preserve functioning rules' enabled switches and explicitly
+disable retired/deferred Invoice Entry rules. No scheduler or native posting cutover is enabled.
+
+The Desktop workbook changes only Category - Invoice Entry. Expense, Payment and Other sheets
+retain their original XML and values. Field, Other Field and Account mappings are separate columns;
+section tags and actual account headings are bold, examples are regular text.
+
+## Verification
+
+Focused category/discovery checks: 117 passed. Boundary, source-identity and read-only tests:
+29 passed. Disposable database posting/writeback/reversal checks: 91 passed. The native reversal
+mock includes Shipping Record. Airtable accepted all nine functioning rule formulas; bounded
+GET-only sampling prepared three source packets without database or Airtable writes. This is
+not a full-population eligibility count or a hosted posting test.
+
+The Invoice Entry catalog and Coordination Fees Charged account were applied to DUAL ENTRY.
+The shared writer, reversal, period service and daily worker were published using their existing
+secrets. Invoice Entry operational switches remain off; only the previously enabled Expense
+rules remain enabled. The Shipping Record fields were created empty and independently read back.
+No existing source values were changed. Native posting/reversal automation configurations were
+not changed by this revision.
+
+
+## Current finalization
+
+Six full categories are enabled. Shipment recognition and both fixed-asset counterparts are
+working partials and disabled. Vendor-credit rows 10/11 are red and disabled. Black rows 7/14
+are excluded from the registry. Five deleted AP Invoice Entry routes and the two black routes
+are removed from the catalog when no journal references them. Journal history is preserved.
+
+The worker supports an exact source table/record ID and optional fromDate/toDate overrides.
+The last-30-days window remains the default. Invoice Entry's two old native posting automations
+are OFF; existing source-owned reversal automations remain ON. Shipping reversal is supported
+by the endpoint and script template, but its native checkbox automation remains pending while
+the category is disabled. Payment-sheet overlap concerns are retained in the workbook; those
+Payment rules are not enabled by this revision.
+
+Final verification: 152 focused tests and 93 disposable database tests passed. The live invoice,
+line, prepaid, depreciation and payment reversal configurations use the same source-owned request
+and permanent-date pattern. Invoice reversal's reviewed pending configuration was published.
+The shared endpoint's updated source/date options were published as `ledger-daily` version 15;
+all 27 downloaded runtime files matched local source. Remote metadata verified six full Invoice
+Entry categories enabled and all partial/deferred Invoice categories disabled.

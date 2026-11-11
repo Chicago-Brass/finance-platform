@@ -1,10 +1,15 @@
 // Airtable posting cache shared by current webhooks and the future daily worker.
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
+import { lockLedgerSource } from "./period-review.ts";
 
 export const FIN_BASE = "app0Q1UMEdUeWl538";
 export const LINK_FIELDS = {
+  tblAxlsdmJN0X0sQs: { postings: "fldfKQTnuiuyHJqEw", ids: "fld9td99xEJHKbdyo", reversalIds: "fldoEz58DXpKGdXBF" },
   tblR61NG9i0giid28: { postings: "fldFcvTSQ5035ZYVa", ids: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
   tbldQXuqNEp8G5pfs: { postings: "fld2K7xKmNnLoi4u6", ids: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },
+  tblV26TC0f6CKDneL: { postings: "fldggH4cOAdWpW8WO", ids: "fldi0ML7ThX0lD1vg", reversalIds: "fldxgFR0EWkD0fMLD" },
+  tbl1LgiUYt7Gc492d: { postings: "fldw8s2MSZm1vbuO2", ids: "fld5xpLcuYN7i1gRz", reversalIds: "fldbYYEu6fFmzegQT" },
+  tblC0dbO5UMXzHma9: { postings: "fldTbVTOFkYW8Qb5Y", ids: "fld0rJIJ4BytBFaTC", reversalIds: "fldA3dt8UXrE5tpPc" },
 } as const;
 export interface LedgerSource { tableId: string; recordId: string }
 export interface LedgerReference { rule: string; key: string; datetime: string; id: string }
@@ -47,8 +52,7 @@ export async function syncLedgerLinks(sql: Sql, source: LedgerSource, token: str
   try { result = await sql.begin(async tx => {
     await tx`set local role service_role`;
     await tx`set local statement_timeout='15s'`;
-    const lockKey = (source.tableId === "tblR61NG9i0giid28" ? "FIN payment:" : "FIN invoice:") + source.recordId;
-    await tx`select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(${lockKey}, 0))`;
+    await lockLedgerSource(tx, source);
     const links = await readLedgerLinks(tx, source);
     if (!links.journalEntryIds.length) return { links, rolledBack: false };
     const values = {

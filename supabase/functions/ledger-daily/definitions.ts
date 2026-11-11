@@ -3,8 +3,12 @@ export { FIN_BASE } from "../_shared/ledger-links.ts";
 import { LINK_FIELDS } from "../_shared/ledger-links.ts";
 
 export const POSTING_FIELDS = {
+  tblAxlsdmJN0X0sQs: { postings: LINK_FIELDS.tblAxlsdmJN0X0sQs.postings, ids: LINK_FIELDS.tblAxlsdmJN0X0sQs.ids, reverse: "fld8oS4rTOmZtuTl6", reverseDate: "fldAgNtldwTtWCfo2" },
   tblR61NG9i0giid28: { postings: LINK_FIELDS.tblR61NG9i0giid28.postings, ids: LINK_FIELDS.tblR61NG9i0giid28.ids, reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P" },
   tbldQXuqNEp8G5pfs: { postings: LINK_FIELDS.tbldQXuqNEp8G5pfs.postings, ids: LINK_FIELDS.tbldQXuqNEp8G5pfs.ids, reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", cancelled: "fldbovm1ab4HOZDBe" },
+  tblV26TC0f6CKDneL: { postings: LINK_FIELDS.tblV26TC0f6CKDneL.postings, ids: LINK_FIELDS.tblV26TC0f6CKDneL.ids, reverse: "fldEN2QtqnbyNjjDW", reverseDate: "fld5t7Tr5qraHGWP8" },
+  tbl1LgiUYt7Gc492d: { postings: LINK_FIELDS.tbl1LgiUYt7Gc492d.postings, ids: LINK_FIELDS.tbl1LgiUYt7Gc492d.ids, reverse: "fldnTDkZ6w2HdA3g0", reverseDate: "fldqX6PQbMnOCbTWC", cancelled: "fldtR0eFChr1XDIoN" },
+  tblC0dbO5UMXzHma9: { postings: LINK_FIELDS.tblC0dbO5UMXzHma9.postings, ids: LINK_FIELDS.tblC0dbO5UMXzHma9.ids, reverse: "fld421jsytudCyW6u", reverseDate: "fldroh8valB06yEvQ" },
 } as const;
 
 export const paymentSentFields = {
@@ -196,63 +200,6 @@ export const paidExpenseFields = {
   }
 } as const;
 
-export const invoiceEntryFields = {
-  "TABLES": {
-    "invoices": "tbldQXuqNEp8G5pfs",
-    "accounts": "tblJ2RF8vlOhNMBKR"
-  },
-  "INVOICE_FIELDS": {
-    "name": "fldMZyzqDidRujeZS",
-    "type": "fld9e6yDIv0PtBDV0",
-    "vendorTypeAP": "fldXwodwAuXLJt5rP",
-    "vendorTypeAR": "fldbMLaxgnu81a0O0",
-    "amount": "fldm5nXoW7MrwjkhW",
-    "freight": "fldYDH7AJbrrPZpt9",
-    "date": "fldSungTQU5nIEIvi",
-    "createEntry": "fldFrvGncUen39hBY",
-    "poStatus": "fldQy8xHW49sFGnJY",
-    "poReceivedDate": "flduniMtBFi84pUsc",
-    "receivedNotInvoiced": "fldUFz9w6y184Sn7h",
-    "accounts": "fldT5u0prSS8G1H4x",
-    "purchaseOrders": "fldcIaoLYHgegP17m",
-    "vendors": "fld77UN3hpnMagzkj",
-    "clients": "fld9aY5ze2BbaoWG5",
-    "staff": "fldJXrFmx3Y6Szxa5",
-    "transactions": "fldxUmaAhUJjAGnrw",
-    "branch": "fldt5PjqGDrINUYT5",
-    "states": "fld3kO1XElo5S3Hhy"
-  },
-  "ACCOUNT_FIELDS": {
-    "number": "fldTjgAITNrJVCCWq"
-  }
-} as const;
-
-export const outboundFields = {
-  "TABLES": {
-    "invoices": "tbldQXuqNEp8G5pfs",
-    "accounts": "tblJ2RF8vlOhNMBKR"
-  },
-  "ACCOUNT_FIELDS": {
-    "number": "fldTjgAITNrJVCCWq"
-  },
-  "INVOICE_FIELDS": {
-    "name": "fldMZyzqDidRujeZS",
-    "type": "fld9e6yDIv0PtBDV0",
-    "vendorTypeAP": "fldXwodwAuXLJt5rP",
-    "vendorTypeAR": "fldbMLaxgnu81a0O0",
-    "accounts": "fldT5u0prSS8G1H4x",
-    "amount": "fldm5nXoW7MrwjkhW",
-    "date": "fldSungTQU5nIEIvi",
-    "purchaseOrders": "fldcIaoLYHgegP17m",
-    "vendors": "fld77UN3hpnMagzkj",
-    "clients": "fld9aY5ze2BbaoWG5",
-    "staff": "fldJXrFmx3Y6Szxa5",
-    "transactions": "fldxUmaAhUJjAGnrw",
-    "branch": "fldt5PjqGDrINUYT5",
-    "states": "fld3kO1XElo5S3Hhy"
-  }
-} as const;
-
 export const depreciationFields = {
   "TABLE": "tblC0dbO5UMXzHma9",
   "FIELDS": {
@@ -273,4 +220,40 @@ export const prepayFields = {
   },
   "INVOICES": "tbldQXuqNEp8G5pfs",
   "BRANCH": "fldt5PjqGDrINUYT5"
+} as const;
+
+// Current Expense chart entry points. Native automation field groups above remain unchanged.
+export const expenseWorkerFields = {
+  TABLES: { ...expenseFields.TABLES, payments: paymentSentFields.TABLES.payments, prepay: prepayFields.TABLE, depreciation: depreciationFields.TABLE },
+  INVOICE_FIELDS: { ...expenseFields.INVOICE_FIELDS, status: "fld2YNpvvqweloE6S", cancelled: "fldbovm1ab4HOZDBe", prepayLogs: "fldINdIcixfdPbgw0", noVendorBill: "fldYZBfXWpNCWd0sg" },
+  LINE_FIELDS: { ...expenseFields.LINE_FIELDS, status: "fldmIVFZRPfKf0QoX", vendorType: "fldflW5cKyjNYB0SJ" },
+  PAYMENT_FIELDS: {
+    name: paymentSentFields.PAYMENT_FIELDS.name, amount: paymentSentFields.PAYMENT_FIELDS.amount,
+    reference: paymentSentFields.PAYMENT_FIELDS.reference, date: paymentSentFields.PAYMENT_FIELDS.date,
+    sent: paymentSentFields.PAYMENT_FIELDS.sent, accounts: paymentSentFields.PAYMENT_FIELDS.accounts,
+    invoices: paymentSentFields.PAYMENT_FIELDS.invoices, cancelled: paymentEventsFields.PAYMENT_FIELDS.cancelled,
+    returned: paymentSentFields.PAYMENT_FIELDS.returned,
+  },
+  PREPAY_FIELDS: { ...prepayFields.FIELDS, cancelled: "fldtR0eFChr1XDIoN" },
+  DEPRECIATION_FIELDS: depreciationFields.FIELDS,
+  ACCOUNT_FIELDS: expenseFields.ACCOUNT_FIELDS,
+} as const;
+
+// Current Invoice Entry chart. Shipping links use the actual tables exposed by FIN.
+export const invoiceWorkerFields = {
+  TABLES: { invoices: paymentSentFields.TABLES.invoices, accounts: paymentSentFields.TABLES.accounts, payments: paymentSentFields.TABLES.payments,
+    shipping: "tblAxlsdmJN0X0sQs", mtas: "tblNcoC7APgbJ3kgf" },
+  INVOICE_FIELDS: {
+    type: "fld9e6yDIv0PtBDV0", vendorTypeAP: "fldXwodwAuXLJt5rP", vendorTypeAR: "fldbMLaxgnu81a0O0",
+    kind: "fld11boAS4dCyyuZW", cancelled: "fldbovm1ab4HOZDBe", prepaid: "fldckuYNfSzBXq0AX",
+    amount: "fldm5nXoW7MrwjkhW", date: "fldSungTQU5nIEIvi", accounts: "fldT5u0prSS8G1H4x",
+    payments: "fldeNFOgl9OBHPlNm", branch: "fldt5PjqGDrINUYT5", vendors: "fld77UN3hpnMagzkj",
+    clients: "fld9aY5ze2BbaoWG5", staff: "fldJXrFmx3Y6Szxa5", transactions: "fldxUmaAhUJjAGnrw",
+    purchaseOrders: "fldcIaoLYHgegP17m", states: "fld3kO1XElo5S3Hhy",
+  },
+  PAYMENT_FIELDS: expenseWorkerFields.PAYMENT_FIELDS,
+  SHIPPING_FIELDS: { shipped: "fldluJJSvhtYasYQ7", date: "fldTcXR9nHM4XTJZo",
+    mtas: "fld4XfIBm2RnK0yfo", transactions: "flduv7e2XhfIYwQ6h" },
+  MTA_FIELDS: { amount: "fldSsRsBXUOkXSU8c", branch: "fldUaZWYWb6jOPbFA", states: "fldM5NdON38IvCXGD" },
+  ACCOUNT_FIELDS: paymentSentFields.ACCOUNT_FIELDS,
 } as const;

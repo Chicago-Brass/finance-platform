@@ -1,6 +1,6 @@
 import { FIN_BASE } from "./definitions.ts";
 import { BudgetExceeded, retry, RetryableError, sleep } from "./retry.ts";
-import type { FormulaBuilder } from "./types.ts";
+import type { FormulaBuilder, SyncDateRange } from "./types.ts";
 
 interface Field { id: string; name: string; type: string; options?: { linkedTableId?: string } }
 interface Table { id: string; name?: string; primaryFieldId: string; fields: Field[] }
@@ -38,11 +38,12 @@ export class AirtableClient implements FormulaBuilder {
   requests = 0;
   private token: string;
   readonly deadline: number;
+  readonly dateRange?: SyncDateRange;
   private fetcher: typeof fetch;
   private readOnly: boolean;
   private maxRequests: number;
-  constructor(token: string, deadline: number, fetcher: typeof fetch = fetch, options: { readOnly?: boolean; maxRequests?: number } = {}) {
-    this.token = token; this.deadline = deadline; this.fetcher = fetcher;
+  constructor(token: string, deadline: number, fetcher: typeof fetch = fetch, options: { readOnly?: boolean; maxRequests?: number; dateRange?: SyncDateRange } = {}) {
+    this.token = token; this.deadline = deadline; this.fetcher = fetcher; this.dateRange = options.dateRange;
     this.readOnly=options.readOnly??false; this.maxRequests=options.maxRequests??80;
   }
   async initialize(): Promise<void> {

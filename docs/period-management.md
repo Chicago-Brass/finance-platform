@@ -44,6 +44,24 @@ The staged daily worker remains unscheduled. It recognizes held requests and doe
 
 ## Installed state
 
-The period schema and pending-review guard are installed in DUAL ENTRY. The existing five app users have `can_manage_periods=true` by explicit authorization; future users default to false. The original 144 journals remain intact. The three Edge endpoints are published, and all 11 native automation instances have review-aware response handling. The daily worker is still not deployed or scheduled. The Period Management frontend is available locally; it has not been deployed to production.
+The period schema and pending-review guard are installed in DUAL ENTRY. The initial five app
+users received `can_manage_periods=true` by explicit authorization; new users default to false.
+The Period Management page is deployed in the finance application.
 
-Before the user stopped further QA, the disposable posting/reversal/review suite passed 66 checks, report database reads passed 12 checks, the focused app/auth cohort passed 36 checks, native reversal checks passed nine checks, and TypeScript/Edge checks passed. The live-backed page was inspected on desktop. Full end-to-end period actions in the browser and additional visual QA were not completed.
+On 12 November 2026, `ledger-periods` v3 was published with JWT verification enabled and the
+current posting, reversal, source-lock and writeback dependencies. It supports exception approval
+for Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table.
+`ledger-payment` v20, `ledger-reversal` v8 and `ledger-daily` v12 were published alongside it;
+all 42 downloaded runtime modules matched local source. The daily worker remains unscheduled.
+All five native reversal automations were reloaded ON with saved scripts and inputs verified.
+
+Current isolated checks passed 91 disposable posting/reversal/review checks, 11 native reversal
+checks, 56 focused checks, 17 report checks and TypeScript. An additional disposable proof
+covered closed-period reversal capture, authorized exception approval, metadata writeback and
+duplicate-free retry for all five source tables, using mocked Airtable calls.
+
+Authorized live testing posted and reversed 66 journals from 62 Expense sources across 15 rules.
+All source writebacks were verified, and report builders/date windows/branch reads reconciled
+to stored lines. Missing periods were not opened to force samples; a category with only
+missing-period candidates remains a coverage gap. No real accounting period state was
+changed for the test. Historical checks are separate from this current deployment evidence.

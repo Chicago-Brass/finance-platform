@@ -7,8 +7,12 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const tableId = "tblR61NG9i0giid28", recordId = "rec00000000000001";
 const original = "11111111-1111-4111-8111-111111111111", reversal = "22222222-2222-4222-8222-222222222222";
 const fieldIds = {
+    tblAxlsdmJN0X0sQs: { reverse: "fld8oS4rTOmZtuTl6", reverseDate: "fldAgNtldwTtWCfo2", journalIds: "fld9td99xEJHKbdyo", reversalIds: "fldoEz58DXpKGdXBF" },
     tblR61NG9i0giid28: { reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P", journalIds: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
     tbldQXuqNEp8G5pfs: { reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", journalIds: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },
+    tblV26TC0f6CKDneL: { reverse: "fldEN2QtqnbyNjjDW", reverseDate: "fld5t7Tr5qraHGWP8", journalIds: "fldi0ML7ThX0lD1vg", reversalIds: "fldxgFR0EWkD0fMLD" },
+    tbl1LgiUYt7Gc492d: { reverse: "fldnTDkZ6w2HdA3g0", reverseDate: "fldqX6PQbMnOCbTWC", journalIds: "fld5xpLcuYN7i1gRz", reversalIds: "fldbYYEu6fFmzegQT" },
+    tblC0dbO5UMXzHma9: { reverse: "fld421jsytudCyW6u", reverseDate: "fldroh8valB06yEvQ", journalIds: "fld0rJIJ4BytBFaTC", reversalIds: "fldA3dt8UXrE5tpPc" },
 };
 
 function harness({ fields = {}, config = {}, ok = true, result, missing = false, failWrite = 0, failFetch = false } = {}) {
@@ -22,7 +26,7 @@ function harness({ fields = {}, config = {}, ok = true, result, missing = false,
         assert.equal(id, settings.sourceTableId);
         return {
             async selectRecordAsync(id, options) {
-                reads.push(id); assert.deepEqual(options.fields, [selectedFields.reverse, selectedFields.reverseDate, selectedFields.journalIds]);
+                reads.push(id); assert.deepEqual(options.fields, [selectedFields.reverse, selectedFields.reverseDate]);
                 return missing ? null : { id, getCellValue: field => state[aliases[field]], getCellValueAsString: field => state[aliases[field]] || "" };
             },
             async updateRecordAsync(id, changes) {
@@ -49,18 +53,25 @@ function harness({ fields = {}, config = {}, ok = true, result, missing = false,
 (async () => {
     let count = 0;
     const check = async (name, fn) => { try { await fn(); count++; } catch (error) { error.message = `${name}: ${error.message}`; throw error; } };
-    await check("stamps the Chicago date once and writes all returned IDs", async () => {
+    await check("stamps the Chicago date once and leaves ID writeback to Supabase", async () => {
         const h = harness(); await h.run();
         assert.equal(h.state.reverseDate, "2026-11-08", "Chicago date differs from UTC at this time");
-        assert.deepEqual(h.calls, [{ source: { tableId, recordId }, journalEntryIds: [], reversalDate: "2026-11-08" }]);
-        assert.equal(h.writes.length, 2); assert.equal(h.state.journalIds, JSON.stringify([original]));
-        assert.equal(h.state.reversalIds, JSON.stringify([reversal])); assert.equal(h.state.reverse, true);
+        assert.deepEqual(h.calls, [{ source: { tableId, recordId }, reversalDate: "2026-11-08" }]);
+        assert.equal(h.writes.length, 1); assert.equal(h.state.journalIds, "[]");
+        assert.equal(h.state.reversalIds, null); assert.equal(h.state.reverse, true);
         assert.match(h.logs.join("\n"), /Journals reversed: 1/);
     });
     await check("invoice setup uses its own source and preserves an existing manual date", async () => {
         const h = harness({ config: { sourceTableId: "tbldQXuqNEp8G5pfs" }, fields: { reverseDate: "2026-10-15", journalIds: JSON.stringify([original]) } });
-        await h.run(); assert.equal(h.writes.length, 1); assert.equal(h.calls[0].reversalDate, "2026-10-15");
-        assert.equal(h.calls[0].source.tableId, "tbldQXuqNEp8G5pfs"); assert.deepEqual(h.calls[0].journalEntryIds, [original]);
+        await h.run(); assert.equal(h.writes.length, 0); assert.equal(h.calls[0].reversalDate, "2026-10-15");
+        assert.equal(h.calls[0].source.tableId, "tbldQXuqNEp8G5pfs"); assert.equal(h.calls[0].journalEntryIds, undefined);
+    });
+    await check("line and log sources reverse only their own journals", async () => {
+        for (const sourceTableId of ["tblV26TC0f6CKDneL", "tbl1LgiUYt7Gc492d", "tblC0dbO5UMXzHma9", "tblAxlsdmJN0X0sQs"]) {
+            const h = harness({ config: { sourceTableId }, fields: { reverseDate: "2026-10-15" } });
+            await h.run(); assert.equal(h.calls[0].source.tableId, sourceTableId);
+            assert.equal(h.state.reversalIds, null);
+        }
     });
     await check("unchecking does not reverse, restore, clear IDs or clear a date", async () => {
         const h = harness({ fields: { reverse: false, reverseDate: "2026-10-15", reversalIds: JSON.stringify([reversal]) } });
@@ -74,16 +85,14 @@ function harness({ fields = {}, config = {}, ok = true, result, missing = false,
             assert.equal(h.state.reverseDate, "2026-11-08"); assert.equal(h.state.reversalIds, "unchanged");
         }
     });
-    await check("date write failure prevents the webhook; response write failure never clears the date", async () => {
+    await check("date write failure prevents the webhook", async () => {
         const before = harness({ failWrite: 1 }); await assert.rejects(before.run(), /Mock write/); assert.equal(before.calls.length, 0);
-        const after = harness({ failWrite: 2 }); await assert.rejects(after.run(), /Mock write/);
-        assert.equal(after.calls.length, 1); assert.equal(after.state.reverseDate, "2026-11-08"); assert.equal(after.state.reversalIds, null);
     });
     await check("an exact retry preserves the original date and accepts the existing reversals", async () => {
         const h = harness({ fields: { reverseDate: "2026-10-15" } });
         h.response.reversedCount = 0; h.response.duplicateCount = 1; h.response.results[0].status = "already_reversed";
         await h.run(); await h.run(); assert.equal(h.state.reverseDate, "2026-10-15");
-        assert.ok(h.writes.every(write => !("reverseDate" in write))); assert.equal(h.state.reversalIds, JSON.stringify([reversal]));
+        assert.equal(h.writes.length, 0); assert.equal(h.state.reversalIds, null);
     });
     await check("pending and rejected responses preserve existing journal links", async () => {
         for (const status of ["pending_review", "rejected"]) {
@@ -99,10 +108,15 @@ function harness({ fields = {}, config = {}, ok = true, result, missing = false,
             assert.equal(h.state.journalIds, "[]"); assert.equal(h.state.reversalIds, null);
         }
     });
-    await check("missing records, malformed stored JSON and deferred tables fail without requests", async () => {
-        for (const options of [{ missing: true }, { fields: { journalIds: "not JSON" } }, { config: { sourceTableId: "tblC0dbO5UMXzHma9" } }, { config: { sourceRecordId: "" } }]) {
+    await check("missing records and unconfigured tables fail without requests", async () => {
+        for (const options of [{ missing: true }, { config: { sourceTableId: "unsupported" } }, { config: { sourceRecordId: "" } }]) {
             const h = harness(options); await assert.rejects(h.run()); assert.equal(h.calls.length, 0); assert.equal(h.writes.length, 0);
         }
+    });
+    await check("malformed cached IDs do not block source-owned reversal", async () => {
+        const h=harness({fields:{journalIds:"not JSON",reverseDate:"2026-10-15"}});
+        await h.run(); assert.equal(h.calls.length,1); assert.equal(h.writes.length,0);
+        assert.equal(h.calls[0].journalEntryIds,undefined); assert.equal(h.state.journalIds,"not JSON");
     });
     console.log(`${count} reversal native checks passed.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

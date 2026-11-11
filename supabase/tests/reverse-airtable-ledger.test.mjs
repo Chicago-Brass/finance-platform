@@ -19,6 +19,14 @@ const event = (recordId, amounts = ["10.00"], invoice = false) => ({
 const request = (recordId, invoice = false, journalEntryIds = []) => ({ source: { tableId: invoice ? INVOICES : PAYMENTS, recordId }, journalEntryIds, reversalDate: "2026-11-09" });
 const journals = recordId => sql`select * from public.journal_entries where source_record_id=${recordId} order by entry_number`;
 
+test("source and date alone reverse all owned journals without reading cached IDs", async () => {
+  const recordId=id(9010);
+  await postPayment(sql,event(recordId,["10.00","-2.50"]));
+  const value={source:{tableId:PAYMENTS,recordId},reversalDate:"2026-11-09"};
+  const first=await reverseJournals(sql,value);assert.equal(first.reversedCount,2);
+  assert.equal((await reverseJournals(sql,value)).duplicateCount,2);
+});
+
 test("reverses every account journal and preserves all stored metadata and signed lines", async () => {
   const recordId = id(9001);
   const posted = await postPayment(sql, event(recordId, ["10.00", "-2.50", "6.00"]));
@@ -78,20 +86,79 @@ test("mixed completed and pending reversals return the complete ID set", async (
   assert.equal(result.reversalJournalEntryIds.length, 2); assert.equal((await journals(recordId)).length, 4);
 });
 
-test("wrong ownership, deferred sources and invalid requests cannot create reversals", async () => {
+test("wrong ownership, unsupported sources and invalid requests cannot create reversals", async () => {
   const recordId = id(9006), otherId = id(9007);
   const posted = await postPayment(sql, event(recordId)); await postPayment(sql, event(otherId));
   const bad = [
     request(otherId, false, posted.journalEntryIds),
-    { ...request(recordId), source: { tableId: "tblC0dbO5UMXzHma9", recordId } },
+    { ...request(recordId), source: { tableId: "tblUnsupported000", recordId } },
     { ...request(recordId), source: { tableId: PAYMENTS, recordId: "bad" } },
     { ...request(recordId), reversalDate: "2026-02-30" },
     { ...request(recordId), journalEntryIds: ["not-uuid"] },
+    { ...request(recordId), journalEntryIds: null },
   ];
   for (const value of bad) await assert.rejects(reverseJournals(sql, value));
   assert.equal((await journals(recordId)).length, 1); assert.equal((await journals(otherId)).length, 1);
   const empty = await reverseJournals(sql, request(id(9099)));
   assert.deepEqual(empty.journalEntryIds, []); assert.equal(empty.reversedCount, 0);
+});
+
+test("invoice-line posting and reversal retain line ownership and parent invoice references", async () => {
+  const lineId=id(9101), invoiceId=id(9102), paymentId=id(9103), tableId="tblV26TC0f6CKDneL";
+  const parent=event(invoiceId,["20.00"],true);
+  parent.categories[0].postings[0].invoiceRecordId=invoiceId;
+  await postPayment(sql,parent);
+  const paid=event(paymentId,["20.00"]);
+  paid.categories[0].postings[0].invoiceRecordId=invoiceId;
+  await postPayment(sql,paid);
+  const value={invoiceLineRecordId:lineId,eventType:"entry_requested",entryDate:"2026-10-29",
+    source:{tableId,recordId:lineId,recordName:"Synthetic salary line"},
+    categories:[{ruleCode:"EXP-06",transactionType:"Salary expense",postings:[{
+      debitAccount:{number:"005.002"},creditAccount:{number:"211.100"},amount:"-7.50",
+      invoiceRecordId:invoiceId,sourceRecordId:lineId,branch:"Chicago",
+    }]}]};
+  const posted=await postPayment(sql,value);
+  assert.equal(posted.invoiceLineRecordId,lineId);assert.equal(posted.invoiceRecordId,undefined);
+  assert.equal(posted.postedCount,1);
+  const replay=await postPayment(sql,value);
+  assert.equal(replay.duplicateCount,1);assert.deepEqual(replay.journalEntryIds,posted.journalEntryIds);
+  const [header]=await journals(lineId);
+  assert.equal(header.source_table,tableId);
+  assert.equal(header.audit_link,`https://airtable.com/app0Q1UMEdUeWl538/${tableId}/${lineId}`);
+  const lines=await sql`select invoice_ref,airtable_record_id,debit::text,credit::text from public.journal_lines where entry_id=${header.id} order by line_no`;
+  assert(lines.every(line=>JSON.stringify(line.invoice_ref)===JSON.stringify([invoiceId])&&line.airtable_record_id===lineId));
+  assert.equal(lines[0].debit,"-7.50");assert.equal(lines[1].credit,"-7.50");
+  await assert.rejects(reverseJournals(sql,{source:{tableId:INVOICES,recordId:invoiceId},journalEntryIds:posted.journalEntryIds,reversalDate:"2026-11-09"}),/does not belong/);
+  const reversal={source:{tableId,recordId:lineId},journalEntryIds:posted.journalEntryIds,reversalDate:"2026-11-09"};
+  const reversed=await reverseJournals(sql,reversal);assert.equal(reversed.reversedCount,1);
+  assert.equal((await reverseJournals(sql,reversal)).duplicateCount,1);
+  assert.equal((await journals(invoiceId)).length,1);assert.equal((await journals(paymentId)).length,1);
+  assert.equal((await journals(lineId)).length,2);
+  const changed=structuredClone(value);changed.categories[0].postings[0].amount="-8.00";
+  await assert.rejects(postPayment(sql,changed),/historically reversed/);
+});
+
+test("depreciation, prepaid-log and shipping reversals remain isolated to their source records", async () => {
+  const fixtures=[
+    {tableId:"tblC0dbO5UMXzHma9",field:"depreciationRecordId",recordId:id(9104),rule:"EXP-10",debit:"009.101",credit:"161.000"},
+    {tableId:"tbl1LgiUYt7Gc492d",field:"prepayLogRecordId",recordId:id(9105),rule:"EXP-04",debit:"007.011",credit:"135.000"},
+  ];
+  fixtures.push({tableId:"tblAxlsdmJN0X0sQs",field:"shippingRecordId",recordId:id(9106),rule:"INV-14",debit:"221.100",credit:"004.001"});
+  await sql`update public.ledger_rules set enabled=true where rule_code='INV-14'`;
+  for(const f of fixtures){
+    const value={[f.field]:f.recordId,eventType:"created",entryDate:"2026-10-29",
+      source:{tableId:f.tableId,recordId:f.recordId},categories:[{ruleCode:f.rule,transactionType:"Synthetic recorded expense",postings:[{
+        debitAccount:{number:f.debit},creditAccount:{number:f.credit},amount:"6.25",sourceRecordId:f.recordId,
+      }]}]};
+    const posted=await postPayment(sql,value);
+    assert.equal(posted.postedCount,1);
+    const reversal={source:{tableId:f.tableId,recordId:f.recordId},journalEntryIds:posted.journalEntryIds,reversalDate:"2026-11-09"};
+    const result=await reverseJournals(sql,reversal);assert.equal(result.reversedCount,1);
+    assert.equal((await reverseJournals(sql,reversal)).duplicateCount,1);
+    const rows=await journals(f.recordId);assert.equal(rows.length,2);assert(rows.every(row=>row.source_table===f.tableId));
+    assert.equal(rows[0].audit_link,`https://airtable.com/app0Q1UMEdUeWl538/${f.tableId}/${f.recordId}`);
+    if(f.rule==='INV-14')await sql`update public.ledger_rules set enabled=false where rule_code='INV-14'`;
+  }
 });
 
 test("closed periods retain pending reversals and nonreversible rules stay protected", async () => {

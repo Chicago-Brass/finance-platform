@@ -19,12 +19,17 @@ export interface CategoryDefinition {
     through?: { tableId: string; linksFieldId: string };
   };
 }
+export type SyncDateRange = { from: string; to: string };
 export interface FormulaBuilder {
+  dateRange?: SyncDateRange;
   field(tableId: string, fieldId: string): string;
   eq(tableId: string, fieldId: string, value: string | number): string;
   includes(tableId: string, fieldId: string, value: string): string;
 }
+export type SyncSource = { tableId: string; recordId: string };
 export type RunState = {
+  source?: SyncSource;
+  dateRange?: SyncDateRange;
   dryRun: boolean;
   categoryIds: string[];
   categoryIndex: number;

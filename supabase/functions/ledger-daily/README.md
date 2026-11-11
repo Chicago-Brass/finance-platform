@@ -1,204 +1,126 @@
 # Ledger sync webhook
 
-Deployed to DUAL ENTRY as `ledger-daily` version 6 on 10 November 2026, covering Category - Payment,
-Category - Expenses and Category - Invoice Entry. Migration `20261108230411_ledger_daily_runs.sql`
-is applied and recorded on the hosted project. The endpoint uses the existing server-side secrets.
+`ledger-daily` is the authenticated, scheduler-neutral discovery endpoint in DUAL ENTRY. It reads
+Airtable, evaluates named category functions and calls the shared generic journal writer. The
+writer receives final signed account pairs; it does not categorize or allocate amounts.
 
 Endpoint: `https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-daily`
-Header: `x-ledger-secret` = the existing Dual Ledger Webhook Secret; use Content-Type application/json.
-No scheduler or caller has been activated. No sync/posting run was executed during deployment;
-the checkpoint table was independently read back empty. Missing/invalid request secrets return HTTP 401. Checkpoint RLS is enabled; only service_role
-has SELECT/INSERT/UPDATE access, with no anon/authenticated table access.
-Native posting remains enabled and uses the same post-and-writeback service. Reversal and period approvals keep their existing commit/retry behavior until separately changed.
 
-## Trigger and lock
+Send POST JSON with `Content-Type: application/json` and `x-ledger-secret` set to the existing
+Dual Ledger Webhook Secret. Server credentials remain `AIRTABLE_PAT`, `SUPABASE_DB_URL` and
+`LEDGER_WEBHOOK_SECRET`. Invalid secrets return 401. No new secret or scheduler is required.
+An external caller may schedule 11 PM America/Chicago or call the same endpoint manually.
 
-An Airtable or Make scheduler calls this authenticated webhook whenever needed. The caller owns
-the schedule, including 11 PM America/Chicago if desired. There is no server-side time-of-day gate.
+## Current category controls
 
-A transaction-wide advisory lock serializes run acquisition. Before creating a run, the store checks
-for any unfinished run, across every run key and category scope. A conflicting call returns HTTP 409
-with the active run key. The current invocation holds a three-minute renewable lease; another call
-cannot execute the same run while that lease is held. An interrupted or paused run must be resumed
-using its original run key and options. The lease expires after a crash; the unfinished run remains
-available to resume rather than silently allowing a second sync.
+Only fully implemented Expense and Invoice Entry rules are enabled: 21 Expense and six Invoice
+Entry. Four working partials and six red deferred rules are disabled. Three black rules are
+excluded from the registry. Five replaced Invoice Entry rules are also removed from discovery.
+Unreferenced obsolete/black catalog rows are deleted; referenced historical rules are retained
+inactive/disabled so their journals and reversals remain valid.
 
-The caller sends `{}` to start a preview, or explicit `dryRun:false` for posting after activation.
-For a paused response, submit `requestForResume` unchanged until `done:true`. A completed run key
-returns its completed result; omit runKey to start a new run. A long sync spans several webhook
-calls, not one unlimited Edge execution. The default batch is 25 sources, maximum 50, with 80
-Airtable requests and a 90-second application budget per invocation.
+Payment and Other rules remain disabled and unchanged. The six replaced native Expense/Invoice
+Entry posting automations are OFF. Existing reversal automations remain ON; no external schedule
+has been activated. Shipping is partial and disabled; its endpoint and script support reversal,
+but its native checkbox automation is not yet configured.
 
-## Temporary date scope
+`ledger_rules.enabled` is checked before normal discovery and again inside the posting transaction.
+`active` remains a descriptive label. Exact journal replay and dedicated reversal still work when
+a category is disabled. See [category enablement](../../../docs/category-enablement.md).
 
-All webhook processing and test previews use the last 30 UTC calendar days, including today.
-The range rolls forward automatically and excludes future dates. Payment categories use
-Payment Date, cancellation uses Payment Cancelled Date, and reconciliation uses its accounting
-date. Expense/Invoice Entry categories use Invoice Date; logs use their recorded date. Invoice-owned
-payment categories filter eligible linked payments by Payment Date, so an old invoice with a new
-payment remains eligible. Created Time is not used. The final calculated accounting date is checked
-again before posting or returning a test record, including resumed candidate snapshots.
+## Requests
 
-## Category definitions
+| Parameter | Behavior |
+| --- | --- |
+| `test` | Default false. True means GET-only Airtable preview, with no database client or writes. |
+| `dryRun` | Default true. False permits posting. A normal dry run still saves run checkpoints. |
+| `categoryCodes` | Optional array of up to 60 stable codes. Normal runs also apply enabled switches. |
+| `source` | Optional `{tableId, recordId}`. Restricts discovery and processing to that owning record. |
+| `fromDate`, `toDate` | Optional inclusive YYYY-MM-DD date bounds. Missing bounds use their normal defaults. |
+| `maxRecords` | Sources per invocation, default 25, range 1-50. |
+| `runKey` | Optional stable run identity. Reuse only for the same source, dates, categories and mode. |
+| `cursor` | Test-only continuation, supplied through `requestForResume`. |
 
-The workbook snapshot downloaded on 10 November 2026 has 51 categories. The registry includes
-47 non-deferred categories over 49 paths; two Payment rules have separate source/event paths.
-Of those 47, 45 have functioning mappings and two partial mappings remain blocked. Four deferred
-rows are excluded: Expenses row 9, Invoice Entry rows 3 and 12, and Payment row 15.
+A full sync omits `source`. A single-record sync uses the same rules, writer and global lock:
+
+```json
+{
+  "dryRun": false,
+  "source": {
+    "tableId": "tbldQXuqNEp8G5pfs",
+    "recordId": "<actual FIN Airtable record ID>"
+  }
+}
+```
+
+Supported owners are Invoices, Payments, Invoice Lines, Shipping Record, Prepay Expenses Log and
+Depreciation Table. Each category is evaluated only for its defined owner. An invoice request
+will not implicitly post its linked payments or invoice lines; request those owners separately.
+Single-record mode queries `RECORD_ID()` directly and lets the category handler read its linked
+records. It never scans an entire related table merely to locate that named source.
+
+All processing keeps the last-30-UTC-calendar-days safety window by default. Accounting dates,
+not Created Time, determine inclusion. Override it explicitly when reviewing an older record:
+
+```json
+{
+  "test": true,
+  "source": {
+    "tableId": "tbldQXuqNEp8G5pfs",
+    "recordId": "<actual FIN Airtable record ID>"
+  },
+  "fromDate": "2025-01-01",
+  "toDate": "2025-12-31"
+}
+```
+
+The override applies to direct queries, linked discovery and the final calculated date check.
+It does not bypass category filters, Sent/cancellation/reversal guards, duplicate protection,
+account validation, or closed-period review. Full and manual calls are otherwise identical.
+
+`test:true` does not consult database enablement or period/account state. To preview just the
+current enabled categories, supply their categoryCodes. It returns proposed source/rule/date,
+accounts and signed amount. Test cursor data is validated against the original source and dates;
+it cannot inject another record into a single-source preview.
+
+## Lock, continuation and failure behavior
+
+Every posting/dry-run invocation acquires the same global run lock, including single-record calls.
+An unfinished run blocks a competing run with HTTP 409. A three-minute renewable lease prevents
+concurrent execution; a paused run must be resumed with `requestForResume` unchanged until
+`done:true`. Reusing a run key for different options is rejected. Completed keys remain completed.
+
+The application budget is 90 seconds and 80 Airtable requests per invocation. Discovery snapshots
+candidate IDs before writeback changes their filters. Sources are loaded in small batches and the
+database checks existing source journals in bulk. One source's linked graph must fit an invocation.
+
+Each source owns its journal IDs and `{rule,key,datetime,id}` cache in Airtable. Existing categories
+are not posted twice. New journals are recorded atomically; then the owning source's three ledger
+metadata fields are written and read back. If a lost response is confirmed absent, only that
+source's new unreferenced journals are rolled back. An uncertain read or partial write retains
+journals and reports an unconfirmed outcome. Other sources continue; no prior journals are deleted.
+
+Reversal uses the separate `ledger-reversal` endpoint with the same source format. It reverses all
+stored journals for that owner, preserving accounts, signed amounts, references and branch. Native
+scripts stamp a missing manual Reverse Date once before calling it. Disabled posting categories
+remain reversible. Unchecking the checkbox does not restore or repost a reversed source.
+
+## Implementation map
 
 | File | Responsibility |
 | --- | --- |
-| `rules/payments.ts` | Payment queries and their linked invoice/line discovery |
-| `rules/expenses.ts` | Expense invoice, depreciation and prepaid-log queries |
-| `rules/invoice-entry.ts` | Invoice Entry queries |
-| `rules/common.ts` | Shared formula fragments and linked-line traversal |
-| `rules/chart.ts` | Official row identity, trigger, mapping and clarification snapshot |
-| `queries.ts` | Registry plus source-owned posting/reversal exclusions |
-| `categories/*.js` | Named category functions ported from the current native scripts |
-| `categories/index.ts` | Source selection, accounting dates and prepared writer payloads |
-| `airtable.ts` | Field-ID schema resolution, filtered/batched reads and controlled writes |
-| `runner.ts` | Paginated discovery, calculation, posting, checkpoints and resume |
-| `store.ts` / `run-lock.ts` | Global run ownership, leases, authoritative journals and generic writer |
-| `writeback.ts` | Source-owned journal IDs and `{rule,key,datetime,id}` metadata |
-| `inspect.ts` | GET-only filter/calculation inspection, without database access |
-| `handler.ts` / `index.ts` | Webhook authentication, input validation and runtime wiring |
+| `rules/expenses.ts`, `rules/invoice-entry.ts` | Category filters and linked-record discovery |
+| `rules/chart.ts` | Current row identity, filters, mappings and issues |
+| `categories/expenses.js`, `categories/invoice-entry.js` | Named handlers and final calculations |
+| `categories/index.ts`, `definitions.ts` | Source identity, fields and writer packets |
+| `scope.ts`, `queries.ts` | Accounting-date bounds and lifecycle/duplicate exclusions |
+| `airtable.ts` | Schema resolution, filtered reads, pacing and request budget |
+| `runner.ts`, `store.ts`, `run-lock.ts` | Discovery, source processing, checkpoints and lock |
+| `test-mode.ts` | No-write preview using the same runner and category handlers |
+| `handler.ts`, `index.ts` | Authentication, request validation and runtime wiring |
 
-Rules retain the chart's account mappings, signed amounts, notes and reference fields. Invoice-line
-categories sum at four-decimal precision per account, then round the account subtotal to cents.
-Separate accounts create separate journals. Working partial mappings retain their native limits,
-including excluded payroll benefits/fees, the outbound vendor filter and expense-credit mapping.
-
-PAY-10 (Payment row 11, discount) and PAY-23 (Payment row 24, insurance) include their known
-filters but cannot post while their account mapping is pending. Matched candidates are reported
-once per category rather than repeatedly reading every source to hit the same known blocker.
-
-## Discovery and processing
-
-1. Resolve current Airtable field names using stable field IDs.
-2. Apply each category's direct filters, plus exact quoted-rule exclusion in Ledger Postings and
-   the source's cancellation/reversal controls. Invoice rules do not require Create Entry.
-3. When conditions live on linked tables, query those first and follow bounded linked IDs. Payroll
-   Payment rules traverse Invoice Lines -> Invoices -> Payments. Expense payroll rules traverse
-   Invoice Lines -> Invoices. Cross-record comparisons stay in the category function.
-4. Snapshot all candidate IDs before writeback changes the filter. Discovery is paginated and
-   checkpointed. Broad candidates are not a promise that every record will create a journal.
-5. Load selected fields in batches, bulk-check existing journals, then call the category function.
-6. Use the existing generic writer for atomic journal recording, immutable replay and period review.
-   A held/rejected period request receives no posted marker. New categories may be added to an
-   existing source; an already-posted category is final until an explicit correction workflow.
-7. Reuse the native posting/reversal helper under the source lock to rebuild Ledger Postings,
-   Ledger Journal IDs and Reversal Journal IDs. Independently read Airtable back before success.
-   PATCH, verification GET and retries share the daily request counter and invocation deadline.
-8. Save progress after each source, including a reported source failure, and continue the batch.
-   A failed posting transaction never updates Airtable. On writeback failure, read the exact source's
-   three ledger fields. A full match is success even if the PATCH response was lost. If none of this
-   attempt's new journal IDs are present, delete only those new journals in one transaction; their
-   lines cascade. Earlier and duplicate journals are preserved. The next normal run can rediscover
-   the rolled-back source because it has no new category marker.
-9. An unreadable response, partial save containing a new ID, or failed rollback is reported as
-   unconfirmed; never guess and delete referenced journals. Other sources continue. Existing journal
-   retries still deduplicate and can synchronize their links. There is no repair queue or outbox.
-   Run-budget exhaustion pauses the invocation for resume; it is not a source validation failure.
-
-New posting requires room for four Airtable requests and at least 40 seconds of invocation budget.
-Normal writeback uses one PATCH and one filtered GET selecting only the three ledger fields and
-one record. A lost PATCH response is checked before any new write is attempted. Verification GETs
-can retry twice; rollback deletes by exact newly created journal IDs and source ownership under the
-same source lock. A failure returns no posted count for that attempt. Detailed run errors retain
-up to 20 examples; the error count includes every failed source/category.
-
-This is compensation across two systems, not a distributed transaction. A server-side Airtable
-write can finish after its client timeout and verification read; a terminated Edge invocation or
-lost database commit acknowledgment can also leave an uncertain outcome. Exact replays remain
-idempotent, but unconfirmed outcomes require checking before treating the source as reconciled.
-
-Payment categories PAY-04 shortfall, PAY-11 vendor credits, PAY-25 interest and PAY-27 rebates are
-invoice-owned. They use the latest eligible Sent payment's Payment Date (record ID breaks ties),
-while their journal marker belongs to the invoice. Confirm this date convention before activation.
-The payment audit link is preserved. Zero/nonqualifying calculations create no monetary journal.
-
-Reversal remains the existing separate endpoint and automation. Reversed sources are excluded;
-uncheck-and-repost restoration is still deferred. Native posting automations must be disabled at
-cutover, while the reversal automations remain enabled.
-
-## Tables awaiting writeback setup
-
-Invoices and Payments have Ledger Postings and Ledger Journal IDs. Depreciation Table and Prepay
-Expenses Log currently have no configured marker fields. Their filters and calculations work in
-inspection, but posting is explicitly blocked before a journal is created until their writeback
-strategy is selected. No new fields are created by this implementation.
-
-## Webhook test mode
-
-Send `test:true` with the same x-ledger-secret to fetch candidates, run category filters and
-calculations, and return proposed records. It always stays read-only, even if dryRun:false is
-included. It does not connect to the database, acquire the posting lock, write checkpoints,
-post journals or update Airtable. Test progress travels in the response.
-
-```json
-{"test":true,"categoryCodes":["EXP-01"],"maxRecords":25}
-```
-
-Omit categoryCodes for all supported categories. The response contains `records`, each with:
-`table`, `tableId`, `recordId`, `rule`, `category`, `entryKey`, `date`, `debitAccount`,
-`creditAccount` and `amount`. Amounts retain their signs. Account numbers are read from FIN;
-the existing Nickel 0747 -> 112.300 identity mapping is preserved. There is one row per nonzero
-proposed debit/credit pair; a source can produce several rows.
-
-When done:false, submit requestForResume unchanged to continue the test. Every resume request
-retains test:true and carries its cursor; it cannot become a posting run. maxRecords bounds
-source records evaluated per call, not the number of resulting posting pairs. Queries retain
-pagination and the normal 90-second/80-request budget, so an early batch can return no rows while
-still discovering candidates. Pending mappings appear in errors/blockedCategories, not as guessed
-account pairs. Zero/nonqualifying calculations are excluded from records.
-
-This previews Airtable filters/calculations. It does not run the database account, period,
-immutable-replay or historical-reversal validations. Actual posting retains those guards.
-The existing dryRun mode still uses durable checkpoint metadata; test:true is the no-write option.
-
-## Read-only query benchmark
-
-Use the separate inspector when **no database writes at all** are allowed. It imports no database
-client, uses a read-only Airtable client and rejects non-GET requests. It does not create checkpoint
-rows, unlike the resumable webhook's dryRun mode, which saves checkpoint metadata but no journals.
-Private sample payloads are written only to the chosen local output, never to repository fixtures.
-
-```sh
-node scripts/inspect-ledger-sync.mjs --env-file=/absolute/path/to/private.env --max-pages=1 --samples=1
-node scripts/inspect-ledger-sync.mjs --env-file=/absolute/path/to/private.env --max-pages=Infinity --samples=0
-```
-
-The first command bounds discovery and calculates one sample per populated path. The second
-paginates all candidate-filter results without evaluating every source. Neither is a full posting
-runtime benchmark. A discovery query count excludes the later calculation, journal and writeback
-requests. A zero candidate count does not establish live coverage for that category.
-
-## Activation still required
-
-- Confirm historical/go-live scope. Blank markers currently include older eligible records.
-- Decide metadata fields for depreciation and prepaid logs, and resolve or leave blocked mappings.
-- Checkpoint migration applied on 10 November 2026; verify hosted state before a later cutover.
-- Configure server-only AIRTABLE_PAT, SUPABASE_DB_URL and LEDGER_WEBHOOK_SECRET.
-- The webhook is deployed; wire the external scheduler and resume loop only after authorization.
-- Confirm native posting cutover and retain the dedicated reversal endpoint.
-
-A single source's linked graph still needs to fit an invocation. Add persisted child-read progress
-if real source graphs exceed the budget; do not assume arbitrary graph sizes fit Edge limits.
-
-## Writeback deployment verification
-
-On 10 November 2026, `ledger-daily` version 6 and `ledger-payment` version 18 were verified ACTIVE.
-All 33 downloaded runtime modules matched local source. Both endpoints rejected an invalid secret
-with HTTP 401. The existing secret and AIRTABLE_PAT were reused. No authenticated hosted posting,
-Airtable write or scheduler activation was executed for this change. The disposable PostgreSQL
-suite passed 78 tests; worker/handler checks and the final budget/resume regression passed, with
-TypeScript clean. Reversal and period endpoints were not redeployed.
-
-## Focused checks
-
-```sh
-node --test supabase/functions/ledger-daily/writeback.test.mjs supabase/functions/ledger-daily/test-mode.test.mjs supabase/functions/ledger-daily/sync.test.mjs supabase/functions/ledger-daily/runner.test.mjs supabase/functions/ledger-daily/airtable.test.mjs supabase/functions/ledger-daily/categories/parity.test.mjs supabase/functions/ledger-daily/categories/invoice-parity.test.mjs
-```
-
-These use synthetic/mocked sources and do not modify a hosted database. Existing disposable database
-checks remain available separately, but are not needed for GET-only live filter inspection.
+See [Expense rules](../../../docs/expense-audit.md),
+[Invoice Entry rules](../../../docs/invoice-entry-audit.md),
+[reversal](../../../docs/ledger-reversal.md), and
+[testing](../../../knowledge-base/testing.md). Category and boundary tests use synthetic inputs;
+`sh supabase/tests/check-payment-posting.sh` uses a disposable loopback database only.

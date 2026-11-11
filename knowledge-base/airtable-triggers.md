@@ -1,20 +1,53 @@
+# Airtable and ledger triggers
+
+## Current posting path
+
+Expense and Invoice Entry posting now use the shared `ledger-daily` webhook. It supports an
+external 11 PM America/Chicago caller, a manual full call, or `source: {tableId, recordId}` for
+one owner. The last-30-days safety window remains, with explicit fromDate/toDate overrides.
+No external scheduler is activated. The 27 full rules are enabled; four partials and six red
+rules are disabled. Three black and five obsolete definitions are excluded.
+
+The six superseded native posting automations are OFF: Expense Invoice Create Entry,
+Depreciation Created, Pre-pay Amortization Created, Invoice Full Paid, Invoice Entry Invoice
+Created and Invoice Entry Invoice Create Entry. Their configuration links below are retained
+as deployment references. Payment native automations remain unchanged. Existing source-owned
+reversal automations stay ON; Shipping's native reversal remains pending while its partial rule
+is disabled.
+
+See [webhook contract](../supabase/functions/ledger-daily/README.md),
+[enablement](../docs/category-enablement.md), [Expense](../docs/expense-audit.md), and
+[Invoice Entry](../docs/invoice-entry-audit.md). Older native descriptions below document the
+retained scripts and links, not an alternate current posting path for those two sheets.
+
 # Airtable ledger automation reference
 
 The [ledger sync webhook](../supabase/functions/ledger-daily/README.md) locally prepares Payment,
 Expense and Invoice Entry categories for an Airtable/Make schedule. It has a global run lock and
 a separate GET-only inspector. It has not replaced these native triggers or enabled a schedule.
 
-Reversal was deployed on 9 November 2026: the same `airtable/ledger-reversal.js` is published
-in two ON Reverse Ledger checkbox automations, one on Payments and one on Invoices. It stamps
-a blank manual Reverse Date once and calls the separate `ledger-reversal` endpoint. Unchecking
-does nothing. Fields, contract, writeback and deferred repost behavior are in the
-[reversal guide](../docs/ledger-reversal.md), including editor links and field IDs.
+Reversal uses the same `airtable/ledger-reversal.js` in five ON checkbox automations:
+Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table. It stamps a blank
+manual Reverse Date once, then sends only `{source: {tableId, recordId}, reversalDate}` to the
+separate `ledger-reversal` endpoint. It does not read or rewrite cached journal IDs. Unchecking
+does nothing; restoration remains deferred. See the [reversal guide](../docs/ledger-reversal.md)
+for field maps and all five automation links.
 
-The existing posting/reversal receivers now maintain `Ledger Postings` objects
-`{rule, key, datetime, id}` and both original/reversal ID arrays on the owning Payment or Invoice.
-They share a server-only `AIRTABLE_PAT` secret and verify Airtable after each metadata write.
-Native scripts and primary triggers remain unchanged. The daily worker will use the same metadata
-and reversal endpoint at cutover; no daily cron is enabled.
+Posting/reversal receivers maintain `Ledger Postings` objects `{rule,key,datetime,id}` and both
+original/reversal ID arrays on the exact owning source record. They use server-only `AIRTABLE_PAT`,
+share the source lock and independently read back Airtable after metadata writes. Original
+posting markers remain after reversal. The daily worker uses this same writeback contract;
+no daily cron is enabled.
+
+On 12 November 2026, `ledger-payment` v20, `ledger-reversal` v8, `ledger-periods` v3
+(JWT verification enabled) and `ledger-daily` v12 were published; 42 downloaded runtime modules
+matched local source. All five native reversal automations were reloaded ON with correct inputs
+and saved scripts matching local code. Current checks passed 11 native cases, 91 disposable
+checks, 56 focused checks, 17 report checks and TypeScript, plus all-five-source closed-period
+approval/retry proof. Authorized live verification covered 62 Expense sources across 15 rules,
+66 original journals and 66 native-checkbox reversals, verified writebacks and report
+reconciliation. See the [Expense review](../docs/expense-audit.md) for coverage gaps. The daily
+schedule remains disabled; restoration is deferred.
 
 ## Ownership and specification
 
@@ -33,6 +66,13 @@ interfaces can be synced/filtered mirrors. Scripts read native FIN records, not 
 | Chart of Accounts | `tblJ2RF8vlOhNMBKR` |
 | Depreciation Table | `tblC0dbO5UMXzHma9` |
 | Prepay Expenses Log | `tbl1LgiUYt7Gc492d` |
+
+## Expense worker scope
+
+The updated Expense worker uses source-owned invoice, invoice-line, payment and log rules.
+See the [current Expense implementation](../docs/expense-audit.md) for its 27-code registry and
+account mappings. The native automation inventory below describes the older senders; worker
+deployment does not replace their triggers. Payment and Invoice Entry business rules are unchanged.
 
 ## Automation and source map
 
@@ -133,3 +173,14 @@ handler works with exclusions or throws for an unresolved mapping), and Not yet 
 Current cross-automation review: [infrastructure audit](../docs/automation-infrastructure-audit.md).
 Business references persist as arrays, and all line categories sum four-decimal source values
 before rounding each invoice/account subtotal to cents. Signed amounts are preserved.
+
+## Current Invoice Entry worker
+
+The 12 November Invoice Entry revision uses Invoices, Payments and Shipping Record as distinct
+source owners. Deposit and full/balance invoice kinds require AR - Product; AR - Non-Product is
+separate and credits its single invoice-linked account. The deposit pair is AR / Deposits Held on
+invoicing, then selected payment account / AR on payment. Payments post their full signed amount.
+Shipping sums linked MTA Extended Sell Price, without a deposit cap yet. Asset rules currently
+qualify 143.300 and exclude prepaid invoices. See [Invoice Entry rules](../docs/invoice-entry-audit.md)
+for current rows, source fields, deferred rows and deployment limits. No daily scheduler or native
+posting cutover is activated by this revision.

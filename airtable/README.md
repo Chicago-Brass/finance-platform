@@ -1,20 +1,28 @@
 # FIN ledger automation scripts
 
-The reversal-only script `ledger-reversal.js` is published for Payments and Invoices.
-It stamps a blank manual Reverse Date once, calls the separate `ledger-reversal` endpoint and
-refreshes the original/reversal journal ID fields. Unchecking does nothing. All eight fields,
-both ON automations and the dedicated Supabase endpoint were verified on 9 November 2026.
-Live checks passed for two payments and one invoice: five test journals reversed, 14 lines
-preserved with debit/credit swapped, original journals unchanged and no duplicates on retry.
-See the [reversal setup and contract](../docs/ledger-reversal.md).
+The reversal-only script `ledger-reversal.js` is published in five ON automations: Payments,
+Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table. It stamps a blank manual
+Reverse Date once and sends only source identity and date to `ledger-reversal`. Supabase finds
+all original journals owned by that exact record and maintains the three metadata fields;
+the native sender does not read or rewrite cached journal IDs. Unchecking does nothing.
+See the [reversal setup and automation links](../docs/ledger-reversal.md).
 
-Payments and Invoices also have a backfilled `Ledger Postings` JSON field containing
-`{rule, key, datetime, id}` objects. It supports category exclusion filters and is separate from
-the reversal ID arrays. The posting/reversal Edge services now maintain both formats and
-independently verify Airtable writeback using server secret `AIRTABLE_PAT`.
-This extension is deployed as `ledger-payment` v16 / `ledger-reversal` v5; the native scripts
-and triggers stay unchanged. The daily worker remains undeployed and unscheduled. See
-[posting metadata](../docs/ledger-reversal.md#posting-metadata) for field IDs and ownership.
+The five source tables have `Ledger Postings` JSON objects `{rule,key,datetime,id}`, plus
+original/reversal journal ID arrays. Shared receiver code writes and independently reads back
+these fields using server-only `AIRTABLE_PAT`. Original posting markers remain after reversal.
+On 12 November 2026, `ledger-payment` v20, `ledger-reversal` v8, `ledger-periods` v3
+and `ledger-daily` v12 were published. All 42 downloaded runtime modules matched local source.
+All five native reversal automations were reloaded ON with correct inputs, shared secret and
+exact saved script matches. The daily webhook remains unscheduled. Temporary test automations
+were removed after verification.
+
+Current isolated checks passed 11 native reversal cases, 91 disposable database checks,
+56 focused checks, 17 report checks and TypeScript, plus all-five-source closed-period
+approval/retry proof. Authorized live testing posted and reversed 66 journals from 62 Expense
+sources across 15 rules. All original/reversal writebacks were verified; report calculations
+reconciled with stored lines across date windows and branches. Coverage limits are in the
+[Expense review](../docs/expense-audit.md). Historical 9 November live tests covered
+Payments/Invoices only. Restoration remains deferred.
 
 Native Airtable scripts use CORE / UTILS / HELPER sections. Category functions own their
 chart filters. Shared reads use FIN table/field IDs. HELPER only formats console output.

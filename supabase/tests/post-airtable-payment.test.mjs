@@ -193,7 +193,7 @@ test("invoice-created event posts and deduplicates without a payment", async () 
   const value = {
     invoiceRecordId: "recCreatedInvoice", eventType: "created", entryDate: "2026-10-29",
     source: { tableId: "tbldQXuqNEp8G5pfs", recordId: "recCreatedInvoice", recordName: "INV - created" },
-    categories: [{ ruleCode: "INV-04", transactionType: "Vendor invoice for inbound freight / handling on a PO", postings: [posting("131.100", "211.100", "125.56", { invoiceRecordId: "recCreatedInvoice" })] }],
+    categories: [{ ruleCode: "INV-15", transactionType: "Full or Balance Invoice Created", postings: [posting("121.100", "004.001", "125.56", { invoiceRecordId: "recCreatedInvoice" })] }],
   };
   const result = await postPayment(sql, value);
   assert.equal(result.postedCount, 1); assert.equal(result.invoiceRecordId, value.invoiceRecordId);
@@ -218,8 +218,8 @@ test("invoice-created event posts and deduplicates without a payment", async () 
 
 test("all other resolved Invoice Entry pairs use the same generic writer", async () => {
   for (const [rule, debit, credit] of [
-    ["INV-06", "212.100", "211.100"], ["INV-07", "143.300", "211.100"],
-    ["INV-08", "211.100", "131.400"], ["INV-10", "121.100", "010.001"],
+    ["INV-12", "121.100", "221.100"], ["INV-07", "143.300", "211.100"],
+    ["INV-15", "121.100", "004.001"], ["INV-10", "121.100", "004.002"],
   ]) {
     const invoiceRecordId = `recCreated${rule}`;
     const value = { invoiceRecordId, eventType: "created", entryDate: "2026-10-29", categories: [
@@ -251,7 +251,7 @@ test("Create Entry posts expense pairs alongside a separate creation event on th
     ],
   };
   const creation = { ...copy(value), eventType: "created", categories: [
-    { ruleCode: "INV-04", transactionType: "Separate invoice creation", postings: [posting("131.100", "211.100", "10.00")] },
+    { ruleCode: "INV-15", transactionType: "Separate invoice creation", postings: [posting("121.100", "004.001", "10.00")] },
   ] };
   await postPayment(sql, creation);
   const results = await Promise.all([postPayment(sql, value), postPayment(sql, copy(value))]);
@@ -274,7 +274,7 @@ test("Create Entry posts expense pairs alongside a separate creation event on th
 before(async () => {
   const [database] = await sql`select current_database() as name`;
   assert.equal(database.name, "ledger_check");
-  const rules = await sql`select rule_code from public.ledger_rules where rule_code in ('INV-04', 'INV-06', 'INV-07', 'INV-08', 'INV-10')`;
+  const rules = await sql`select rule_code from public.ledger_rules where rule_code in ('INV-12', 'INV-15', 'INV-07', 'INV-10', 'INV-14')`;
   assert.equal(rules.length, 5, "reference seed includes the invoice rules");
   const [functions] = await sql`
     select to_regprocedure('public.post_airtable_payment(jsonb)') as mapper,
@@ -286,7 +286,7 @@ before(async () => {
   const [column] = await sql`select data_type from information_schema.columns where table_schema='public' and table_name='journal_entries' and column_name='transaction_type'`;
   assert.equal(column.data_type, "text");
 });
-after(async () => { await sql.end({ timeout: 5 }); });
+
 
 test("authenticated webhook runs the Edge TypeScript through to real journal tables", async () => {
   const value = event("recHttpPipeline");
@@ -646,15 +646,15 @@ test("zero pairs are no-ops while invalid or missing money and type values fail"
 
 test("signed invoice amounts retain the supplied debit and credit sides and replay safely", async () => {
   const value = { invoiceRecordId: "recSignedInvoice", eventType: "entry_requested", entryDate: "2026-10-29",
-    categories: [{ ruleCode: "INV-08", transactionType: "Vendor return credit", postings: [posting("211.100", "131.400", "-125.56")] }] };
+    categories: [{ ruleCode: "INV-10", transactionType: "Non-product Client Invoice Created", postings: [posting("121.100", "004.002", "-125.56")] }] };
   assert.equal((await postPayment(sql, value)).postedCount, 1);
   const rows = await lines(value.invoiceRecordId);
-  assert.deepEqual(rows.map(row => [row.account_code, row.debit, row.credit]), [["211.100", "-125.56", "0.00"], ["131.400", "0.00", "-125.56"]]);
+  assert.deepEqual(rows.map(row => [row.account_code, row.debit, row.credit]), [["121.100", "-125.56", "0.00"], ["004.002", "0.00", "-125.56"]]);
   assert.equal((await postPayment(sql, value)).duplicateCount, 1);
   const changed = copy(value); changed.categories[0].postings[0].amount = "125.56";
   await failure(changed, "23505");
   const ledger = await sql`select account_number, offsetting_account_number from public.v_ledger where entry_id=${rows[0].entry_id}`;
-  assert.deepEqual(ledger.map(row => [row.account_number, row.offsetting_account_number]).sort(), [["131.400", "211.100"], ["211.100", "131.400"]]);
+  assert.deepEqual(ledger.map(row => [row.account_number, row.offsetting_account_number]).sort(), [["004.002", "121.100"], ["121.100", "004.002"]]);
   const [balance] = await sql`select sum(debit)-sum(credit) as net from public.journal_lines where entry_id=${rows[0].entry_id}`;
   assert.equal(Number(balance.net), 0);
 });
@@ -773,3 +773,8 @@ test("the Edge flow never installs a stored posting or mapping function", async 
   `;
   assert.equal(row.count, 0);
 });
+
+// Only this disposable generic-writer fixture enables the newly staged Invoice Entry rules.
+let invoiceSwitches;
+before(async()=>{invoiceSwitches=await sql`select rule_code,enabled from public.ledger_rules where rule_code in ('INV-12','INV-15','INV-07')`;await sql`update public.ledger_rules set enabled=true where rule_code in ('INV-12','INV-15','INV-07')`;});
+after(async()=>{for(const row of invoiceSwitches??[])await sql`update public.ledger_rules set enabled=${row.enabled} where rule_code=${row.rule_code}`;await sql.end();});

@@ -1,6 +1,6 @@
 # Ledger sync webhook plan
 
-Updated 10 November 2026 from the downloaded live [T-Chart](https://chicagobrass.sharepoint.com/:x:/r/Intranet/_layouts/15/Doc.aspx?sourcedoc=%7BF609079B-B392-421C-A170-878D5E60CD60%7D&file=T-Chart.xlsx&action=default&mobileredirect=true) and native script source.
+Expense rules refreshed 12 November 2026; Payment and Invoice Entry remain at their earlier snapshot from the downloaded live [T-Chart](https://chicagobrass.sharepoint.com/:x:/r/Intranet/_layouts/15/Doc.aspx?sourcedoc=%7BF609079B-B392-421C-A170-878D5E60CD60%7D&file=T-Chart.xlsx&action=default&mobileredirect=true) and native script source.
 
 ## Runtime
 
@@ -20,9 +20,9 @@ batches; every continuation retains test:true. See the worker README for the com
 
 ## Scope
 
-47 non-deferred categories over 49 query paths: 38 fully mapped, seven working partial, two blocked partial.
-Four deferred rows are excluded. The partial discount and insurance categories retain their filters
-but are reported as blocked while the accounting mapping is pending.
+The current registry contains 57 non-deferred category codes over 59 query paths, plus six
+registered deferred rules. Expense has 22 functioning rules (one partial) and five deferred rules.
+Payment and Invoice Entry mappings are unchanged, including their existing partial/blocked rules.
 
 ## Query and mapping registry
 
@@ -34,21 +34,10 @@ workbook's schedule; invoice Create Entry checks are not required.
 
 ### Category - Expenses
 
-| Rule / row | Category | Status | Source | Discovery path |
-| --- | --- | --- | --- | --- |
-| EXP-01 / 2 | Enter an operating expense invoice (ex: Utilities) | Fully | Invoices | Invoices |
-| EXP-02 / 3 | Company credit-card purchase with NO vendor bill | Fully | Invoices | Payments -> Invoices |
-| EXP-03 / 4 | Prepaid expense bill (pay a year up front, e.g., insurance) | Fully | Invoices | Invoices |
-| EXP-04 / 5 | Prepaid expense - monthly use-up (amortization) | Fully | Prepay Expenses Log | Prepay Expenses Log |
-| EXP-05 / 6 | Employee Tech Allowance | Fully | Invoices | Invoice Lines -> Invoices |
-| EXP-06 / 7 | Payroll - W2 payroll register (per pay date) | Partially | Invoices | Invoice Lines -> Invoices |
-| EXP-07 / 8 | Payroll - offshore / 1099 / owner staff invoice | Fully | Invoices | Invoice Lines -> Invoices |
-| EXP-08 / 9 | Month-end accrual - PTO liability | Not yet | - | Excluded |
-| EXP-09 / 10 | Month-end accrual - bonus & commission earned | Fully | Invoices | Invoice Lines -> Invoices |
-| EXP-10 / 11 | Monthly depreciation of equipment, vehicles, fixtures | Fully | Depreciation Table | Depreciation Table |
-| EXP-11 / 12 | Bank fees and charges shown only on the bank statement | Fully | Invoices | Invoices |
-| EXP-12 / 13 | Bad-debt reserve (allowance) - month-end | Fully | Invoices | Invoices |
-| EXP-13 / 14 | Income tax accrual (quarterly) | Fully | Invoices | Invoices |
+The updated 27-rule registry has 22 functioning categories and five deferred categories.
+The complete current row, source-owner, account and amount mapping is in the
+[Expense implementation](expense-audit.md). Invoice-line accruals now own their journals,
+and the new Expense payment counterparts own their payment records.
 
 ### Category - Invoice Entry
 
@@ -100,130 +89,8 @@ workbook's schedule; invoice Create Entry checks are not required.
 
 ## Field and account mappings
 
-### EXP-01 - Enter an operating expense invoice (ex: Utilities)
-
-Category - Expenses, row 2.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 006.002
-- Credit = 211.100
-
-### EXP-02 - Company credit-card purchase with NO vendor bill
-
-Category - Expenses, row 3.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = Invoices.Linked Chart of Accounts
-- Credit = 231.100
-
-### EXP-03 - Prepaid expense bill (pay a year up front, e.g., insurance)
-
-Category - Expenses, row 4.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 135.000
-- Credit = 211.100
-
-### EXP-04 - Prepaid expense - monthly use-up (amortization)
-
-Category - Expenses, row 5.
-
-- Amount = Prepay Expenses Log.Amount Deducted
-- Date = Prepay Expenses Log.Applied Date
-- Branch = Prepay Expenses Log.Invoices.Branch
-- Debit = 007.011
-- Credit = 135.000
-- Notes = Prepay Expenses Log.Prepay Log
-
-### EXP-05 - Employee Tech Allowance
-
-Category - Expenses, row 6.
-
-- Amount = Sum of matching Invoice Lines.Line Amount per account
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch Employee
-- Debit = 005.102
-- Credit = 211.100
-
-### EXP-06 - Payroll - W2 payroll register (per pay date)
-
-Category - Expenses, row 7.
-
-- Amount = Sum of matching Invoice Lines.Line Amount per account
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = Invoice Lines.Chart of Accounts
-- Credit = 241.100 for 005.002
-- Credit = 241.200 for 005.006
-- Credit = 241.400 for 005.005
-
-### EXP-07 - Payroll - offshore / 1099 / owner staff invoice
-
-Category - Expenses, row 8.
-
-- Amount = Sum of matching Invoice Lines.Line Amount per account
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = Invoice Lines.Chart of Accounts
-- Credit = 241.100
-
-### EXP-09 - Month-end accrual - bonus & commission earned
-
-Category - Expenses, row 10.
-
-- Amount = Sum of matching Invoice Lines.Line Amount per account
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 005.201
-- Credit = 241.300
-
-### EXP-10 - Monthly depreciation of equipment, vehicles, fixtures
-
-Category - Expenses, row 11.
-
-- Amount = Depreciation Table.Amount Depreciated
-- Date = Depreciation Table.Date
-- Branch = Blank
-- Debit = 009.101
-- Credit = 161.000
-- Notes = Depreciation Table.Associated Asset
-
-### EXP-11 - Bank fees and charges shown only on the bank statement
-
-Category - Expenses, row 12.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 007.002
-- Credit = Invoices.Linked Payments.Account to Pay/Receive
-
-### EXP-12 - Bad-debt reserve (allowance) - month-end
-
-Category - Expenses, row 13.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 007.005
-- Credit = 121.900
-
-### EXP-13 - Income tax accrual (quarterly)
-
-Category - Expenses, row 14.
-
-- Amount = Invoices.Invoice Amount
-- Date = Invoices.Invoice Date
-- Branch = Invoices.Branch
-- Debit = 011.001 for 242.100
-- Debit = 011.002 for 242.200
-- Credit = Invoices.Linked Chart of Accounts (242.100 or 242.200)
+Expense mappings are maintained in the [Expense implementation](expense-audit.md) and
+[chart snapshot](../supabase/functions/ledger-daily/rules/chart.ts).
 
 ### INV-01 - Vendor PRODUCT invoice - goods already received
 

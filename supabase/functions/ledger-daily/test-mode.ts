@@ -5,9 +5,9 @@ import { createCategoryEvaluator } from "./categories/index.ts";
 import { paymentSentFields } from "./definitions.ts";
 import { initialState, runLedgerSync } from "./runner.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
-import type { CategoryDefinition, LedgerStore, RunState, RunStore } from "./types.ts";
+import type { CategoryDefinition, LedgerStore, RunState, RunStore, SyncSource, SyncDateRange } from "./types.ts";
 
-export interface TestOptions { categoryCodes: string[]; maxRecords: number; cursor?: unknown }
+export interface TestOptions { categoryCodes: string[]; maxRecords: number; cursor?: unknown; source?: SyncSource; dateRange?: SyncDateRange }
 export interface TestRecord {
   table: string;
   tableId: string;
@@ -22,7 +22,7 @@ export interface TestRecord {
 }
 
 export async function testLedgerSync(client: AirtableClient, options: TestOptions, evaluate = createCategoryEvaluator(client)) {
-  const state = testState(options.cursor, options.categoryCodes);
+  const state = testState(options.cursor, options.categoryCodes, options.source, options.dateRange);
   const records: TestRecord[] = [];
   // The shared runner can only collect previews with this state; write methods fail closed.
   const noWrites = async (): Promise<never> => { throw new Error("Test mode forbids posting and writeback."); };
@@ -42,7 +42,7 @@ export async function testLedgerSync(client: AirtableClient, options: TestOption
     client, runs, ledger, deadline: client.deadline,
     evaluate: async (category: CategoryDefinition, source: any) => {
       const event = await evaluate(category, source);
-      if (event && inSyncDateRange(event.entryDate)) {
+      if (event && inSyncDateRange(event.entryDate, options.dateRange)) {
         const proposed = await proposedRecords(client, category.tableId, source.id, event);
         records.push(...proposed);
       }
@@ -51,11 +51,11 @@ export async function testLedgerSync(client: AirtableClient, options: TestOption
     log() {},
   }, options.maxRecords);
   return {
-    test: true, fromDate: syncDateRange().from, toDate: syncDateRange().to, done: result.done, records, returned: records.length,
+    test: true, fromDate: (options.dateRange ?? syncDateRange()).from, toDate: (options.dateRange ?? syncDateRange()).to, done: result.done, records, returned: records.length,
     stats: result.stats, errors: result.errors,
     blockedCategories: result.blockedCategories, deferredCategories: result.deferredCategories,
     airtableRequests: client.requests, databaseWrites: 0, airtableWrites: 0,
-    requestForResume: result.done ? null : { test: true, categoryCodes: options.categoryCodes, maxRecords: options.maxRecords, cursor: state },
+    requestForResume: result.done ? null : { test: true, categoryCodes: options.categoryCodes, maxRecords: options.maxRecords, ...(options.source ? { source: options.source } : {}), ...(options.dateRange ? { fromDate: options.dateRange.from, toDate: options.dateRange.to } : {}), cursor: state },
   };
 }
 
@@ -77,17 +77,18 @@ async function proposedRecords(client: AirtableClient, tableId: string, recordId
   }));
 }
 
-function testState(cursor: unknown, categoryCodes: string[]): RunState {
-  const initial = initialState(categoryCodes, true);
+function testState(cursor: unknown, categoryCodes: string[], source?: SyncSource, dateRange?: SyncDateRange): RunState {
+  const initial = initialState(categoryCodes, true, source, dateRange);
   if (cursor === undefined) return initial;
   if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) throw new RangeError("Invalid test cursor.");
   const state = cursor as RunState;
   const ids = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 50_000 && value.every(id => typeof id === "string" && /^rec[A-Za-z0-9]{14}$/.test(id));
   const integer = (value: unknown, max: number) => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max;
-  if (state.dryRun !== true || JSON.stringify(state.categoryIds) !== JSON.stringify(initial.categoryIds)
+  if (JSON.stringify(state.dateRange ?? null) !== JSON.stringify(initial.dateRange ?? null) || state.dryRun !== true || JSON.stringify(state.source ?? null) !== JSON.stringify(initial.source ?? null) || JSON.stringify(state.categoryIds) !== JSON.stringify(initial.categoryIds)
     || !integer(state.categoryIndex, initial.categoryIds.length) || !["related", "discover", "process"].includes(state.phase)
     || !(state.offset === null || typeof state.offset === "string" && state.offset.length <= 2048)
     || !ids(state.relatedIds) || !ids(state.recordIds)
+    || (source && state.recordIds.some(id => id !== source.recordId))
     || !integer(state.relatedIndex, state.relatedIds.length) || !integer(state.recordIndex, state.recordIds.length)
     || typeof state.done !== "boolean" || !state.stats || typeof state.stats !== "object"
     || !Object.keys(initial.stats).every(key => integer(state.stats[key as keyof RunState["stats"]], Number.MAX_SAFE_INTEGER))

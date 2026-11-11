@@ -22,6 +22,7 @@ test('run lease prevents concurrent workers and resumes saved discovery state',a
  const runs=new DatabaseRunStore(sql),state=initialState(['PAY-07'],true);const claims=await Promise.all([runs.claim('test-daily-lease',state),runs.claim('test-daily-lease',state)]);assert.equal(claims.filter(Boolean).length,1);const job=claims.find(Boolean);job.state.recordIds=['candidate'];job.state.offset='next';await runs.save(job);await runs.release(job);
  const resumed=await runs.claim('test-daily-lease',state);assert.deepEqual(resumed.state.recordIds,['candidate']);assert.equal(resumed.state.offset,'next');await runs.release(resumed);
  await assert.rejects(()=>runs.claim('test-daily-lease',initialState(['PAY-08'],true)),/different category scope/);
+ await assert.rejects(()=>runs.claim('test-daily-lease',initialState(['PAY-07'],true,{tableId:'tblR61NG9i0giid28',recordId:'rec00000000000001'})),RangeError);
 });
 test('run checkpoints are private to the backend service role',async()=>{
  await assert.rejects(()=>sql.begin(async tx=>{await tx`set local role authenticated`;return tx`select * from public.ledger_daily_runs`}),e=>e.code==='42501');

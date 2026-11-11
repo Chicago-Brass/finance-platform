@@ -1,159 +1,144 @@
-// Ported from airtable/invoice-entry.js. No native trigger gate or transport runs here.
-import { invoiceEntryFields as fields } from "../definitions.ts";
+// Invoice Entry categories. The source owns its journal links; the generic writer records final account pairs.
+import { invoiceWorkerFields as fields } from "../definitions.ts";
 export function createCategories(client) {
-    const { TABLES, INVOICE_FIELDS, ACCOUNT_FIELDS } = fields;
-    async function handleReceivedProductInvoice(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product" || !(data.invoice.value(INVOICE_FIELDS.receivedNotInvoiced) > 0))
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Vendor PRODUCT invoice - goods already received", tChartRow: 2,
-            postings: invoicePosting(data, "211.200", "211.100", cents),
-        });
+    const { TABLES: T, INVOICE_FIELDS: I, PAYMENT_FIELDS: P, SHIPPING_FIELDS: S, MTA_FIELDS: M, ACCOUNT_FIELDS: A } = fields;
+
+    // ==================== CORE ====================
+
+    async function handleDepositInvoice(data, results) {
+        if (!isDeposit(data.invoice)) return;
+        await addInvoice(results, data, "Deposit Invoice Created", "121.100", "221.100");
     }
-    async function handleVendorDepositInvoice(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product" || data.invoice.text(INVOICE_FIELDS.poStatus) !== "Confirmed" || data.invoice.value(INVOICE_FIELDS.poReceivedDate))
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Vendor DEPOSIT invoice - billed before the goods ship", tChartRow: 4,
-            postings: invoicePosting(data, "132.100", "211.100", cents),
-        });
+    async function handleDepositPayment(data, results) {
+        if (!data.payment.value(P.sent)) return;
+        await addPayment(results, data, "Deposit Invoice Paid", data.invoices.filter(isDeposit), "121.100", true);
     }
-    async function handleInboundFreightInvoice(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Product")
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.freight), "Freight");
-        results.push({
-            category: "Vendor invoice for inbound freight / handling on a PO", tChartRow: 5,
-            postings: invoicePosting(data, "131.100", "211.100", cents),
-        });
+    async function handleShipment(data, results) {
+        // Partial implementation - functioning. shortcut: recognition is uncapped until the deposit-to-shipment link is defined.
+        if (!data.record.value(S.shipped) || !data.record.value(S.date)) return;
+        const mtas = await client.readRecords(T.mtas, ids(data.record, S.mtas), Object.values(M));
+        if (!mtas.length) throw new Error("Shipped record has no linked MTAs to value.");
+        const units = mtas.reduce((sum, mta) => checkedTotal(sum, moneyUnits(mta.value(M.amount), 4, "MTAs.Extended Sell Price")), 0);
+        const cents = Math.sign(units) * Math.round(Math.abs(units) / 100);
+        const branches = mtas.map(mta => mta.value(M.branch) || []);
+        const context = { sourceRecordId: data.record.id,
+            transactionRecordIds: ids(data.record, S.transactions).sort(),
+            stateRecordIds: [...new Set(mtas.flatMap(mta => ids(mta, M.states)))].sort(),
+            branch: branches.some(values => !values.length) ? [] : [...new Set(branches.flat().map(value => value.name))] };
+        addResult(results, "Shipment Against Customer Deposit", "221.100", "004.001", cents, context);
     }
-    async function handleSalesTaxInvoice(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Expenses (Sales Tax)")
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Sales tax remittance invoice (paying the state)", tChartRow: 7,
-            postings: invoicePosting(data, "212.100", "211.100", cents),
-        });
+    async function handleBalanceInvoice(data, results) {
+        if (!isBalance(data.invoice)) return;
+        await addInvoice(results, data, "Full or Balance Invoice Created", "121.100", "004.001");
+    }
+    async function handleBalancePayment(data, results) {
+        if (!data.payment.value(P.sent)) return;
+        await addPayment(results, data, "Full or Balance Invoice Paid", data.invoices.filter(isBalance), "121.100", true);
     }
     async function handleAssetInvoice(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Assets")
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Fixed asset purchase invoice (vehicle, fixtures, software)", tChartRow: 8,
-            postings: invoicePosting(data, "143.300", "211.100", cents),
-        });
+        // Partial implementation - functioning: only 143.300 qualifies until the remaining asset accounts are approved.
+        const account = await assetAccount(data.invoice);
+        if (!account) return;
+        await addInvoice(results, data, "Fixed Asset Invoice Created", account, "211.100");
     }
-    async function handleVendorReturnCredit(data, results) {
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit" || !getLinkedRecords(data.invoice, INVOICE_FIELDS.purchaseOrders).length)
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Vendor CREDIT MEMO - returned goods (RGA return for credit)", tChartRow: 9,
-            postings: invoicePosting(data, "211.100", "131.400", cents),
-        });
+    async function handleAssetPayment(data, results) {
+        // Partial implementation - functioning: the same approved asset scope as its invoice counterpart.
+        if (!data.payment.value(P.sent)) return;
+        const invoices = [];
+        for (const invoice of data.invoices) if (await assetAccount(invoice)) invoices.push(invoice);
+        await addPayment(results, data, "Fixed Asset Invoice Paid", invoices, "211.100");
     }
-    async function handleVendorPriceCredit(data, results) {
-        // Partial implementation - functioning: the approved COGS 004.010 mapping works; original-expense-account credits remain outside this mapping.
-        if (data.invoiceType !== "AP" || data.vendorType !== "AP - Credit" || getLinkedRecords(data.invoice, INVOICE_FIELDS.purchaseOrders).length)
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Vendor CREDIT MEMO - price credit, no goods returned", tChartRow: 10,
-            postings: invoicePosting(data, "211.100", "004.010", cents),
-        });
+    async function handleNonProductInvoice(data, results) {
+        if (!isNonProduct(data.invoice)) return;
+        const account = await singleAccount(data.invoice, I.accounts, "Non-product invoice");
+        await addInvoice(results, data, "Non-product Client Invoice Created", "121.100", account);
     }
-    async function handleCustomerNonProductInvoice(data, results) {
-        if (data.invoiceType !== "AR" || data.vendorType !== "AR - Non-Product")
-            return;
-        const accounts = await readAccounts(getLinkedRecords(data.invoice, INVOICE_FIELDS.accounts));
-        if (!accounts.some(account => account.text(ACCOUNT_FIELDS.number) === "010.001"))
-            return;
-        const cents = moneyCents(data.invoice.value(INVOICE_FIELDS.amount), "Invoice Amount");
-        results.push({
-            category: "Customer invoice for a NON-product charge", tChartRow: 11,
-            postings: invoicePosting(data, "121.100", "010.001", cents),
-        });
+    async function handleNonProductPayment(data, results) {
+        if (!data.payment.value(P.sent)) return;
+        await addPayment(results, data, "Non-product Client Invoice Paid", data.invoices.filter(isNonProduct), "121.100", true);
     }
-    async function loadInvoiceData(invoiceRecordId) {
-        if (!invoiceRecordId)
-            throw new Error("Map invoiceRecordId to the trigger's FIN Airtable record ID.");
-        const invoice = await client.readRecord(TABLES.invoices, invoiceRecordId, Object.values(INVOICE_FIELDS));
-        if (!invoice)
-            throw new Error(`Invoice not found: ${invoiceRecordId}`);
-        const invoiceType = invoice.text(INVOICE_FIELDS.type);
-        const vendorType = invoice.text(invoiceType === "AR" ? INVOICE_FIELDS.vendorTypeAR : INVOICE_FIELDS.vendorTypeAP);
-        return { invoice, invoiceType, vendorType };
+    async function handleVendorReturn() { throw new Error("Not yet implemented: vendor return credit is deferred."); }
+    async function handleVendorPriceCredit() { throw new Error("Not yet implemented: vendor price credit is deferred."); }
+
+    // ==================== UTILS ====================
+
+    function ids(record, field) { return (record.value(field) || []).map(link => link.id); }
+    function isAR(invoice) { return invoice.text(I.type) === "AR" && !invoice.value(I.cancelled); }
+    function isDeposit(invoice) { return isAR(invoice) && invoice.text(I.vendorTypeAR) === "AR - Product" && invoice.text(I.kind) === "Deposit Invoice"; }
+    function isBalance(invoice) { return isAR(invoice) && invoice.text(I.vendorTypeAR) === "AR - Product" && ["Full Invoice", "Balance Invoice"].includes(invoice.text(I.kind)); }
+    function isNonProduct(invoice) { return isAR(invoice) && invoice.text(I.vendorTypeAR) === "AR - Non-Product"; }
+    async function singleAccount(record, field, label) {
+        const links = ids(record, field);
+        if (links.length !== 1) throw new Error(`${label} must link exactly one account.`);
+        const account = await client.readRecord(T.accounts, links[0], Object.values(A));
+        if (!account || !account.text(A.number)) throw new Error(`${label} account number is missing.`);
+        return account.text(A.number);
     }
-    async function readAccounts(links) {
-        return await client.readRecords(TABLES.accounts, links.map(link => link.id), Object.values(ACCOUNT_FIELDS));
+    async function assetAccount(invoice) {
+        if (invoice.text(I.type) !== "AP" || invoice.text(I.vendorTypeAP) !== "AP - Assets" || invoice.value(I.prepaid) || invoice.value(I.cancelled)) return null;
+        const account = await singleAccount(invoice, I.accounts, "Fixed asset invoice");
+        return account === "143.300" ? account : null;
     }
-    function getLinkedRecords(record, fieldId) { return record.value(fieldId) || []; }
-    function moneyCents(value, label) {
-        if (typeof value !== "number" || !Number.isFinite(value))
-            throw new Error(`${label} is missing or is not a finite number.`);
+    function moneyUnits(value, precision, label) {
+        if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} is missing or is not a finite number.`);
         const [digits, exponent = "0"] = String(Math.abs(value)).split("e");
-        const cents = Math.sign(value) * Math.round(Number(`${digits}e${Number(exponent) + 2}`));
-        if (!Number.isSafeInteger(cents))
-            throw new Error(`${label} exceeds safe cent precision.`);
-        return cents === 0 ? 0 : cents;
+        const units = Math.sign(value) * Math.round(Number(`${digits}e${Number(exponent) + precision}`));
+        if (!Number.isSafeInteger(units)) throw new Error(`${label} exceeds safe money precision.`);
+        return units === 0 ? 0 : units;
     }
-    function invoiceDate(value) {
-        if (!value)
-            throw new Error("Invoice Date is required for posting.");
-        if (value.length === 10)
-            return value;
-        const date = new Date(value);
-        if (!Number.isFinite(date.getTime()))
-            throw new Error("Invoice Date is invalid.");
-        const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).map(part => [part.type, part.value]));
-        return `${parts.year}-${parts.month}-${parts.day}`;
+    function checkedTotal(a, b) {
+        const sum = a + b;
+        if (!Number.isSafeInteger(sum)) throw new Error("Shipment total exceeds safe money precision.");
+        return sum;
     }
-    function invoicePosting(data, debit, credit, cents) {
-        if (!cents)
-            return [];
-        const invoice = data.invoice;
-        /** @type {any} */
-        const context = { invoiceRecordId: invoice.id, sourceRecordId: invoice.id, branch: [] };
-        const branch = invoice.value(INVOICE_FIELDS.branch);
-        if (branch)
-            context.branch = [branch.name];
-        for (const [name, field] of [["vendor", INVOICE_FIELDS.vendors], ["client", INVOICE_FIELDS.clients], ["staff", INVOICE_FIELDS.staff], ["transaction", INVOICE_FIELDS.transactions], ["po", INVOICE_FIELDS.purchaseOrders]]) {
-            const ids = getLinkedRecords(invoice, field).map(link => link.id);
-            context[`${name}RecordIds`] = ids;
-            if (ids.length === 1)
-                context[`${name}RecordId`] = ids[0];
+    function invoiceContext(data, invoices) {
+        const invoiceIds = invoices.map(invoice => invoice.id).sort();
+        const context = { sourceRecordId: data.record.id, invoiceRecordIds: invoiceIds, branch: [] };
+        if (invoiceIds.length === 1) context.invoiceRecordId = invoiceIds[0];
+        for (const [name, field] of [["vendor", I.vendors], ["client", I.clients], ["staff", I.staff], ["transaction", I.transactions], ["po", I.purchaseOrders]]) {
+            context[`${name}RecordIds`] = [...new Set(invoices.flatMap(invoice => ids(invoice, field)))].sort();
         }
-        const states = getLinkedRecords(invoice, INVOICE_FIELDS.states);
-        context.stateRecordIds = states.map(link => link.id);
-        context.stateNames = states.map(link => link.name);
-        if (states.length === 1 && /^[A-Z]{2}$/.test(states[0].name))
-            context.stateCode = states[0].name;
-        return [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: (cents / 100).toFixed(2), ...context }];
+        context.stateRecordIds = [...new Set(invoices.flatMap(invoice => ids(invoice, I.states)))].sort();
+        const branches = invoices.map(invoice => invoice.value(I.branch)?.name);
+        context.branch = branches.some(branch => !branch) ? [] : [...new Set(branches)];
+        return context;
     }
-    const handlers = { "INV-01": handleReceivedProductInvoice,
-        "INV-03": handleVendorDepositInvoice,
-        "INV-04": handleInboundFreightInvoice,
-        "INV-06": handleSalesTaxInvoice,
-        "INV-07": handleAssetInvoice,
-        "INV-08": handleVendorReturnCredit,
-        "INV-09": handleVendorPriceCredit,
-        "INV-10": handleCustomerNonProductInvoice };
-    return {
-        fields: ({ TABLES, INVOICE_FIELDS }),
-        async evaluate(rule, id) {
-            const data = await loadInvoiceData(id);
-            if (data.invoice)
-                await client.loadLinkNames([data.invoice], [INVOICE_FIELDS.states]);
-            const results = [];
-            const handler = handlers[rule];
-            if (!handler)
-                throw new Error(`No handler for ${rule} in invoice-entry.`);
-            await handler(data, results);
-            return { data, results: results };
-        }
-    };
+    function addResult(results, category, debit, credit, cents, context) {
+        if (!cents) return;
+        results.push({ category, postings: [{ debitAccount: { number: debit }, creditAccount: { number: credit },
+            amount: (cents / 100).toFixed(2), ...context }] });
+    }
+    async function addInvoice(results, data, category, debit, credit) {
+        addResult(results, category, debit, credit, moneyUnits(data.invoice.value(I.amount), 2, "Invoice Amount"), invoiceContext(data, [data.invoice]));
+    }
+    async function addPayment(results, data, category, invoices, account, incoming = false) {
+        if (!invoices.length) return;
+        const bank = await singleAccount(data.payment, P.accounts, "Payment");
+        addResult(results, category, incoming ? bank : account, incoming ? account : bank,
+            moneyUnits(data.payment.value(P.amount), 2, "Payment Amount"), invoiceContext(data, invoices));
+    }
+    async function loadData(tableId, recordId) {
+        const sourceFields = tableId === T.invoices ? I : tableId === T.payments ? P : tableId === T.shipping ? S : null;
+        if (!sourceFields) throw new Error("Unsupported Invoice Entry source table.");
+        const record = await client.readRecord(tableId, recordId, Object.values(sourceFields));
+        if (!record) throw new Error(`Invoice Entry source not found: ${recordId}`);
+        const data = { record, invoices: [], entryDate: null };
+        if (tableId === T.invoices) { data.invoice = record; data.entryDate = record.value(I.date); }
+        if (tableId === T.payments) { data.payment = record; data.entryDate = record.value(P.date);
+            data.invoices = await client.readRecords(T.invoices, ids(record, P.invoices), Object.values(I)); }
+        if (tableId === T.shipping) data.entryDate = record.value(S.date);
+        return data;
+    }
+    const handlers = { "INV-12": handleDepositInvoice, "INV-13": handleDepositPayment, "INV-14": handleShipment,
+        "INV-15": handleBalanceInvoice, "INV-16": handleBalancePayment, "INV-07": handleAssetInvoice,
+        "INV-17": handleAssetPayment, "INV-10": handleNonProductInvoice, "INV-18": handleNonProductPayment,
+        "INV-08": handleVendorReturn, "INV-09": handleVendorPriceCredit };
+    return { fields, async evaluate(rule, recordId, tableId = T.invoices) {
+        const handler = handlers[rule];
+        if (!handler) throw new Error(`Unknown Invoice Entry category ${rule}.`);
+        if (["INV-08", "INV-09"].includes(rule)) await handler();
+        const data = await loadData(tableId, recordId), results = [];
+        await handler(data, results);
+        return { data, results };
+    } };
 }

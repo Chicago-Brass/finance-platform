@@ -69,3 +69,27 @@ test('test output excludes older and future dates and includes the rolling windo
  const future=await testLedgerSync(f.client,{categoryCodes:['PAY-07'],maxRecords:1},async(...args)=>({...await f.evaluate(...args),entryDate:'9999-12-31'}));
  assert.equal(future.records.length,0);assert.equal(future.stats.zero,1);
 });
+
+
+test('single-source test cursors cannot switch records or inject a second record',async()=>{
+ const f=fixture(),source={tableId:T.payments,recordId:A};
+ f.client.queryIds=async()=>({ids:[A],offset:null});
+ const first=await testLedgerSync(f.client,{categoryCodes:['PAY-07'],source,maxRecords:1},f.evaluate);
+ assert.equal(first.records.length,1);assert.equal(first.records[0].recordId,A);
+ const cursor={...initialSingle(),recordIds:[B],recordIndex:0,phase:'process'};
+ function initialSingle(){return{dryRun:true,source,categoryIds:['PAY-07'],categoryIndex:0,phase:'discover',offset:null,relatedIds:[],relatedIndex:0,recordIds:[],recordIndex:0,stats:{candidates:0,processed:0,matched:0,posted:0,existing:0,zero:0,errors:0},errors:[],done:false};}
+ await assert.rejects(()=>testLedgerSync(f.client,{categoryCodes:['PAY-07'],source,maxRecords:1,cursor},f.evaluate),RangeError);
+ await assert.rejects(()=>testLedgerSync(f.client,{categoryCodes:['PAY-07'],source:{...source,recordId:B},maxRecords:1,cursor:initialSingle()},f.evaluate),RangeError);
+});
+
+test('explicit date range permits an older sample without opening posting or writeback',async()=>{
+ const f=fixture(),dateRange={from:'2025-01-01',to:'2025-12-31'};f.client.dateRange=dateRange;
+ const evaluate=async(c,r)=>{const event=await f.evaluate(c,r);event.entryDate='2025-04-01';return event;};
+ const result=await testLedgerSync(f.client,{categoryCodes:['PAY-07'],maxRecords:1,dateRange},evaluate);
+ assert.equal(result.records.length,1);assert.equal(result.records[0].date,'2025-04-01');assert.equal(result.databaseWrites,0);assert.equal(result.airtableWrites,0);
+ assert.equal(result.fromDate,dateRange.from);assert.equal(result.toDate,dateRange.to);
+ assert.equal(result.requestForResume.fromDate,dateRange.from);
+ const options={categoryCodes:['PAY-07'],maxRecords:1,dateRange,cursor:result.requestForResume.cursor};
+ assert((await testLedgerSync(f.client,options,evaluate)).done);
+ await assert.rejects(()=>testLedgerSync(f.client,{...options,dateRange:{...dateRange,to:'2026-12-31'}},evaluate),RangeError);
+});

@@ -58,7 +58,7 @@ test("original payment webhook writes complete structured links and independentl
 test("native invoice creation and payment-triggered invoice packets update the invoice, not the payment", async () => {
   for (const n of [9302, 9303]) {
     const a = airtable(), invoiceId = id(n);
-    const event = n === 9302 ? { invoiceRecordId: invoiceId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [category("EXP-01")] } :
+    const event = n === 9302 ? { invoiceRecordId: invoiceId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [category("EXP-11")] } :
       { ...payment(9403), source: { tableId: I, recordId: invoiceId }, categories: [category("PAY-11")] };
     event.categories[0].postings[0].invoiceRecordId = invoiceId;
     const result = await postAndSync(sql, event, token, a.fetcher);
@@ -262,10 +262,49 @@ test("daily writeback shares the native source lock and complete verified journa
   assert.equal(await count(event.paymentRecordId), 2);
 });
 
-test("depreciation and prepaid logs keep their existing contract without invoice/payment backlinks", async () => {
-  for (const [n, field, rule, debit, credit] of [[9313, "depreciationRecordId", "EXP-10", "009.101", "161.000"], [9314, "prepayLogRecordId", "EXP-04", "006.002", "135.000"]]) {
+test("depreciation, prepaid and shipping records write to their own source fields and retain their posting contracts", async () => {
+  for (const [n, field, rule, debit, credit, tableId] of [[9313, "depreciationRecordId", "EXP-10", "009.101", "161.000", "tblC0dbO5UMXzHma9"], [9314, "prepayLogRecordId", "EXP-04", "006.002", "135.000", "tbl1LgiUYt7Gc492d"], [9370, "shippingRecordId", "INV-14", "221.100", "004.001", "tblAxlsdmJN0X0sQs"]]) {
+    if (rule === "INV-14") await sql`update public.ledger_rules set enabled=true where rule_code='INV-14'`;
+    const a = airtable();
     const event = { [field]: id(n), eventType: "created", entryDate: "2026-11-01", categories: [{ ruleCode: rule, transactionType: "Existing log entry", postings: [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: "1.00" }] }] };
-    const result = await postAndSync(sql, event, "", async () => { throw new Error("Unexpected Airtable call"); });
+    await assert.rejects(() => postAndSync(sql, event, ""), /could not be confirmed/); assert.equal(await count(id(n)), 0);
+    const result = await postAndSync(sql, event, token, a.fetcher);
     assert.equal(result.postedCount, 1); assert.equal(result[field], id(n)); assert.equal(await count(id(n)), 1);
+    assert.deepEqual(a.calls.map(call => [call.tableId, call.method]), [[tableId, "PATCH"], [tableId, "GET"]]);
+    const saved = a.records.get(`${tableId}/${id(n)}`), fields = LINK_FIELDS[tableId];
+    assert.deepEqual(JSON.parse(saved[fields.postings]), result.ledgerPostings);
+    assert.deepEqual(JSON.parse(saved[fields.ids]), result.journalEntryIds);
+    const reversed = await reverseAndSync(sql, { source: { tableId, recordId: id(n) }, journalEntryIds: [], reversalDate: "2026-11-09" }, token, a.fetcher);
+    assert.equal(reversed.reversedCount, 1); assert(a.calls.every(call => call.tableId === tableId));
+    assert.deepEqual(JSON.parse(a.records.get(`${tableId}/${id(n)}`)[fields.reversalIds]), reversed.reversalJournalEntryIds);
+    if (rule === "INV-14") await sql`update public.ledger_rules set enabled=false where rule_code='INV-14'`;
   }
+});
+
+test("an inferred invoice-line source posts, replays and reverses only its own metadata", async () => {
+  const a = airtable(), tableId = "tblV26TC0f6CKDneL", recordId = id(9341), invoiceId = id(9342);
+  const event = { invoiceLineRecordId: recordId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [category("EXP-06")] };
+  event.categories[0].postings[0].invoiceRecordId = invoiceId;
+  event.categories[0].postings[0].sourceRecordId = recordId;
+  const result = await postAndSync(sql, event, token, a.fetcher);
+  assert.equal(result.invoiceLineRecordId, recordId); assert.equal(result.postedCount, 1);
+  assert.deepEqual(a.calls.map(call => call.method), ["PATCH", "GET"]); assert(a.calls.every(call => call.tableId === tableId));
+  assert(!a.records.has(`${I}/${invoiceId}`));
+  const replay = await postAndSync(sql, event, token, a.fetcher); assert.equal(replay.duplicateCount, 1); assert.equal(await count(recordId), 1);
+  const fields = LINK_FIELDS[tableId], saved = a.records.get(`${tableId}/${recordId}`);
+  assert.deepEqual(JSON.parse(saved[fields.postings]), result.ledgerPostings);
+  const reversed = await reverseAndSync(sql, { source: { tableId, recordId }, journalEntryIds: [], reversalDate: "2026-11-09" }, token, a.fetcher);
+  assert.equal(reversed.reversedCount, 1); assert.equal(await count(recordId), 2);
+  assert.deepEqual(JSON.parse(a.records.get(`${tableId}/${recordId}`)[fields.reversalIds]), reversed.reversalJournalEntryIds);
+});
+
+test("confirmed invoice-line writeback failure rolls back only its new journal", async () => {
+  const tableId = "tblV26TC0f6CKDneL", recordId = id(9343);
+  const event = { invoiceLineRecordId: recordId, eventType: "entry_requested", entryDate: "2026-11-01", categories: [category("EXP-06")] };
+  const calls = [], fetcher = async (_url, options) => {
+    calls.push(options.method || "GET");
+    return options.method === "PATCH" ? new Response("denied", { status: 403 }) : Response.json({ records: [{ id: recordId, fields: {} }] });
+  };
+  await assert.rejects(() => postAndSync(sql, event, token, fetcher), error => error.outcome === "rolled_back");
+  assert.deepEqual(calls, ["PATCH", "GET"]); assert.equal(await count(recordId), 0);
 });

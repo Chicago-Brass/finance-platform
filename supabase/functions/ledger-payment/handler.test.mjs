@@ -112,6 +112,16 @@ test("returns duplicate and no-op outcomes without another write attempt", async
   assert.deepEqual(await response.json(), result);
 });
 
+test("invoice-line requests retain their identity and identify safe failure logs", async (t) => {
+  const supplied = { invoiceLineRecordId: "rec00000000000041", eventType: "entry_requested", entryDate: "2026-11-01", categories: [] };
+  const result = { invoiceLineRecordId: supplied.invoiceLineRecordId, eventType: supplied.eventType, results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
+  const response = await handleRequest(request(supplied), environment, async received => { assert.deepEqual(received, supplied); return result; });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), result);
+  const logs = []; t.mock.method(console, "error", (...args) => logs.push(args));
+  assert.equal((await handleRequest(request(supplied), environment, async () => { throw Error("Private details"); })).status, 503);
+  assert.deepEqual(logs, [["Ledger posting failed.", { code: "UNKNOWN", sourceRecordId: supplied.invoiceLineRecordId }]]);
+});
+
 test("returns readable posting validation/conflict errors without internal details", async () => {
   for (const code of ["22023", "23505", "P0001", "23514", "23503"]) {
     const response = await handleRequest(request(), environment, async () => {

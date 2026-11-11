@@ -13,8 +13,10 @@ interface LedgerRequest {
   source?: { recordId?: string };
   paymentRecordId?: string;
   invoiceRecordId?: string;
+  invoiceLineRecordId?: string;
   depreciationRecordId?: string;
   prepayLogRecordId?: string;
+  shippingRecordId?: string;
 }
 
 export async function handleRequest<TEvent extends LedgerRequest = LedgerPaymentEvent, TResult = PostingResult>(
@@ -60,7 +62,7 @@ export async function handleRequest<TEvent extends LedgerRequest = LedgerPayment
       // Driver messages can contain database internals; only owned PostingErrors expose their text.
       return json({ error: "Journal data was rejected by the database.", code }, code === "23505" ? 409 : 400);
     }
-    const sourceId = ledgerEvent.source?.recordId ?? ledgerEvent.depreciationRecordId ?? ledgerEvent.prepayLogRecordId ?? ledgerEvent.invoiceRecordId ?? ledgerEvent.paymentRecordId;
+    const sourceId = ledgerEvent.source?.recordId ?? ledgerEvent.invoiceLineRecordId ?? ledgerEvent.depreciationRecordId ?? ledgerEvent.prepayLogRecordId ?? ledgerEvent.shippingRecordId ?? ledgerEvent.invoiceRecordId ?? ledgerEvent.paymentRecordId;
     console.error("Ledger posting failed.", {
       code: /^[A-Z0-9_]{1,40}$/.test(code) ? code : "UNKNOWN",
       sourceRecordId: typeof sourceId === "string" && /^rec[A-Za-z0-9]{14}$/.test(sourceId) ? sourceId : undefined,

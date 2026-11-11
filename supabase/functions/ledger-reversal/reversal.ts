@@ -1,11 +1,11 @@
-// Reverse the stored journals of one FIN payment or invoice. Never recalculate source amounts.
+// Reverse the stored journals of one FIN source record. Never recalculate source amounts.
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { holdForReview, lockLedgerSource } from "../_shared/period-review.ts";
 import { PostingError } from "../ledger-payment/errors.ts";
 
 export interface ReversalRequest {
   source: { tableId: string; recordId: string };
-  journalEntryIds: string[];
+  journalEntryIds?: string[];
   reversalDate: string;
 }
 
@@ -32,12 +32,13 @@ export interface ReversalResult {
 
 const PAYMENTS = "tblR61NG9i0giid28";
 const INVOICES = "tbldQXuqNEp8G5pfs";
+const SOURCES = [PAYMENTS, INVOICES, "tblV26TC0f6CKDneL", "tblC0dbO5UMXzHma9", "tbl1LgiUYt7Gc492d", "tblAxlsdmJN0X0sQs"];
 
 // ==================== CORE ====================
 
 export async function reverseJournals(sql: Sql, request: ReversalRequest, options: {transaction?: TransactionSql; approvalRequestId?: string} = {}): Promise<ReversalResult> {
   validateRequest(request);
-  const { source, reversalDate } = request;
+  const { source, reversalDate, journalEntryIds = [] } = request;
   const execute = async (tx: TransactionSql): Promise<ReversalResult> => {
     await tx`set local role service_role`;
     await lockLedgerSource(tx,source);
@@ -50,8 +51,8 @@ export async function reverseJournals(sql: Sql, request: ReversalRequest, option
         and e.source_record_id=${source.recordId} and e.reverses_entry_id is null
       order by e.id for update of e`;
     const ownedIds = new Set(originals.map(entry => entry.id));
-    if (request.journalEntryIds.some(id => !ownedIds.has(id.toLowerCase()))) {
-      throw new PostingError("A supplied journal does not belong to this payment or invoice.");
+    if (journalEntryIds.some(id => !ownedIds.has(id.toLowerCase()))) {
+      throw new PostingError("A supplied journal does not belong to this source record.");
     }
     const result: ReversalResult = {
       source: { tableId: source.tableId, recordId: source.recordId },
@@ -116,11 +117,11 @@ async function createReversal(tx: TransactionSql, originalId: string, date: stri
 
 function validateRequest(request: ReversalRequest): void {
   const source = request?.source;
-  if (!source || ![PAYMENTS, INVOICES].includes(source.tableId) || typeof source.recordId !== "string" || !/^rec[A-Za-z0-9]{14}$/.test(source.recordId)) {
-    throw new PostingError("source must identify a FIN Payments or Invoices record.");
+  if (!source || !SOURCES.includes(source.tableId) || typeof source.recordId !== "string" || !/^rec[A-Za-z0-9]{14}$/.test(source.recordId)) {
+    throw new PostingError("source must identify a FIN Payments, Invoices, Invoice Lines, Depreciation Table or Prepay Expenses Log record.");
   }
-  if (!Array.isArray(request.journalEntryIds) || request.journalEntryIds.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
-    throw new PostingError("journalEntryIds must be an array of journal UUIDs; an empty array discovers this source's journals.");
+  if (request.journalEntryIds !== undefined && (!Array.isArray(request.journalEntryIds) || request.journalEntryIds.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) {
+    throw new PostingError("journalEntryIds, if supplied, must be an array of journal UUIDs.");
   }
   const date = request.reversalDate;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) {

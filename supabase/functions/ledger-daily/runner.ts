@@ -5,13 +5,13 @@ import { POSTING_FIELDS, paymentSentFields, paymentEventsFields } from "./defini
 import { createCategoryEvaluator, sourceFields } from "./categories/index.ts";
 import { writeBack } from "./writeback.ts";
 import { BudgetExceeded, retry } from "./retry.ts";
-import type { LedgerStore, RunState, RunStore, CategoryDefinition } from "./types.ts";
+import type { LedgerStore, RunState, RunStore, CategoryDefinition, SyncSource, SyncDateRange } from "./types.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
 
-export function initialState(categoryCodes: string[], dryRun: boolean): RunState {
+export function initialState(categoryCodes: string[], dryRun: boolean, source?: SyncSource, dateRange?: SyncDateRange): RunState {
   const unknown = categoryCodes.filter(code => !CATEGORIES.some(c => c.code === code));
   if (unknown.length) throw new Error(`Unknown ledger categories: ${unknown.join(", ")}.`);
-  return { dryRun, categoryIds: CATEGORIES.filter(c => categoryCodes.length ? categoryCodes.includes(c.code) : c.status !== "deferred").map(c => c.id), categoryIndex: 0, phase: "related", offset: null, relatedIds: [], relatedIndex: 0, recordIds: [], recordIndex: 0,
+  return { dryRun, ...(source ? { source } : {}), ...(dateRange ? { dateRange } : {}), categoryIds: CATEGORIES.filter(c => (!source || c.tableId === source.tableId) && (categoryCodes.length ? categoryCodes.includes(c.code) : c.status !== "deferred")).map(c => c.id), categoryIndex: 0, phase: "related", offset: null, relatedIds: [], relatedIndex: 0, recordIds: [], recordIndex: 0,
     stats: { candidates: 0, processed: 0, matched: 0, posted: 0, existing: 0, zero: 0, errors: 0 }, errors: [], done: false };
 }
 
@@ -20,6 +20,7 @@ interface Dependencies {
   runs: RunStore;
   ledger: LedgerStore;
   deadline: number;
+  enabledRuleCodes?: ReadonlySet<string>;
   evaluate?: (category: CategoryDefinition, source: any) => Promise<LedgerPaymentEvent | null>;
   log?: (message: string, details: unknown) => void;
 }
@@ -30,6 +31,9 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
   const job = await runs.claim(runKey, requested);
   if (!job) return { busy: true, runKey };
   const state = job.state, preview: { category: string; recordId: string; journalCount: number; entryDate: string; entries: LedgerPaymentEvent["categories"] }[] = [];
+  const disabledCategories = deps.enabledRuleCodes
+    ? [...new Set(CATEGORIES.filter(category => state.categoryIds.includes(category.id) && !deps.enabledRuleCodes!.has(category.code)).map(category => category.code))]
+    : [];
   const evaluate = deps.evaluate ?? createCategoryEvaluator(client);
   let processed = 0, paused = false;
   let batchCategory = "", batchEnd = 0;
@@ -38,12 +42,16 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
     while (!state.done && Date.now() + 20_000 < deadline && processed < maxRecords) {
       const category = CATEGORIES.find(c => c.id === state.categoryIds[state.categoryIndex]);
       if (!category) { state.done = true; break; }
+      if (deps.enabledRuleCodes && !deps.enabledRuleCodes.has(category.code)) {
+        advanceCategory(state); client.clearRecordCache(); await runs.save(job); continue;
+      }
       if (category.status === "deferred") {
         recordError(state, category, "", "Not yet implemented: category filters and mapping are deferred.");
         advanceCategory(state); await runs.save(job); continue;
       }
       if (state.phase === "related") {
-        const related = category.related;
+        // A named source goes straight to its own query; the handler checks its linked records.
+        const related = state.source ? undefined : category.related;
         if (related) {
           const page = await client.queryRecords(related.tableId, related.filter(client), [related.linksFieldId], state.offset);
           let ids = [...new Set<string>(page.records.flatMap(record => (record.value(related.linksFieldId) || []).map((link: { id: string }) => link.id)))];
@@ -59,12 +67,12 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
       }
       if (state.phase === "discover") {
         const linked = state.relatedIds.slice(state.relatedIndex, state.relatedIndex + 40);
-        if (category.related && !linked.length) { state.phase = "process"; await runs.save(job); continue; }
-        const formula = candidateFormula(category, client);
-        const page = await client.queryIds(category.tableId, category.related ? and(formula, or(...linked.map(id => `RECORD_ID()=${JSON.stringify(id)}`))) : formula, state.offset);
+        if (category.related && !state.source && !linked.length) { state.phase = "process"; await runs.save(job); continue; }
+        const formula = and(candidateFormula(category, client), state.source ? `RECORD_ID()=${JSON.stringify(state.source.recordId)}` : "");
+        const page = await client.queryIds(category.tableId, category.related && !state.source ? and(formula, or(...linked.map(id => `RECORD_ID()=${JSON.stringify(id)}`))) : formula, state.offset);
         state.recordIds.push(...page.ids); state.offset = page.offset; state.stats.candidates += page.ids.length;
-        if (category.related && !page.offset) state.relatedIndex += linked.length;
-        if (!page.offset && (!category.related || state.relatedIndex >= state.relatedIds.length)) { state.recordIds = [...new Set(state.recordIds)]; state.phase = "process"; }
+        if (category.related && !state.source && !page.offset) state.relatedIndex += linked.length;
+        if (!page.offset && (state.source || !category.related || state.relatedIndex >= state.relatedIds.length)) { state.recordIds = [...new Set(state.recordIds)]; state.phase = "process"; }
         await runs.save(job); continue;
       }
       if (category.status === "blocked" && state.phase === "process") {
@@ -104,7 +112,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
             if (category.status === "blocked") throw new Error("Not yet implemented: the T-Chart account mapping is pending.");
             if (!state.dryRun && !control) throw new Error("Ledger Postings fields are not configured for this source table; preview only until writeback is defined.");
             const event = await evaluate(category, source);
-            if (!event || !inSyncDateRange(event.entryDate)) state.stats.zero++;
+            if (!event || !inSyncDateRange(event.entryDate, state.dateRange)) state.stats.zero++;
             else {
               if (!state.dryRun) client.requireWritebackBudget();
               state.stats.matched++;
@@ -139,7 +147,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
     else throw error;
   } finally { await runs.release(job); }
   return { runKey, dryRun: state.dryRun, done: state.done, paused: paused || !state.done, category: state.categoryIds[state.categoryIndex] ?? null,
-    stats: state.stats, preview, errors: state.errors, deferredCategories: DEFERRED_CATEGORIES, blockedCategories: CATEGORIES.filter(c => c.status === "blocked").map(c => c.code), airtableRequests: client.requests, resume: state.done ? null : { runKey } };
+    stats: state.stats, preview, errors: state.errors, deferredCategories: DEFERRED_CATEGORIES, blockedCategories: CATEGORIES.filter(c => c.status === "blocked").map(c => c.code), disabledCategories, airtableRequests: client.requests, resume: state.done ? null : { runKey } };
 }
 function advanceCategory(state: RunState) {
   state.categoryIndex++; state.phase = "related"; state.offset = null; state.relatedIds = []; state.relatedIndex = 0; state.recordIds = []; state.recordIndex = 0;

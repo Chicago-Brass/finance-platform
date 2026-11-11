@@ -1,177 +1,146 @@
-# FIN payment and invoice reversal
+# FIN source-record reversal
 
-Deployed to FIN and DUAL ENTRY on 9 November 2026. The eight reversal fields and both native
-automations were read back after saving. The dedicated endpoint is now ACTIVE, version 5,
-including the structured posting metadata extension described below.
-Depreciation, prepaid-use logs, daily processing and restoration are outside this change.
-
-## Airtable fields
-
-Create these fields on FIN Payments (`tblR61NG9i0giid28`) and Invoices (`tbldQXuqNEp8G5pfs`):
-
-| Field | Type | Initial value |
-| --- | --- | --- |
-| Ledger Journal IDs | Long text | Blank |
-| Reversal Journal IDs | Long text | Blank |
-| Reverse Ledger | Checkbox | Unchecked |
-| Reverse Date | Manual date, no time | Blank |
-
-The created field IDs are embedded in the script's `SOURCE_FIELDS` map. These are not lookups,
-formulas or computed dates.
-Both journal ID fields contain JSON arrays. A missing original-ID list is supported: Supabase
-finds all journals owned by this exact source record. Saved IDs cannot expand that scope.
-
-| Field | Payments | Invoices |
-| --- | --- | --- |
-| Ledger Journal IDs | fldUTQWnsCYxYZ8wa | fldLqYrXCySCoZRQT |
-| Reversal Journal IDs | fld7j7LKJNbgfyFhk | fldKWzgJ7ypvfn6Jw |
-| Reverse Ledger | fldNtEQiswXd8mODj | fldOZh1NZmJi9tqkb |
-| Reverse Date | fldXItbQ15eokPT0P | fld1SzFreZ84owLgq |
-
-## Posting metadata
-
-`Ledger Postings` is a separate plain long-text field on Payments (`fldFcvTSQ5035ZYVa`)
-and Invoices (`fld2K7xKmNnLoi4u6`). Each JSON-array item contains `rule`, `key`, `datetime`
-and `id`: the category code, the `source_entry_key` account component, the actual UTC
-`posted_at` timestamp and the journal UUID. Several journals may share one rule; `key`
-distinguishes account components and is empty for a whole-category journal.
-
-The initial backfill populated 130 original journals across 42 payments and 64 invoices.
-The posting/reversal service extension now maintains this metadata automatically, using
-the actual source-owned journals from Supabase after the financial transaction succeeds. Both
-endpoints share `supabase/functions/_shared/ledger-links.ts` and require `AIRTABLE_PAT`.
-It refreshes the complete original ID array, the structured posting objects and reversal IDs,
-then independently verifies the saved Airtable values. The structured objects retain originals
-after reversal, so their categories remain marked as posted; reversal UUIDs stay in their own field.
-This extension is published: `ledger-payment` version 16 and `ledger-reversal` version 5 are
-ACTIVE on 9 November 2026. Nine downloaded runtime modules matched local source. Live writes
-and independent readback of only these three fields passed on payment `recDpTZIeL8u62jwq` and
-invoice `recvLxhRs636RZ82A`; neither check created or reversed financial journals. Existing native
-scripts/triggers remain unchanged. The future daily worker uses the same field IDs and object shape,
-and remains undeployed/unscheduled. Existing shared webhook authentication is unchanged.
-
-An exact rule exclusion is `FIND("\"EXP-06\"", {Ledger Postings} & "") = 0`.
-The persisted-field tests passed for present/absent rules on both tables and for complete
-Utilities and vendor-deposit query filters. This field is a cache; Supabase journal identity
-and duplicate/reversal checks remain authoritative.
+The dedicated `ledger-reversal` endpoint reverses the stored journals owned by one FIN record.
+It supports Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table.
+It does not recalculate categories or amounts, or reverse linked records merely referenced by
+the source. Unchecking Reverse Ledger does nothing; restoration remains deferred.
 
 ## Native automations
 
-Both automations are ON:
+All five Reverse Ledger checkbox automations are ON and use `airtable/ledger-reversal.js`:
 
-- [Payment | Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflOy11pXjH4HRsEB)
-- [Invoice | Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflu0qz8LtuOivu4q)
+| Owning table | Table ID | Automation |
+| --- | --- | --- |
+| Payments | `tblR61NG9i0giid28` | [Payment Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflOy11pXjH4HRsEB) |
+| Invoices | `tbldQXuqNEp8G5pfs` | [Invoice Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflu0qz8LtuOivu4q) |
+| Invoice Lines | `tblV26TC0f6CKDneL` | [Invoice Line Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wfllk4vGHSWhiJYjX) |
+| Prepay Expenses Log | `tbl1LgiUYt7Gc492d` | [Prepaid Log Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflK3FbhAacWxaC2N) |
+| Depreciation Table | `tblC0dbO5UMXzHma9` | [Depreciation Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wfl9mtZA0btC00cOv) |
 
-Each uses:
+Each triggers when its own record's Reverse Ledger is checked. Inputs are `sourceTableId`
+(the fixed owning table), `sourceRecordId` (the trigger record ID), and `ledgerReversalUrl`.
+The script uses `input.secret("Dual Ledger Webhook Secret")`, matching the existing Edge secret.
 
-1. When a record matches conditions: Reverse Ledger is checked.
-2. Run `airtable/ledger-reversal.js`.
+The script reads only the checkbox and manual date. If Reverse Date is blank, it saves today's
+America/Chicago calendar date before the webhook. An existing date stays unchanged, including
+after failure. The request contains source identity and date only. Supabase owns journal lookup
+and metadata writeback; the native script does not read or rewrite cached journal IDs.
+Do not require populated Ledger Journal IDs in the trigger: historical journals are found by
+source identity. There is no automatic native retry; rerun the same source/date after failure.
 
-Inputs: `sourceTableId` (fixed to the owning table), `sourceRecordId` (trigger record ID) and
-`ledgerReversalUrl` (the dedicated endpoint).
-Use `input.secret('Dual Ledger Webhook Secret')`; do not place a key in an input value.
+## Airtable fields and posting metadata
 
-The script reads one source record and does no accounting calculations. If Reverse Date is
-empty, it saves today's America/Chicago calendar date before calling the webhook. An existing
-manual date stays unchanged, even after a failed call. After success, it refreshes both ID
-fields from the receiver's complete source-owned ID lists. A writeback failure fails the run;
-retrying the same date returns the existing reversals and repairs the IDs without reposting.
+Each of the five source tables has these fields:
 
-Unchecking Reverse Ledger has no effect. The script never clears the checkbox, date or ID lists.
-Do not filter the automation on Ledger Journal IDs being populated; historical journals can be
-found by source identity. Native posting senders need no script changes for the metadata extension;
-the receiver owns writeback. The native reversal script's existing ID refresh remains compatible.
+| Field | Type | Ownership |
+| --- | --- | --- |
+| Ledger Postings | Long text | Supabase writes JSON objects `{rule,key,datetime,id}` |
+| Ledger Journal IDs | Long text | Supabase writes the complete original journal UUID array |
+| Reversal Journal IDs | Long text | Supabase writes the posted reversal UUID array |
+| Reverse Ledger | Checkbox | User requests reversal |
+| Reverse Date | Manual date, no time | User date; native script stamps it once when blank |
+
+Exact field IDs live in the native script's `SOURCE_FIELDS` and
+[`_shared/ledger-links.ts`](../supabase/functions/_shared/ledger-links.ts) `LINK_FIELDS` maps.
+Each posting object's `rule` is the category code, `key` is its account component (empty for
+a whole-category journal), `datetime` is the actual UTC posting timestamp, and `id` is the journal
+UUID. Original objects remain after reversal, so their categories stay marked as posted.
+
+Posting and reversal receivers synchronize all three metadata fields from actual Supabase
+journals under the shared source lock, then independently read back the exact Airtable record.
+They require server-only `AIRTABLE_PAT`. These fields are caches; Supabase identity and
+duplicate/reversal guards remain authoritative.
 
 ## Dedicated endpoint
 
 `POST https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-reversal`
 
-Authentication: the existing `x-ledger-secret` / `LEDGER_WEBHOOK_SECRET` pair. The function has
-its own `verify_jwt = false` setting and reuses the existing authenticated HTTP handler. It
-does not dispatch through the posting category handler or require new secrets.
+Authentication uses the existing `x-ledger-secret` / `LEDGER_WEBHOOK_SECRET` pair.
+The function has `verify_jwt = false` and checks this secret before service work. It uses
+`SUPABASE_DB_URL` for parameterized direct SQL; no posting/reversal database function is called.
 
 ```json
 {
   "source": { "tableId": "tblR61NG9i0giid28", "recordId": "rec00000000000001" },
-  "journalEntryIds": [],
-  "reversalDate": "2026-11-09"
+  "reversalDate": "2026-11-12"
 }
 ```
 
-`journalEntryIds` can be a partial cached list or empty. Every supplied UUID must belong to
-the source. The service queries the complete original journal set using the existing source
-index, rather than scanning Airtable or the entire ledger. A payment reversal only affects
-payment-owned journals; it does not reverse invoice-owned journals that reference that payment.
+An optional `journalEntryIds` array remains accepted for older callers. It cannot expand the
+source's scope; each supplied ID must belong to that exact source. The server always queries
+the complete original journal set using indexed source identity.
 
-The service uses the posting writer's source lock. It creates all required reversals in one
-transaction, copies stored lines and metadata, swaps debit and credit, preserves signed amounts
-and original records, and records `reverses_entry_id`. Existing nonreversible-rule, postable
-account, balance and accounting-period protections remain. A previously posted reversal is
-returned as `already_reversed`; a different saved reversal date or unposted reversal conflicts.
-An owner with no journals returns a successful empty result. No database function is called.
+The transaction creates all required opposite entries together. It copies stored lines and
+metadata, swaps debit and credit, preserves signed amounts and original records, and records
+`reverses_entry_id`. Account, balance, reversible-rule and accounting-period guards remain.
+The same source/date retry returns existing reversals; a changed reversal date conflicts.
+A source with no journals returns a successful empty result.
 
-The response contains `source`, `journalEntryIds`, `reversalJournalEntryIds`, `reversedCount`,
-`duplicateCount` and per-journal `results`. Database failures return errors, not partial success.
-The existing unique reversal index and source metadata are sufficient; no migration is needed.
+A closed or missing accounting period can return `pending_review` instead of posting. An
+authorized user approves that captured target set through `ledger-periods`; reopening alone
+does not approve it. Pending/rejected responses do not write new posting markers.
 
-## Existing cancellation workflows
+After financial commit, Supabase verifies Airtable metadata writeback before returning success.
+If writeback fails, the reversal remains committed and the call fails. Retrying the same
+source/date synchronizes the links without another reversal; it does not delete journal history.
 
-The existing Cancel Payment and Sent/Return Payment categories post chart-defined current-amount
-entries. They are not replaced by this checkbox. Do not use both workflows for the same financial
-event without deciding which entries should remain. No cancellation triggers or mappings change.
+Successful responses include `source`, `journalEntryIds`, `reversalJournalEntryIds`,
+`reversedCount`, `duplicateCount` and per-journal `results`.
 
-## Deferred proposal: uncheck and repost
+## Cancellation and restoration
 
-The proposed future behavior is: an unchecked Reverse Ledger with a saved Reverse Date requests
-new posting, replaces the current original journal IDs, then clears Reverse Date and reversal
-IDs after success. This is not final and is not implemented. It requires changes to the current
-original-journal uniqueness and historically-reversed replay guards. No journal history should
-be deleted. Reversing a reversal is also outside this implementation.
+Cancel Payment and Sent/Return Payment categories post their chart-defined entries. They are
+separate from Reverse Ledger; combining them for one financial event requires an accounting
+decision. This reversal change does not change those triggers or mappings.
 
-## Checks and rollout
+Unchecking Reverse Ledger does not delete a reversal, clear dates/IDs, or repost the source.
+The proposed uncheck-and-repost behavior and reversing a reversal remain deferred.
+
+## Deployment and checks
+
+On 12 November 2026, `ledger-payment` v20, `ledger-reversal` v8, `ledger-periods` v3 and
+`ledger-daily` v12 were published. The period endpoint retains JWT verification and the
+`can_manage_periods` permission check. All 42 downloaded runtime modules matched local source.
+The daily worker remains unscheduled; publication does not replace native posting triggers.
+
+Each native reversal automation was reloaded and verified ON with its own table/checkbox,
+fixed table input, dynamic trigger record ID and shared secret. All five complete saved scripts
+matched the local sender. Temporary test automations were removed after live verification.
 
 ```sh
 node airtable/check-ledger-reversal.cjs
-node --test supabase/functions/ledger-payment/handler.test.mjs supabase/functions/ledger-reversal/handler.test.mjs
+node --test supabase/functions/ledger-reversal/handler.test.mjs
 sh supabase/tests/check-payment-posting.sh
 ```
 
-The database runner is disposable and loopback-only. It removes the legacy reversal RPC before
-testing direct Edge writes. Tests cover multi-journal/signed reversal, preserved references,
-strict ownership, concurrent duplicates, dates, rollback, blocked sources and existing guards.
+Current isolated checks passed: 11 native sender cases, 91 disposable database checks,
+56 focused checks, 17 report checks and TypeScript. An additional disposable proof passed
+closed-period capture, exception approval, metadata writeback and duplicate-free retry for
+all five source tables; those Airtable calls were mocked.
 
-Deployment verification: all eight field IDs/types were independently read from the Meta API;
-Reverse Date is date-only in both tables. Both saved script copies matched the local source.
-The published invoice input and ON status survived reload. Both triggers use their own table's
-Reverse Ledger checkbox, checked. The existing webhook secret is attached to both scripts.
+## Live verification - 12 November 2026
 
-A temporary, authentication-only Airtable probe received the expected HTTP 400 for an invalid
-source, before any database work. Its execution log confirmed success; the production script
-and dynamic record-ID input were restored afterward. The endpoint also rejected an unauthenticated
-request with HTTP 401. The deployed bundle and function configuration were read back through
-the project-scoped Management API. Local checks passed: eight native cases, twelve HTTP tests,
-42 disposable database tests and targeted TypeScript checking. The initial deployment probe
-did not reverse any hosted journal. Subsequent authorized live verification is recorded below.
+After an authorized clean slate, 62 real Expense source records across 15 rules created
+66 original journals. Checking their native Reverse Ledger fields created 66 opposite journals
+with 264 total original/reversal lines. All 62 source records' original and reversal writebacks
+were independently verified. A two-journal W2 replay created no new journals and returned two
+duplicates. A request using a disabled Payment rule was rejected before posting.
 
-## Live reversal verification
+Report builders, five date windows and four branch-filter RPCs reconciled to stored lines.
+Same-period original/reversal pairs netted to zero. Prior-year originals reversed in the current
+year correctly affect different reporting periods; each individual year's income need not net
+to zero. Seven active categories still lacked eligible live samples; see the
+[Expense implementation review](expense-audit.md) for the coverage limits. Five deferred
+categories remain disabled. No missing accounting period was opened to force a sample.
 
-Verified on 9 November 2026 device time, with accounting date 8 November 2026 in America/Chicago.
-The approved sample covered two payment records and one invoice record, including a payment
-owning three category journals. IDs were prefilled before checking Reverse Ledger.
+## Historical live verification
 
-- All three native automation runs succeeded and produced five posted reversal journals, with
-  14 lines matching the originals with debit/credit swapped.
-- Original journal headers and lines were independently compared with their pre-write snapshots
-  and remained unchanged. Accounts, reference arrays, branch and audit information were preserved.
-- Each account nets to zero across these original and reversal lines.
-- Both journal ID arrays and Reverse Date were read back from the correct Airtable records.
-- Repeating the three-journal payment through the native script test returned zero new journals
-  and three already reversed. Independent reads confirmed the same five reversal UUIDs, and
-  unchanged Airtable dates, checkboxes and ID arrays after retry.
+Historical live checks on 9 November 2026 reversed five test journals (14 lines) owned by two
+payments and one invoice. They preserved original data and returned no new journals on retry.
+That historical evidence does not constitute live financial testing of the three newer source
+automations. Hosted financial tests require an explicitly selected record/date scope.
 
-The test records retain their checked Reverse Ledger state, date and ID links. Nothing was
-deleted or restored. Unchecking/reposting remains deferred. Private record-level receipts and
-financial snapshots were kept outside the public repository.
-
-A hosted journal test is a separate real financial write and needs an explicit record/date
-selection. Do not test by toggling a user's source record without that scope.
+Shipping Record is also a supported source (`tblAxlsdmJN0X0sQs`). Its native template maps
+Reverse Ledger `fld8oS4rTOmZtuTl6` and Reverse Date `fldAgNtldwTtWCfo2`. The dedicated endpoint
+reverses its stored journals without re-reading or recalculating linked MTA prices. A native
+checkbox automation must be configured separately before checking that field will call it.

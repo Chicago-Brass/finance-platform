@@ -1,6 +1,6 @@
 # Airtable ledger webhook
 
-`ledger-payment` accepts a POST from FIN payment, invoice, depreciation and prepaid-use automations. Airtable supplies its transaction
+`ledger-payment` accepts a POST from FIN payment, invoice, invoice-line, depreciation and prepaid-use sources. Airtable supplies its transaction
 type and final debit/credit posting pairs, including calculated amounts. The Edge Function
 authenticates, resolves account references to ledger accounts and saves the journal through
 parameterized SQL in one database transaction. Transaction types are metadata; the backend has no
@@ -52,9 +52,9 @@ for its staged configuration; no cron or hosted deployment is enabled by that im
 ## Airtable journal links
 
 The native webhook now uses `service.ts` to post through the existing writer, then synchronize
-FIN Payments/Invoices through `../_shared/ledger-links.ts`. Configure server secret `AIRTABLE_PAT`
+all five FIN source tables through `../_shared/ledger-links.ts`. Configure server secret `AIRTABLE_PAT`
 with FIN record read/write access before publishing this version. Missing configuration fails
-before posting a payment/invoice. Depreciation and prepaid logs retain their existing behavior.
+before posting any supported source. Invoice Lines, depreciation and prepaid logs own their metadata.
 
 After the journal transaction commits, the service reads all original posted journals owned by
 that exact source and writes `Ledger Postings` as `{rule, key, datetime, id}` objects, the complete
@@ -193,3 +193,16 @@ Migration 20261106191953 adds source_entry_key and journal_lines.airtable_record
 before this receiver. Sender account keys create one journal per category/account, and grouped
 source-line IDs persist in the line reference array. Supplied branches persist; missing or mixed
 attribution remains NULL. Exact replays deduplicate, and changed grouping/branch/refs conflict.
+
+## Expense line-owned packets
+
+`invoiceLineRecordId` with eventType `entry_requested` identifies a FIN Invoice Lines source
+(`tblV26TC0f6CKDneL`). Its explicit source, when supplied, must match that line. Do not also set
+paymentRecordId or header invoiceRecordId; retain the parent invoice in each posting's invoice
+references. Lines, invoices, payments and both log tables have distinct source locks and audit URLs.
+All five source types require the same AIRTABLE_PAT writeback verification. This changes source
+support, not the Payment or Invoice Entry category filters/account mappings.
+
+Shipping Record (`tblAxlsdmJN0X0sQs`) events use `shippingRecordId` and `eventType: "created"`.
+The source owns its audit link and ledger writeback; its linked MTAs are amount inputs, not journal
+owners. Source identity, replay, period review and signed amounts use the same generic writer.

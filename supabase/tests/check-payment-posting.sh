@@ -40,4 +40,4 @@ docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledge
   -c 'drop function public.create_journal_entry(jsonb,jsonb,boolean); drop function public.reverse_journal_entry(uuid,date,text);'
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')
 LEDGER_TEST_DATABASE_URL="postgres://postgres:local-only-ledger-check@127.0.0.1:$port/ledger_check" \
-  node --test --test-concurrency=1 "$test_dir/post-airtable-payment.test.mjs" "$test_dir/reverse-airtable-ledger.test.mjs" "$test_dir/daily-payment-worker.test.mjs" "$test_dir/ledger-writeback.test.mjs" "$test_dir/period-management.test.mjs" "$test_dir/journal-deletion.test.mjs"
+  node --test --test-concurrency=1 "$test_dir/post-airtable-payment.test.mjs" "$test_dir/reverse-airtable-ledger.test.mjs" "$test_dir/daily-payment-worker.test.mjs" "$test_dir/ledger-writeback.test.mjs" "$test_dir/period-management.test.mjs" "$test_dir/journal-deletion.test.mjs" "$test_dir/expense-catalog.test.mjs" "$test_dir/finalized-catalog.test.mjs" "$project_dir/supabase/functions/ledger-payment/enabled.test.mjs" "$test_dir/tchart-labels.test.mjs"

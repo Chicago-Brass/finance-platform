@@ -26,11 +26,15 @@ export async function lockLedgerSource(
   const prefix =
     source.tableId === "tblR61NG9i0giid28"
       ? "FIN payment:"
-      : source.tableId === "tblC0dbO5UMXzHma9"
-        ? "FIN depreciation:"
-        : source.tableId === "tbl1LgiUYt7Gc492d"
-          ? "FIN prepay:"
-          : "FIN invoice:";
+      : source.tableId === "tblV26TC0f6CKDneL"
+        ? "FIN invoice line:"
+        : source.tableId === "tblC0dbO5UMXzHma9"
+          ? "FIN depreciation:"
+          : source.tableId === "tbl1LgiUYt7Gc492d"
+            ? "FIN prepay:"
+            : source.tableId === "tblAxlsdmJN0X0sQs"
+              ? "FIN shipping:"
+              : "FIN invoice:";
   await tx`select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(${prefix + source.recordId},0))`;
 }
 
