@@ -10,6 +10,26 @@ test('REST reads resolve current field names, normalize selects/links and reuse 
  const record=await client.readRecord('payments','pay',['type','links']);assert.equal(record.name,'Test payment');assert.deepEqual(record.value('type'),{name:'AP'});await client.readRecord('payments','pay',['type']);assert.equal(calls.length,2);
  await client.loadLinkNames([record],['links']);assert.equal(record.value('links')[0].name,'112.100: Bank');assert.equal(calls.length,3);assert(calls[1].url.includes('fields%5B%5D=name'));
 });
+test('single-source invalidation refreshes source flags, retains linked records and full clear still flushes both',async()=>{
+ const tables=structuredClone(schema);tables.tables[0].fields.push({id:'sent',name:'Sent',type:'checkbox'});
+ let sourceReads=0,accountReads=0;
+ const fetcher=async url=>{
+  if(url.includes('/meta/'))return json(tables);
+  if(url.includes('/accounts?')){accountReads++;return json({records:[{id:'bank',fields:{label:'112.100: Bank'}}]})}
+  sourceReads++;return json({records:[{id:'pay',fields:{name:'Test payment',sent:sourceReads===1,links:['bank']}}]});
+ };
+ const client=new AirtableClient('test-only',Date.now()+60000,fetcher);
+ await client.initialize();
+ const first=await client.readRecord('payments','pay',['sent','links']);await client.loadLinkNames([first],['links']);
+ assert.equal(first.value('sent'),true);assert.equal(accountReads,1);
+ client.clearRecordCache({tableId:'payments',recordId:'pay'});
+ const refreshed=await client.readRecord('payments','pay',['sent','links']);await client.loadLinkNames([refreshed],['links']);
+ assert.equal(refreshed.value('sent'),false);assert.equal(sourceReads,2);assert.equal(accountReads,1);
+ assert.deepEqual(refreshed.value('links'),first.value('links'));
+ client.clearRecordCache();
+ const cleared=await client.readRecord('payments','pay',['sent','links']);await client.loadLinkNames([cleared],['links']);
+ assert.equal(sourceReads,3);assert.equal(accountReads,2);assert.deepEqual(cleared.value('links'),refreshed.value('links'));
+});
 test('Airtable 429 pauses for resume when its required delay does not fit the budget',async()=>{
  const client=new AirtableClient('test-only',Date.now()+25000,async()=>new Response('{}',{status:429}));await assert.rejects(()=>client.initialize(),BudgetExceeded);assert.equal(client.requests,1);
 });

@@ -1,8 +1,7 @@
 # Expense category implementation
 
-Updated 12 November 2026 against the current live T-Chart and FIN field schema. This review changes
-Category - Expenses only. Payment and Invoice Entry category rules are preserved. Their known
-cross-sheet overlaps are not resolved by this change.
+Updated 13 November 2026 against the live T-Chart, FIN schema and deployed category modules.
+The current review covers Expense and Invoice Entry; Payment and Other rules stay disabled.
 
 ## Worker ownership
 
@@ -11,12 +10,13 @@ cross-sheet overlaps are not resolved by this change.
 amounts. The generic writer records their supplied pairs. The caller owns scheduling; no scheduler
 is enabled. The three old Expense posting automations and Invoice Full Paid are OFF; the shared webhook owns the current rules.
 
-There are 26 current Expense codes: 21 fully implemented, one working partial and four red deferred. The black PTO definition is excluded. One functioning category
-retains an explicit partial limit: Utilities-only operating expenses.
+There are 26 current Expense codes: 22 fully implemented and enabled, plus four red deferred
+rules. The black PTO definition is excluded. Operating Expenses uses the reviewed 37-account
+allowlist; the FIN checkbox is not queried at runtime.
 
 | Sheet row / rule | Category | Source owner | Status |
 | --- | --- | --- | --- |
-| 2 / EXP-01 | Operating expense invoice | Invoices | partial |
+| 2 / EXP-01 | Operating expense invoice | Invoices | implemented |
 | 3 / EXP-14 | Operating expense payment | Payments | implemented |
 | 4 / EXP-15 | Product invoice | Invoices | implemented |
 | 5 / EXP-16 | Product payment | Payments | implemented |
@@ -82,10 +82,9 @@ See the [reversal guide](ledger-reversal.md) for editor links and the immutable-
 
 - Line-based payments assume one full payment per invoice, as confirmed by the user. Sent + Fully Paid
   is sufficient for this workflow; no partial-payment allocation or final-payment selector is added.
-- Additional operating accounts beyond Utilities are not yet specified.
+- Negative AP Product invoices still qualify; their eventual category classification remains unresolved.
 - The 13th-month accrual remains deferred.
-- Old Payment/Invoice Entry rules can overlap the new Expense rules. Those sheets are expressly
-  outside this change; do not activate a broad posting run before that review.
+- Conditional overlap notes remain for old Payment rules; those rules are disabled.
 - Existing historical journals are not rewritten or moved to a new source owner.
 
 ## Earlier implementation verification
@@ -261,17 +260,18 @@ Earlier validation enabled 22 functioning Expense rules. The current finalizatio
 
 ## Current finalization
 
-Only the 21 fully implemented Expense rules are enabled. Utilities-only EXP-01 is a working
-partial and disabled. The four red definitions remain deferred/disabled, and the black PTO
-EXP-08 definition is removed. Prior validation sections above are dated evidence, not current
-switch settings. Current source filters and mappings are in rules/chart.ts.
+All 22 implemented Expense rules are enabled. Four red definitions remain deferred/disabled,
+and the black PTO definition is excluded. The 37 operating accounts are fully mapped; FIN
+525300 and 922000 map to Supabase 525.300 and 922.000 in every dynamic Expense path, including
+card purchases and prepaid use-up. The two working asset partials belong to Invoice Entry and
+remain disabled. The shared webhook keeps its 30-day safety window and explicit date overrides.
 
-Expense rows 2/3/21/22 now exclude Invoices.Mark as No Vendor Bill? so row 6 alone handles those
-card purchases. This applies to both invoice accruals and their payment counterparts. Old overlap
-notes against the removed AP Invoice Entry routes and prepaid/fixed-asset rules are cleared.
-Payment-sheet overlap notes remain because that sheet has not been revised and stays disabled.
-Operating payment row 3 remains enabled while its partial invoice counterpart row 2 is disabled.
+Expense rows 2/3/21/22 exclude Mark as No Vendor Bill? so row 6 owns those card purchases.
+Resolved questions about missing line/log metadata fields, W2/401K/1099 mappings, tax identities,
+prepaid accounts and line ownership are removed from the live development notes. The unlabelled
+extra note cells were cleared on implemented rows. Red and black rows are preserved.
 
-The workbook keeps red/black rows, makes partials yellow, and separates Field, Other Field and
-Account mappings. Tags, mapping labels and actual account-source headings are bold. No field
-values, Sent flags, amounts or dates were changed during this finalization.
+AP invoices receive one full payment, as confirmed company policy. Line-owned accruals round
+each line to cents; settlement totals those posted line amounts per invoice/account. No extra
+payment selector, allocation rule or category predicate was added. Negative Product Invoice
+classification and conditional overlaps with disabled Payment rules remain visible questions.

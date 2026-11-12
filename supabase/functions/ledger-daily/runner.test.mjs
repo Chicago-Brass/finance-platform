@@ -19,7 +19,7 @@ function setup({records=['a'],offsetPage=false,writeFailures=0,postFailures=0}={
 }
 
 test('registry covers all 27 payment categories; query excludes exact rule and reversed sources',()=>{
- assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,27);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,7);
+ assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,27);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,6);
  const {deps}=setup();const formula=candidateFormula(CATEGORIES.find(c=>c.code==='PAY-07'),deps.client);
  assert(formula.includes('"\\"PAY-07\\""'));assert(formula.includes(F.reverse));assert(formula.includes(PF.sent));
  const invoiceRule=CATEGORIES.find(c=>c.id==='PAY-04:underpaid');assert.equal(invoiceRule.tableId,'tbldQXuqNEp8G5pfs');assert(candidateFormula(invoiceRule,deps.client).includes('fld2K7xKmNnLoi4u6'));
@@ -160,6 +160,22 @@ test('single-record sync queries only its source and bypasses whole-table linked
  assert(t.calls.queries[0].formula.includes('RECORD_ID()='+JSON.stringify(id)));
  assert.deepEqual(state.source,source);
  assert(initialState([],true,source).categoryIds.every(id=>CATEGORIES.find(c=>c.id===id).tableId===P));
+});
+
+test('single-record categories retain their linked cache but refresh owning flags before each evaluation',async()=>{
+ const id='rec'+'S'.repeat(14),source={tableId:P,recordId:id},t=setup({records:[id]}),invalidations=[];
+ const evaluate=t.deps.evaluate;let sourceReads=0,current;
+ t.deps.client.clearRecordCache=value=>invalidations.push(value);
+ t.deps.client.readRecords=async()=>{
+  const sent=++sourceReads===1;
+  current={id,name:id,value:field=>field===PF.sent?sent:null};return[current];
+ };
+ t.deps.client.readRecord=async()=>current;
+ const result=await runLedgerSync('source-flags',initialState(['INV-13','INV-16'],true,source),t.deps);
+ assert.equal(result.done,true);assert.equal(sourceReads,2);assert.equal(result.stats.matched,1);
+ assert(invalidations.length>=2);for(const invalidated of invalidations)assert.deepEqual(invalidated,source);
+ const expected=await evaluate(CATEGORIES.find(c=>c.code==='INV-13'),{id});
+ assert.deepEqual(result.preview[0].entries,expected.categories);
 });
 
 test('webhook validates and preserves single-source scope on execution, preview and resume',async()=>{

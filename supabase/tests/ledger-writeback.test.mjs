@@ -263,10 +263,15 @@ test("daily writeback shares the native source lock and complete verified journa
 });
 
 test("depreciation, prepaid and shipping records write to their own source fields and retain their posting contracts", async () => {
-  for (const [n, field, rule, debit, credit, tableId] of [[9313, "depreciationRecordId", "EXP-10", "009.101", "161.000", "tblC0dbO5UMXzHma9"], [9314, "prepayLogRecordId", "EXP-04", "006.002", "135.000", "tbl1LgiUYt7Gc492d"], [9370, "shippingRecordId", "INV-14", "221.100", "004.001", "tblAxlsdmJN0X0sQs"]]) {
+  for (const [n, field, rule, debit, credit, tableId] of [[9313, "depreciationRecordId", "EXP-10", "009.101", "161.000", "tblC0dbO5UMXzHma9"], [9314, "prepayLogRecordId", "EXP-04", "006.002", "135.000", "tbl1LgiUYt7Gc492d"], [9370, "shippingRecordId", "INV-14", "221.100", "004.001", "tblrnXm1HN9y6HPxY"]]) {
     if (rule === "INV-14") await sql`update public.ledger_rules set enabled=true where rule_code='INV-14'`;
     const a = airtable();
     const event = { [field]: id(n), eventType: "created", entryDate: "2026-11-01", categories: [{ ruleCode: rule, transactionType: "Existing log entry", postings: [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: "1.00" }] }] };
+    if(rule==='INV-14'){
+      const deposit=id(9371);
+      await postPayment(sql,{invoiceRecordId:deposit,eventType:'entry_requested',entryDate:'2026-11-01',categories:[{ruleCode:'INV-12',transactionType:'Deposit for shipping source check',postings:[{debitAccount:{number:'121.100'},creditAccount:{number:'221.100'},amount:'1.00',invoiceRecordId:deposit}]}]});
+      event.categories[0].entryKey=JSON.stringify([deposit,100]);Object.assign(event.categories[0].postings[0],{invoiceRecordId:deposit,invoiceRecordIds:[deposit]});
+    }
     await assert.rejects(() => postAndSync(sql, event, ""), /could not be confirmed/); assert.equal(await count(id(n)), 0);
     const result = await postAndSync(sql, event, token, a.fetcher);
     assert.equal(result.postedCount, 1); assert.equal(result[field], id(n)); assert.equal(await count(id(n)), 1);
@@ -277,7 +282,7 @@ test("depreciation, prepaid and shipping records write to their own source field
     const reversed = await reverseAndSync(sql, { source: { tableId, recordId: id(n) }, journalEntryIds: [], reversalDate: "2026-11-09" }, token, a.fetcher);
     assert.equal(reversed.reversedCount, 1); assert(a.calls.every(call => call.tableId === tableId));
     assert.deepEqual(JSON.parse(a.records.get(`${tableId}/${id(n)}`)[fields.reversalIds]), reversed.reversalJournalEntryIds);
-    if (rule === "INV-14") await sql`update public.ledger_rules set enabled=false where rule_code='INV-14'`;
+
   }
 });
 

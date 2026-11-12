@@ -116,7 +116,7 @@ const INVOICE_TABLE = "tbldQXuqNEp8G5pfs";
 const INVOICE_LINE_TABLE = "tblV26TC0f6CKDneL";
 const DEPRECIATION_TABLE = "tblC0dbO5UMXzHma9";
 const PREPAY_TABLE = "tbl1LgiUYt7Gc492d";
-const SHIPPING_TABLE = "tblAxlsdmJN0X0sQs";
+const SHIPPING_TABLE = "tblrnXm1HN9y6HPxY";
 const FIN_URL = "https://airtable.com/app0Q1UMEdUeWl538";
 const LINE_COLUMNS = ["entry_id", "line_no", "account_code", "offset_account_code", "debit", "credit", "notes", "audit_link", "vendor_ref", "customer_ref", "order_ref", "po_ref", "invoice_ref", "employee_ref", "state_ref", "state_code", "airtable_record_id", "airtable_record_ids", "branch"] as const;
 

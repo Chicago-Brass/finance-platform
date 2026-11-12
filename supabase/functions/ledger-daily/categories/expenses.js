@@ -1,5 +1,6 @@
 // Current Expense chart. Each handler owns its filters; the shared writer records supplied account pairs.
 import { expenseWorkerFields as fields } from "../definitions.ts";
+import { OPERATING_EXPENSE_ACCOUNTS, OPERATING_EXPENSE_ACCOUNT_MAPPING } from "../rules/expense-accounts.ts";
 
 export function createCategories(client) {
     const { TABLES: T, INVOICE_FIELDS: I, LINE_FIELDS: L, PAYMENT_FIELDS: P,
@@ -10,19 +11,18 @@ export function createCategories(client) {
     // ==================== CORE ====================
 
     async function handleOperatingInvoice(data, results) {
-        // Partial implementation - functioning: Utilities works; additional operating accounts await approval.
         const invoice = data.invoice;
         if (!invoiceMatches(invoice, "AP - Expenses (Non-Sales Tax)") || invoice.value(I.noVendorBill)) return;
         const account = await invoiceAccount(invoice);
-        if (account !== "006.002") return;
-        await addInvoice(results, data, "Enter an operating expense invoice (ex: Utilities)", account, "211.100");
+        if (!OPERATING_EXPENSE_ACCOUNTS.includes(account)) return;
+        await addInvoice(results, data, "Enter an operating expense invoice (ex: Utilities)", OPERATING_EXPENSE_ACCOUNT_MAPPING[account] ?? account, "211.100");
     }
 
     async function handleOperatingPayment(data, results) {
         if (!sent(data)) return;
         const invoices = [];
         for (const invoice of data.invoices) {
-            if (invoiceMatches(invoice, "AP - Expenses (Non-Sales Tax)") && !invoice.value(I.noVendorBill) && await invoiceAccount(invoice) === "006.002") invoices.push(invoice);
+            if (invoiceMatches(invoice, "AP - Expenses (Non-Sales Tax)") && !invoice.value(I.noVendorBill) && OPERATING_EXPENSE_ACCOUNTS.includes(await invoiceAccount(invoice))) invoices.push(invoice);
         }
         await addPayment(results, data, "When operating expenses are paid", invoices, "211.100");
     }
@@ -231,7 +231,7 @@ export function createCategories(client) {
         if (!cents) return;
         results.push({ category, ...(options.entryKey ? { entryKey: options.entryKey } : {}),
             ...(options.notes ? { notes: options.notes } : {}),
-            postings: [{ debitAccount: { number: debit }, creditAccount: { number: credit }, amount: (cents / 100).toFixed(2),
+            postings: [{ debitAccount: { number: OPERATING_EXPENSE_ACCOUNT_MAPPING[debit] ?? debit }, creditAccount: { number: OPERATING_EXPENSE_ACCOUNT_MAPPING[credit] ?? credit }, amount: (cents / 100).toFixed(2),
                 ...context(data, invoices, options.branchField, options.lines) }] });
     }
     async function addInvoice(results, data, name, debit, credit) {

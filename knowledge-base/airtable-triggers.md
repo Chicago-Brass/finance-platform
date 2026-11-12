@@ -5,15 +5,14 @@
 Expense and Invoice Entry posting now use the shared `ledger-daily` webhook. It supports an
 external 11 PM America/Chicago caller, a manual full call, or `source: {tableId, recordId}` for
 one owner. The last-30-days safety window remains, with explicit fromDate/toDate overrides.
-No external scheduler is activated. The 27 full rules are enabled; four partials and six red
+No external scheduler is activated. The 30 full rules are enabled; two partials and five red
 rules are disabled. Three black and five obsolete definitions are excluded.
 
 The six superseded native posting automations are OFF: Expense Invoice Create Entry,
 Depreciation Created, Pre-pay Amortization Created, Invoice Full Paid, Invoice Entry Invoice
 Created and Invoice Entry Invoice Create Entry. Their configuration links below are retained
-as deployment references. Payment native automations remain unchanged. Existing source-owned
-reversal automations stay ON; Shipping's native reversal remains pending while its partial rule
-is disabled.
+as deployment references. Payment native posting automations are also OFF. Source-owned
+reversal automations stay ON, including Shipping Records.
 
 See [webhook contract](../supabase/functions/ledger-daily/README.md),
 [enablement](../docs/category-enablement.md), [Expense](../docs/expense-audit.md), and
@@ -22,16 +21,16 @@ retained scripts and links, not an alternate current posting path for those two 
 
 # Airtable ledger automation reference
 
-The [ledger sync webhook](../supabase/functions/ledger-daily/README.md) locally prepares Payment,
-Expense and Invoice Entry categories for an Airtable/Make schedule. It has a global run lock and
-a separate GET-only inspector. It has not replaced these native triggers or enabled a schedule.
+The [ledger sync webhook](../supabase/functions/ledger-daily/README.md) contains Payment,
+Expense and Invoice Entry categories for an external/manual caller. It has a global run lock and
+a no-write test mode. It replaces their superseded native posting triggers; no schedule is active.
 
-Reversal uses the same `airtable/ledger-reversal.js` in five ON checkbox automations:
-Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table. It stamps a blank
+Reversal uses the same `airtable/ledger-reversal.js` in six ON checkbox automations:
+Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table and Shipping Records. It stamps a blank
 manual Reverse Date once, then sends only `{source: {tableId, recordId}, reversalDate}` to the
 separate `ledger-reversal` endpoint. It does not read or rewrite cached journal IDs. Unchecking
 does nothing; restoration remains deferred. See the [reversal guide](../docs/ledger-reversal.md)
-for field maps and all five automation links.
+for field maps and all six automation links.
 
 Posting/reversal receivers maintain `Ledger Postings` objects `{rule,key,datetime,id}` and both
 original/reversal ID arrays on the exact owning source record. They use server-only `AIRTABLE_PAT`,
@@ -66,15 +65,17 @@ interfaces can be synced/filtered mirrors. Scripts read native FIN records, not 
 | Chart of Accounts | `tblJ2RF8vlOhNMBKR` |
 | Depreciation Table | `tblC0dbO5UMXzHma9` |
 | Prepay Expenses Log | `tbl1LgiUYt7Gc492d` |
+| Invoice Lines | `tblV26TC0f6CKDneL` |
+| Shipping Records | `tblrnXm1HN9y6HPxY` |
 
 ## Expense worker scope
 
 The updated Expense worker uses source-owned invoice, invoice-line, payment and log rules.
-See the [current Expense implementation](../docs/expense-audit.md) for its 27-code registry and
-account mappings. The native automation inventory below describes the older senders; worker
-deployment does not replace their triggers. Payment and Invoice Entry business rules are unchanged.
+See the [current Expense implementation](../docs/expense-audit.md) for its 26-code registry and
+account mappings. The native automation inventory below describes retained older senders. Current
+Invoice Entry rules are documented separately; Payment rules remain disabled and await review.
 
-## Automation and source map
+## Retained native automation and source map
 
 Editor links identify the owning automation. They do not establish its current publication or
 ON/OFF state. Read the native trigger, saved code, inputs and secret before changing a deployment.
@@ -94,6 +95,8 @@ ON/OFF state. Read the native trigger, saved code, inputs and secret before chan
 Invoice Paid and standalone Payment Returned are retired senders. Payment Sent owns settlement
 handlers and AP returns via Return Payment (AP). Do not recreate an extra sender without checking
 category ownership and duplication risk.
+
+### Historical native deployments
 
 The Expense senders and receiver were published on 7 November 2026. Prepaid bills moved to
 Create Entry and the old Expense Invoice Created automation was deleted. Depreciation and

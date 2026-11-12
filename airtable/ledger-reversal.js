@@ -42,8 +42,8 @@ async function main() {
 
 /** @type {Record<string, {reverse: string, reverseDate: string}>} */
 const SOURCE_FIELDS = {
-    tblAxlsdmJN0X0sQs: { // FIN Shipping Record
-        reverse: "fld8oS4rTOmZtuTl6", reverseDate: "fldAgNtldwTtWCfo2",
+    tblrnXm1HN9y6HPxY: { // FIN Shipping Record
+        reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW",
     },
     tblR61NG9i0giid28: { // FIN Payments
         reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P",

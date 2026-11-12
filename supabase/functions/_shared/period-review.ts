@@ -32,7 +32,7 @@ export async function lockLedgerSource(
           ? "FIN depreciation:"
           : source.tableId === "tbl1LgiUYt7Gc492d"
             ? "FIN prepay:"
-            : source.tableId === "tblAxlsdmJN0X0sQs"
+            : source.tableId === "tblrnXm1HN9y6HPxY"
               ? "FIN shipping:"
               : "FIN invoice:";
   await tx`select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(${prefix + source.recordId},0))`;

@@ -33,6 +33,30 @@ test('fresh migration plus seed registers all 26 current Expense rules and keeps
  assert.equal(Number(count),0,'Deferred 13th-month classification must not create an unapproved destination account.');
 });
 
+test('the operating allowlist has postable debit-normal accounts and current enabled catalog mappings',async()=>{
+ const {OPERATING_EXPENSE_ACCOUNTS,OPERATING_EXPENSE_ACCOUNT_MAPPING}=await import('../functions/ledger-daily/rules/expense-accounts.ts');
+ const codes=OPERATING_EXPENSE_ACCOUNTS.map(code=>OPERATING_EXPENSE_ACCOUNT_MAPPING[code]??code);
+ const accounts=await sql`select code,account_type,normal_balance,is_postable from public.accounts where code in ${sql(codes)} order by code`;
+ assert.deepEqual(accounts.map(a=>a.code),[...codes].sort());
+ assert(accounts.every(a=>a.account_type==='expense'&&a.normal_balance==='debit'&&a.is_postable));
+ const members=await sql`select account_code from public.account_selector_members where selector='operating_expense' order by account_code`;
+ assert.deepEqual(members.map(r=>r.account_code),[...codes].sort());
+ const [selector]=await sql`select account_selector from public.ledger_rule_lines where rule_code='EXP-01' and side='debit'`;assert.equal(selector.account_selector,'operating_expense');
+ const rules=await sql`select rule_code,enabled,dev_notes from public.ledger_rules where rule_code in ('EXP-01','EXP-14')`;
+ for(const rule of rules){
+  assert.equal(rule.enabled,true);assert(rule.dev_notes.includes('[Implementation]\nFully'));
+  for(const account of OPERATING_EXPENSE_ACCOUNTS)assert(rule.dev_notes.includes(account));
+ }
+ const ids=[];
+ for(const [index,account] of OPERATING_EXPENSE_ACCOUNTS.entries()){
+  const record='recOpAcct'+String(index).padStart(8,'0');ids.push(record);
+  const event={invoiceRecordId:record,eventType:'entry_requested',entryDate:'2026-11-01',categories:[{ruleCode:'EXP-01',entryKey:account,transactionType:'Synthetic operating invoice',postings:[{debitAccount:{number:OPERATING_EXPENSE_ACCOUNT_MAPPING[account]??account},creditAccount:{number:'211.100'},amount:'12.34'}]}]};
+  const original=await postPayment(sql,event);assert.equal(original.postedCount,1,account);
+ }
+ const [{debit,credit}]=await sql`select sum(debit) as debit,sum(credit) as credit from public.journal_lines l join public.journal_entries e on e.id=l.entry_id where e.source_record_id in ${sql(ids)}`;
+ assert.equal(Number(debit),456.58);assert.equal(Number(credit),456.58);
+});
+
 test('Expense account metadata has one final pair per category, with current payroll/tax and selected-payment selectors',async()=>{
  const rows=await lineRows();assert.equal(rows.length,44);
  for(const code of new Set(rows.map(row=>row.rule_code))){

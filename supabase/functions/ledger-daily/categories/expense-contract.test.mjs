@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {expenseWorkerFields as F} from '../definitions.ts';
 import {createCategories} from './expenses.js';
+import {OPERATING_EXPENSE_ACCOUNTS,OPERATING_EXPENSE_ACCOUNT_MAPPING} from '../rules/expense-accounts.ts';
 import {createCategoryEvaluator,sourceFields} from './index.ts';
 import {CATEGORIES} from '../queries.ts';
 
@@ -57,6 +58,31 @@ for(const[code,account,vendor,debit]of invoiceCases)test('Expense invoice amount
  assert.equal(postings(result)[0].invoiceRecordId,INVOICE);
  assert.deepEqual(postings(result)[0].vendorRecordIds,['vendor-a','vendor-b']);
 });
+test('operating invoice and settlement use the same reviewed 37-account allowlist',async()=>{
+ assert.equal(OPERATING_EXPENSE_ACCOUNTS.length,37);
+ assert.equal(new Set(OPERATING_EXPENSE_ACCOUNTS).size,37);
+ for(const account of OPERATING_EXPENSE_ACCOUNTS){
+  const f=fixture({account,amount:-125.25});
+  assert.deepEqual(postings(await f.evaluate('EXP-01',INVOICE)).map(pair),[[OPERATING_EXPENSE_ACCOUNT_MAPPING[account]??account,'211.100',-1000]],account);
+  assert.deepEqual(postings(await f.evaluate('EXP-14',PAYMENT)).map(pair),[['211.100','112.100',-125.25]],account);
+ }
+ const q={field:(_t,f)=>`{${f}}`,eq:(_t,f,v)=>`{${f}}=${JSON.stringify(v)}`,includes:(_t,f,v)=>`FIND(${JSON.stringify(v)},{${f}})>0`};
+ for(const code of ['EXP-01','EXP-14']){
+  const rule=CATEGORIES.find(c=>c.code===code),formula=(rule.related?.filter??rule.filter)(q);
+  assert.equal(rule.status,'implemented');
+  for(const account of OPERATING_EXPENSE_ACCOUNTS)assert(formula.includes(JSON.stringify(account)),account);
+  assert(!formula.includes('Operating Expense Account Triggers'),'The checkbox is not a runtime dependency.');
+ }
+});
+
+test('dedicated and unapproved accounts cannot post through either operating rule',async()=>{
+ for(const account of ['004.010','005.001','005.002','005.003','005.005','005.006','005.101','005.102','005.103','005.201','007.002','007.005','009.101','923100','923300','999999']){
+  const f=fixture({account});
+  assert.equal(postings(await f.evaluate('EXP-01',INVOICE)).length,0,account);
+  assert.equal(postings(await f.evaluate('EXP-14',PAYMENT)).length,0,account);
+ }
+});
+
 const paymentCases=[
  ['EXP-14','006.002','AP - Expenses (Non-Sales Tax)','112.100','211.100','112.100'],
  ['EXP-16','004.010','AP - Product','112.200','211.100','112.200'],
@@ -252,5 +278,17 @@ test('no-vendor-bill card purchases skip both invoice and AP-settlement counterp
   assert.equal((await f.evaluate(invoiceRule,INVOICE)).results.length,1);
   assert.equal((await f.evaluate(paymentRule,PAYMENT)).results.length,1);
   assert.equal((await f.evaluate('EXP-02',PAYMENT)).results.length,0);
+ }
+});
+
+test('dynamic expense accounts use the approved FIN to ledger identities',async()=>{
+ for(const [source,ledger] of Object.entries(OPERATING_EXPENSE_ACCOUNT_MAPPING)){
+  const card=fixture({account:source,bank:'231.100',amount:12.34});
+  card.invoice.fields[I.noVendorBill]=true;
+  assert.deepEqual(postings(await card.evaluate('EXP-02',PAYMENT)).map(pair),[[ledger,'231.100',12.34]]);
+  const prepaid=fixture({account:source,vendor:'AP - Assets'}),U=F.PREPAY_FIELDS;
+  prepaid.invoice.fields[I.prepaid]=true;
+  prepaid.put(T.prepay,PREPAY,{[U.invoices]:links(INVOICE),[U.amount]:12.34,[U.date]:'2026-06-03'});
+  assert.deepEqual(postings(await prepaid.evaluate('EXP-04',PREPAY)).map(pair),[[ledger,'135.000',12.34]]);
  }
 });

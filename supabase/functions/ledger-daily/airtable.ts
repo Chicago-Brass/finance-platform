@@ -1,6 +1,6 @@
 import { FIN_BASE } from "./definitions.ts";
 import { BudgetExceeded, retry, RetryableError, sleep } from "./retry.ts";
-import type { FormulaBuilder, SyncDateRange } from "./types.ts";
+import type { FormulaBuilder, SyncDateRange, SyncSource } from "./types.ts";
 
 interface Field { id: string; name: string; type: string; options?: { linkedTableId?: string } }
 interface Table { id: string; name?: string; primaryFieldId: string; fields: Field[] }
@@ -117,7 +117,10 @@ export class AirtableClient implements FormulaBuilder {
       part.forEach(r => this.cache.delete(`${tableId}/${r.id}`));
     }
   }
-  clearRecordCache(): void { this.cache.clear(); }
+  clearRecordCache(source?: SyncSource): void {
+    if (source) this.cache.delete(`${source.tableId}/${source.recordId}`);
+    else this.cache.clear();
+  }
   requireWritebackBudget(): void {
     if (this.requests + 4 > this.maxRequests || Date.now() + 40_000 >= this.deadline) throw new BudgetExceeded("Reserve time and requests for writeback verification before posting.");
   }

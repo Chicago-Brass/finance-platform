@@ -4,6 +4,16 @@ Hosted project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboa
 The schema and catalog are tracked in `supabase/`. Environment contents and journal completeness
 must be verified separately from source or migration history.
 
+## Migration tracking
+
+Keep applied migration files immutable. The 22 prior hosted versions are retained; the final
+Expense/Invoice catalog changes are represented by `20261112195115_finalize_expense_invoice_catalog.sql`.
+Its account/selector/catalog state was already live and verified before its full SQL was recorded
+in migration history. The subsequent app-user policy migration caches the complete JWT email
+expression once per statement while preserving the own-row predicate. Fresh installs run both
+files normally. Do not replay removed
+intermediate local files or reset the hosted ledger to load a seed.
+
 ## Tables
 
 | Table | Data |
@@ -59,7 +69,8 @@ existing foreign key. This schema capability does not add automatic deletion to 
 or clear Airtable metadata.
 
 Account lookup accepts account number or FIN record ID. FIN Nickel `0747` maps to ledger `112.300`;
-card clearing is `231.100`. Category calculations and amount splits remain in Airtable.
+card clearing is `231.100`. Current Expense/Invoice Entry calculations live in the sync worker;
+the generic writer does not infer splits.
 Exact replay is a duplicate/no-op; a changed financial packet conflicts. Runtime secrets and the
 verified-TLS database connection stay in the Edge environment.
 
@@ -67,7 +78,7 @@ The writer stores nullable `journal_lines.branch`. The four financial reports fi
 through optional `p_branch` parameters on the trial-balance and ledger read functions. Consolidated
 includes all lines, including NULL and branches outside the named dropdown options. The account-entry migration adds `journal_entries.source_entry_key` to journal
 identity so one source/category can have separate account entries. Existing whole-category entries
-keep an empty key. Migration and receiver deployment are pending. Names are labels; UUIDs, source references and entry/line identities are
+keep an empty key. The migration and receiver are deployed. Names are labels; UUIDs, source references and entry/line identities are
 used for lookup. Line money remains numeric in storage and is converted to checked integer cents
 for report calculations.
 

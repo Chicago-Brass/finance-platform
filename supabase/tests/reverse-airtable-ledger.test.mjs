@@ -143,7 +143,7 @@ test("depreciation, prepaid-log and shipping reversals remain isolated to their 
     {tableId:"tblC0dbO5UMXzHma9",field:"depreciationRecordId",recordId:id(9104),rule:"EXP-10",debit:"009.101",credit:"161.000"},
     {tableId:"tbl1LgiUYt7Gc492d",field:"prepayLogRecordId",recordId:id(9105),rule:"EXP-04",debit:"007.011",credit:"135.000"},
   ];
-  fixtures.push({tableId:"tblAxlsdmJN0X0sQs",field:"shippingRecordId",recordId:id(9106),rule:"INV-14",debit:"221.100",credit:"004.001"});
+  fixtures.push({tableId:"tblrnXm1HN9y6HPxY",field:"shippingRecordId",recordId:id(9106),rule:"INV-14",debit:"221.100",credit:"004.001"});
   await sql`update public.ledger_rules set enabled=true where rule_code='INV-14'`;
   for(const f of fixtures){
     const value={[f.field]:f.recordId,eventType:"created",entryDate:"2026-10-29",
@@ -157,7 +157,7 @@ test("depreciation, prepaid-log and shipping reversals remain isolated to their 
     assert.equal((await reverseJournals(sql,reversal)).duplicateCount,1);
     const rows=await journals(f.recordId);assert.equal(rows.length,2);assert(rows.every(row=>row.source_table===f.tableId));
     assert.equal(rows[0].audit_link,`https://airtable.com/app0Q1UMEdUeWl538/${f.tableId}/${f.recordId}`);
-    if(f.rule==='INV-14')await sql`update public.ledger_rules set enabled=false where rule_code='INV-14'`;
+
   }
 });
 
@@ -194,3 +194,23 @@ test("a blocked later journal rolls back an earlier reversal in the same request
 });
 
 after(async () => { await sql.end(); });
+
+
+test("vendor return credits reduce AP and inventory, replay once and reverse on their invoice source", async () => {
+  const recordId="recVcMemo00000001";
+  const value={invoiceRecordId:recordId,eventType:"entry_requested",entryDate:"2026-10-29",categories:[{
+    ruleCode:"INV-08",transactionType:"Vendor Credit Memo - Returned Goods",postings:[{
+      debitAccount:{number:"211.100"},creditAccount:{number:"131.400"},amount:"125.25",invoiceRecordId:recordId,
+      vendorRecordIds:["recVendorCredit"],poRecordIds:["recPurchaseOrder"],branch:"Chicago",
+    }],
+  }]};
+  const first=await postPayment(sql,value);assert.equal(first.postedCount,1);
+  const replay=await postPayment(sql,value);assert.equal(replay.postedCount,0);assert.equal(replay.duplicateCount,1);
+  const balances=()=>sql`select l.account_code,sum(l.debit-l.credit)::text as movement from public.journal_lines l join public.journal_entries e on e.id=l.entry_id where e.source_record_id=${recordId} group by l.account_code order by l.account_code`;
+  assert.deepEqual((await balances()).map(r=>[r.account_code,Number(r.movement)]),[["131.400",-125.25],["211.100",125.25]]);
+  const reversed=await reverseJournals(sql,request(recordId,true));assert.equal(reversed.reversedCount,1);
+  assert((await balances()).every(row=>Number(row.movement)===0));
+  assert.equal((await reverseJournals(sql,request(recordId,true))).duplicateCount,1);
+  const after=await journals(recordId);assert.equal(after.length,2);assert(after.every(row=>row.source_table===INVOICES));
+  assert.equal(after.find(row=>row.reverses_entry_id)?.reverses_entry_id,first.journalEntryIds[0]);
+});

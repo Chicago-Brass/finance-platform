@@ -1,3 +1,4 @@
+import { postCappedShipment } from "../_shared/shipping-deposit.ts";
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import {
   postPayment,
@@ -169,7 +170,7 @@ export async function reviewRequest(
       await tx`update public.ledger_posting_requests set status='approved',approval_txid=txid_current(),reviewed_by=${email},reviewed_at=now(),review_reason=${reason.trim()},last_error=null,updated_at=now() where id=${requestId}::uuid`;
       const result =
         request.kind === "posting"
-          ? await postPayment(sql, request.payload as LedgerPaymentEvent, {
+          ? await ((request.payload as LedgerPaymentEvent).shippingRecordId ? postCappedShipment : postPayment)(sql, request.payload as LedgerPaymentEvent, {
               transaction: tx,
               approvalRequestId: requestId,
               allowAdditionalCategories: request.allow_additional_categories,

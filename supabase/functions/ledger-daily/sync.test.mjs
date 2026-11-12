@@ -52,6 +52,25 @@ test('database claim uses the global transaction lock before inserting a run and
  assert(calls.some(q=>q.includes('insert into')));
 });
 
+test('targeted checkpoints compare source and date values independently of JSONB key order',async()=>{
+ const {DatabaseRunStore}=await import('./store.ts');
+ const initial=initialState(['EXP-05'],false,{tableId:F.TABLES.lines,recordId:'rec00000000000001'},{from:'2026-01-01',to:'2026-11-12'});
+ const saved={...structuredClone(initial),source:{recordId:initial.source.recordId,tableId:initial.source.tableId},dateRange:{to:initial.dateRange.to,from:initial.dateRange.from}};
+ const tx=async(strings)=>{
+  const query=strings.join('?');
+  if(query.includes('pg_try_advisory_xact_lock'))return[{acquired:true}];
+  if(query.includes('returning id::text'))return[{id:'job',state:saved}];
+  return[];
+ };
+ tx.json=x=>x;
+ const runs=new DatabaseRunStore({begin:fn=>fn(tx)});
+ assert(await runs.claim('targeted',initial));
+ for(const change of [s=>{s.source.recordId='rec00000000000002';},s=>{s.source.tableId=F.TABLES.invoices;},s=>{s.dateRange.from='2026-02-01';},s=>{s.dateRange.to='2026-11-11';},s=>{s.dryRun=true;},s=>{s.categoryIds=['EXP-06'];}]){
+  const different=structuredClone(initial);change(different);
+  await assert.rejects(()=>runs.claim('targeted',different),/different category scope/);
+ }
+});
+
 test('bank-transfer query and related filters use the same account IDs as its handler',()=>{
  const transfer=CATEGORIES.find(c=>c.code==='PAY-19');
  assert(transfer.related);assert(candidateFormula(transfer,fake).includes('PAY-19'));
@@ -80,12 +99,16 @@ test('Expense queries retain the five W2 accounts, offshore-only scope and AP As
  const card=CATEGORIES.find(c=>c.code==='EXP-02');assert(card.related.filter(fake).includes(E.INVOICE_FIELDS.noVendorBill));assert.equal(card.status,'implemented');
 });
 
-test('line-based Expense settlements do not require nonzero Payments.Amount',()=>{
+test('line-based settlements do not require nonzero Payments.Amount',()=>{
  for(const code of ['EXP-18','EXP-19','EXP-20','EXP-21','EXP-23','EXP-26']){
   const category=CATEGORIES.find(c=>c.code===code);const query=candidateFormula(category,fake);
   assert(!query.includes(`{${F.PAYMENT_FIELDS.amount}}!=0`),code);
   assert(query.includes(F.PAYMENT_FIELDS.sent),code);
  }
+});
+
+test('AR batch allocations require a nonzero current Payment Amount',()=>{
+ for(const code of ['INV-13','INV-16'])assert(candidateFormula(CATEGORIES.find(c=>c.code===code),fake).includes(`{${F.PAYMENT_FIELDS.amount}}!=0`),code);
 });
 
 test('rolling cutoff uses source accounting dates and linked Payment Date for invoice-owned settlements',()=>{

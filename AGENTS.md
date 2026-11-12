@@ -19,18 +19,22 @@ architecture, data contracts and operating guidance; do not add chat summaries o
 
 ## Architecture
 
-1. Airtable owns the native event, category filters, component calculations and final account pairs.
-2. Each CORE handler checks its category and pushes results; evaluate all eligible handlers.
-   UTILS owns substantive reads/calculation/transport helpers; HELPER owns logging only.
-3. The generic `ledger-payment` Edge Function authenticates, validates, resolves account identity
-   and records supplied pairs atomically. It does not recategorize or infer amount splits.
-4. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
+1. The official T-Chart defines category filters, amounts and account pairs.
+2. `supabase/functions/ledger-daily/` owns current Expense and Invoice Entry discovery,
+   linked-record reads and category calculations. Named handlers supply final posting pairs.
+3. The shared `ledger-payment` writer authenticates, validates, resolves accounts and records
+   supplied pairs atomically. It does not recategorize or infer amount splits. Shipping alone
+   rechecks its linked deposit cap under the funding invoice lock before using that writer.
+4. Airtable owns source data and source-owned Reverse Ledger checkbox events. Native reversal
+   scripts send only source/date to `ledger-reversal`; Supabase writes journal metadata back.
+5. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
    or database credential to browser code.
 
-The staged `supabase/functions/ledger-daily/` worker moves Payment, Expense and Invoice Entry discovery and
-calculations into Edge code. Query definitions separate direct filters from linked-record
-queries, and it reuses the generic journal writer. It is an externally triggered webhook with a global run lock; native
-automations remain the live baseline until cutover. Read its README before changing this worker.
+The sync webhook uses a global run lock, resumable batches and the existing shared secret.
+The external scheduler is not activated. Fully implemented Expense/Invoice Entry rules are
+on; partials, deferred rules and Payment/Other rules remain off. Superseded native posting
+senders are off; six source-owned reversal automations are on. Read the worker README and
+[category controls](docs/category-enablement.md) before changing deployment or enablement.
 
 Follow the T-Chart's official trigger, debit and credit mappings. A matched unresolved category
 must throw `Not yet implemented` before prepared data is sent. Do not add unstated conditions,

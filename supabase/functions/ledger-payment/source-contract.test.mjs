@@ -38,7 +38,7 @@ test('an explicit or inferred invoice-line source reaches the same transaction p
 test('all supported source kinds have distinct stable source-lock keys',async()=>{
  const seen=[];const tx=async(_strings,...values)=>seen.push(values[0]);
  const sourceId=id(5);
- for(const tableId of ['tblR61NG9i0giid28',INVOICES,LINES,'tblC0dbO5UMXzHma9','tbl1LgiUYt7Gc492d','tblAxlsdmJN0X0sQs']){
+ for(const tableId of ['tblR61NG9i0giid28',INVOICES,LINES,'tblC0dbO5UMXzHma9','tbl1LgiUYt7Gc492d','tblrnXm1HN9y6HPxY']){
   await lockLedgerSource(tx,{tableId,recordId:sourceId});
  }
  assert.deepEqual(seen,['FIN payment:','FIN invoice:','FIN invoice line:','FIN depreciation:','FIN prepay:','FIN shipping:'].map(prefix=>prefix+sourceId));
@@ -50,5 +50,5 @@ test('shipping events use their own identity and reject ambiguous or disguised s
  const sentinel=new Error('Transaction reached');const sql={begin(){throw sentinel;}};
  const event={shippingRecordId:id(7),eventType:'created',entryDate:'2026-11-01',categories:[]};
  await assert.rejects(()=>postPayment(sql,event),error=>error===sentinel);
- for(const bad of [{...event,eventType:'sent'},{...event,paymentRecordId:id(1)},{...event,invoiceLineRecordId:id(1)},{...event,source:{tableId:INVOICES,recordId:id(7)}},{paymentRecordId:id(7),eventType:'sent',entryDate:event.entryDate,categories:[],source:{tableId:'tblAxlsdmJN0X0sQs',recordId:id(7)}}])await assert.rejects(()=>postPayment(sql,bad),error=>error.name==='PostingError');
+ for(const bad of [{...event,eventType:'sent'},{...event,paymentRecordId:id(1)},{...event,invoiceLineRecordId:id(1)},{...event,source:{tableId:INVOICES,recordId:id(7)}},{paymentRecordId:id(7),eventType:'sent',entryDate:event.entryDate,categories:[],source:{tableId:'tblrnXm1HN9y6HPxY',recordId:id(7)}}])await assert.rejects(()=>postPayment(sql,bad),error=>error.name==='PostingError');
 });

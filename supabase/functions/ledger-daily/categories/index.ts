@@ -19,9 +19,9 @@ export function accountingDate(value: unknown): string {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-export function createCategoryEvaluator(client: AirtableClient) {
+export function createCategoryEvaluator(client: AirtableClient, readDepositBalance?: (invoiceRecordId: string) => Promise<number>) {
   const modules = { "payment-sent": sentCategories(client), "payment-events": eventCategories(client),
-    "invoice-entry": invoiceCategories(client),
+    "invoice-entry": invoiceCategories(client, readDepositBalance),
     "expenses": currentExpenseCategories(client) };
   return async (category: CategoryDefinition, source: AirtableRecord): Promise<LedgerPaymentEvent | null> => {
     if (!category.code.startsWith("PAY-")) return await evaluateSourceCategory(modules, category, source);

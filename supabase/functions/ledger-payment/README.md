@@ -52,7 +52,7 @@ for its staged configuration; no cron or hosted deployment is enabled by that im
 ## Airtable journal links
 
 The native webhook now uses `service.ts` to post through the existing writer, then synchronize
-all five FIN source tables through `../_shared/ledger-links.ts`. Configure server secret `AIRTABLE_PAT`
+all six FIN source tables through `../_shared/ledger-links.ts`. Configure server secret `AIRTABLE_PAT`
 with FIN record read/write access before publishing this version. Missing configuration fails
 before posting any supported source. Invoice Lines, depreciation and prepaid logs own their metadata.
 
@@ -200,9 +200,14 @@ attribution remains NULL. Exact replays deduplicate, and changed grouping/branch
 (`tblV26TC0f6CKDneL`). Its explicit source, when supplied, must match that line. Do not also set
 paymentRecordId or header invoiceRecordId; retain the parent invoice in each posting's invoice
 references. Lines, invoices, payments and both log tables have distinct source locks and audit URLs.
-All five source types require the same AIRTABLE_PAT writeback verification. This changes source
+All six source types require the same AIRTABLE_PAT writeback verification. This changes source
 support, not the Payment or Invoice Entry category filters/account mappings.
 
-Shipping Record (`tblAxlsdmJN0X0sQs`) events use `shippingRecordId` and `eventType: "created"`.
+Shipping Records (`tblrnXm1HN9y6HPxY`) events use `shippingRecordId` and `eventType: "created"`.
 The source owns its audit link and ledger writeback; its linked MTAs are amount inputs, not journal
 owners. Source identity, replay, period review and signed amounts use the same generic writer.
+
+Shipping INV-14 uses the shared capped writer: it locks the source and its deposit invoice,
+then limits positive releases to that invoice's net posted 221.100 credit balance. Exact retries
+reuse the stored capped amount; changed raw shipment valuations conflict. Period approval uses
+the same writer and rejects a changed approval amount. Other categories use the generic writer.

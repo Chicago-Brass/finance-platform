@@ -1,13 +1,13 @@
 # FIN source-record reversal
 
 The dedicated `ledger-reversal` endpoint reverses the stored journals owned by one FIN record.
-It supports Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table.
+It supports Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table and Shipping Records.
 It does not recalculate categories or amounts, or reverse linked records merely referenced by
 the source. Unchecking Reverse Ledger does nothing; restoration remains deferred.
 
 ## Native automations
 
-All five Reverse Ledger checkbox automations are ON and use `airtable/ledger-reversal.js`:
+All six Reverse Ledger checkbox automations are ON and use `airtable/ledger-reversal.js`:
 
 | Owning table | Table ID | Automation |
 | --- | --- | --- |
@@ -16,6 +16,7 @@ All five Reverse Ledger checkbox automations are ON and use `airtable/ledger-rev
 | Invoice Lines | `tblV26TC0f6CKDneL` | [Invoice Line Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wfllk4vGHSWhiJYjX) |
 | Prepay Expenses Log | `tbl1LgiUYt7Gc492d` | [Prepaid Log Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflK3FbhAacWxaC2N) |
 | Depreciation Table | `tblC0dbO5UMXzHma9` | [Depreciation Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wfl9mtZA0btC00cOv) |
+| Shipping Records | `tblrnXm1HN9y6HPxY` | [Shipping Record Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflUVlZPcnma65OQo) |
 
 Each triggers when its own record's Reverse Ledger is checked. Inputs are `sourceTableId`
 (the fixed owning table), `sourceRecordId` (the trigger record ID), and `ledgerReversalUrl`.
@@ -30,7 +31,7 @@ source identity. There is no automatic native retry; rerun the same source/date 
 
 ## Airtable fields and posting metadata
 
-Each of the five source tables has these fields:
+Each of the six source tables has these fields:
 
 | Field | Type | Ownership |
 | --- | --- | --- |
@@ -135,12 +136,67 @@ categories remain disabled. No missing accounting period was opened to force a s
 
 ## Historical live verification
 
+### Fully implemented category coverage - 12 November 2026
+
+All 21 fully implemented Expense rules and six fully implemented Invoice Entry rules are
+enabled and reversible in the live catalog. Their reversal routes are:
+
+| Owning table | Expense rows | Invoice Entry rows | Fully implemented rules |
+| --- | --- | --- | --- |
+| Payments | 3, 5, 6, 8, 11, 13, 15, 17, 19, 22, 27 | 3, 6, 12 | 14 |
+| Invoices | 4, 7, 21 | 2, 5, 11 | 6 |
+| Invoice Lines | 10, 12, 14, 16, 26 | None | 5 |
+| Prepay Expenses Log | 9 | None | 1 |
+| Depreciation Table | 20 | None | 1 |
+
+The five native automations were inspected in Chrome: each is ON, triggers only on its own
+Reverse Ledger checkbox, uses its owning table and dynamic trigger record ID, and has the
+shared secret attached. Their complete saved senders match each other; the only difference
+from the local template is the unused Shipping Record configuration. The verified pending
+Payment reversal configuration was published and remained published after reload.
+
+Deployed `ledger-reversal` v9 and all seven downloaded runtime modules match local code.
+A read-only comparison verified all 66 existing reversal pairs, including every swapped line,
+account, reference and branch, with no duplicate reversal targets. All 62 owning Airtable
+records have matching original IDs, reversal IDs, posting objects and reversal dates.
+These existing samples cover 15 rules and four source tables; they contain no prepaid-log
+sample. No new financial entries or source checkbox changes were made during this review.
+
+The 11 native sender checks and two endpoint checks passed again. The disposable database
+suite was not rerun because Docker was unavailable. Partial and deferred categories were
+excluded from this coverage review.
+
 Historical live checks on 9 November 2026 reversed five test journals (14 lines) owned by two
 payments and one invoice. They preserved original data and returned no new journals on retry.
 That historical evidence does not constitute live financial testing of the three newer source
 automations. Hosted financial tests require an explicitly selected record/date scope.
 
-Shipping Record is also a supported source (`tblAxlsdmJN0X0sQs`). Its native template maps
-Reverse Ledger `fld8oS4rTOmZtuTl6` and Reverse Date `fldAgNtldwTtWCfo2`. The dedicated endpoint
-reverses its stored journals without re-reading or recalculating linked MTA prices. A native
-checkbox automation must be configured separately before checking that field will call it.
+## Shipping Records cutover - 13 November 2026
+
+The replacement Shipping Records source is `tblrnXm1HN9y6HPxY`. Its five ledger fields were
+created and read back. Its native checkbox automation is published and ON, using the existing
+shared secret, fixed source table and trigger record ID. The saved sender matches the local
+script apart from indentation. The old Shipping Record table is absent from FIN and owns no
+hosted journals; no runtime fallback was retained.
+
+Reverse Ledger is `fld4Yt3NM58rdq8h7`; Reverse Date is `fldGuMWL4ZaEikHBW`. The endpoint reverses
+stored journals without recalculating MTA prices. Its opposite 221.100 movement restores the
+linked deposit's availability. This is covered by disposable database tests; no actual Shipping
+Records checkbox was toggled in this cutover. Unchecking/restoration remains deferred.
+
+## Targeted checkbox validation - 12 November 2026
+
+The subsequent authorized seed created 206 originals from 187 Expense/Invoice Entry sources.
+Twenty-five source checkboxes were then checked individually across Invoice Lines, Invoices,
+Payments and Depreciation. Native automations stamped the empty Reverse Date with Chicago's
+current date and created 29 opposite journals, including sources owning two or three journals.
+
+Every reversed line retained its stored account, references, branch and signed amount with debit
+and credit exchanged. Original records remained intact. All 187 source writebacks were compared
+with their actual journals and the final dataset contained 235 headers and 470 lines. Both live
+financial reports matched independent raw-line calculations after each five-source group.
+
+The owning native configurations were freshly reviewed ON and published before the test.
+No direct reversal-endpoint calls substituted for the checkbox triggers. Prepaid logs and
+Shipping Record were not included in this live cohort; restoration/unchecking remains deferred.
+See [Ledger status](ledger-current-status.md) for the enabled scope and remaining sample gaps.

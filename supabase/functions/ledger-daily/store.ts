@@ -31,7 +31,7 @@ export class DatabaseRunStore implements RunStore {
         locked_until=now()+interval '3 minutes', updated_at=now()
         where run_key=${runKey} and (locked_until is null or locked_until<now()) returning id::text, state`;
       if (!row) return null;
-      if (JSON.stringify(row.state.dateRange ?? null) !== JSON.stringify(initial.dateRange ?? null) || JSON.stringify(row.state.source ?? null) !== JSON.stringify(initial.source ?? null) || row.state.dryRun !== initial.dryRun || JSON.stringify(row.state.categoryIds) !== JSON.stringify(initial.categoryIds)) throw new RangeError("Run key already belongs to a different category scope, source or posting mode.");
+      if (row.state.dateRange?.from !== initial.dateRange?.from || row.state.dateRange?.to !== initial.dateRange?.to || row.state.source?.tableId !== initial.source?.tableId || row.state.source?.recordId !== initial.source?.recordId || row.state.dryRun !== initial.dryRun || JSON.stringify(row.state.categoryIds) !== JSON.stringify(initial.categoryIds)) throw new RangeError("Run key already belongs to a different category scope, source or posting mode.");
       return { ...row, leaseToken: token };
     });
   }

@@ -3,13 +3,16 @@
 ## Data flow
 
 ```text
-FIN native event -> category handlers -> posting pairs + references
-    -> ledger-payment Edge Function -> atomic journal_entries + journal_lines
+External/manual call -> ledger-daily -> filtered FIN reads -> category pairs + references
+    -> shared ledger-payment writer -> atomic journal_entries + journal_lines
+    -> verified Airtable metadata writeback
     -> user-scoped report reads -> report builders -> tables, analytics and drawers
 ```
 
-Airtable owns classification, account pairs and component calculations. The Edge Function is a
-generic authenticated writer. The frontend reads posted data and never repairs source records.
+The T-Chart defines category behavior. The sync worker owns current Expense/Invoice Entry
+classification and calculations; the shared writer validates and records the final pairs. Airtable
+owns source data and native reversal requests. No external schedule is active. The frontend reads
+posted data and never repairs source records.
 
 ## Runtime and source map
 
@@ -18,7 +21,9 @@ The app uses Next.js App Router, React, TypeScript and Supabase SSR clients. Ver
 
 | Source | Responsibility |
 | --- | --- |
-| `airtable/*.js` | Native automation scripts, category handlers, reads and webhook transport |
+| `airtable/ledger-reversal.js` | Current source/date-only native reversal sender |
+| `airtable/*.js` | Retained native posting senders; superseded Expense/Invoice senders are OFF |
+| `supabase/functions/ledger-daily/` | Current filtered discovery, category calculations, batching and writeback |
 | `supabase/functions/ledger-payment/` | HTTP authorization, validation and transactional persistence |
 | `supabase/migrations/`, `supabase/seed.sql` | Schema history and reference catalogs |
 | `middleware.ts`, `lib/supabase/` | Session validation, approved-user access and scoped clients |

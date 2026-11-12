@@ -84,14 +84,14 @@ test("ledger filter bounds reject malformed inputs and do not permit anonymous a
   for (const options of [{type:'unknown'},{category:"PAY-08' OR true"},{min:-1},{max:'NaN'},{min:'Infinity'},{max:'1.001'},{min:'999999999999999999'},{take:502},{skip:-1}]) {
     await assert.rejects(()=>filter(sql,options),error=>error.code==='22023');
   }
-  const [rights] = await sql`select has_function_privilege('anon','public.filter_ledger(date,date,text,text,text,text,text,text,numeric,numeric,bigint,integer)','execute') as anon,
-    (select prosecdef from pg_proc where oid='public.filter_ledger(date,date,text,text,text,text,text,text,numeric,numeric,bigint,integer)'::regprocedure) as definer`;
+  const [rights] = await sql`select has_function_privilege('anon','public.filter_ledger(date,date,text,text,text,text,text,text,numeric,numeric,bigint,integer,text)','execute') as anon,
+    (select prosecdef from pg_proc where oid='public.filter_ledger(date,date,text,text,text,text,text,text,numeric,numeric,bigint,integer,text)'::regprocedure) as definer`;
   assert.equal(rights.anon,false);assert.equal(rights.definer,false);
 });
 
 test("record counts validate filters and deny anonymous execution",async()=>{
   for(const scope of [{type:'unknown'},{min:-1},{max:'1.001'},{query:'x'.repeat(201)}])await assert.rejects(()=>count(sql,scope),error=>error.code==='22023');
-  const [rights]=await sql`select has_function_privilege('anon','public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric)','execute') as anon,
-    (select prosecdef from pg_proc where oid='public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric)'::regprocedure) as definer`;
+  const [rights]=await sql`select has_function_privilege('anon','public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric,text)','execute') as anon,
+    (select prosecdef from pg_proc where oid='public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric,text)'::regprocedure) as definer`;
   assert.equal(rights.anon,false);assert.equal(rights.definer,false);
 });

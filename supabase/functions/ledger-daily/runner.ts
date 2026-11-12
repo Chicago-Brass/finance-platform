@@ -43,7 +43,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
       const category = CATEGORIES.find(c => c.id === state.categoryIds[state.categoryIndex]);
       if (!category) { state.done = true; break; }
       if (deps.enabledRuleCodes && !deps.enabledRuleCodes.has(category.code)) {
-        advanceCategory(state); client.clearRecordCache(); await runs.save(job); continue;
+        advanceCategory(state); client.clearRecordCache(state.source); await runs.save(job); continue;
       }
       if (category.status === "deferred") {
         recordError(state, category, "", "Not yet implemented: category filters and mapping are deferred.");
@@ -60,7 +60,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
             ids = [...new Set<string>(parents.flatMap(record => (record.value(related.through!.linksFieldId) || []).map((link: { id: string }) => link.id)))];
           }
           state.relatedIds.push(...ids); state.offset = page.offset;
-          client.clearRecordCache();
+          client.clearRecordCache(state.source);
         }
         if (!state.offset) { state.relatedIds = [...new Set(state.relatedIds)]; state.phase = "discover"; }
         await runs.save(job); continue;
@@ -77,15 +77,15 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
       }
       if (category.status === "blocked" && state.phase === "process") {
         if (state.recordIds.length) recordError(state,category,"",`Not yet implemented: account mapping is pending (${state.recordIds.length} candidates).`);
-        advanceCategory(state); client.clearRecordCache(); await runs.save(job); continue;
+        advanceCategory(state); client.clearRecordCache(state.source); await runs.save(job); continue;
       }
       if (state.recordIndex >= state.recordIds.length) {
-        advanceCategory(state); client.clearRecordCache(); await runs.save(job); continue;
+        advanceCategory(state); client.clearRecordCache(state.source); await runs.save(job); continue;
       }
       const recordId = state.recordIds[state.recordIndex];
       try {
         if (batchCategory !== category.id || state.recordIndex >= batchEnd) {
-          client.clearRecordCache();
+          client.clearRecordCache(state.source);
           const ids = state.recordIds.slice(state.recordIndex, state.recordIndex + Math.min(maxRecords - processed, 25));
           await client.readRecords(category.tableId, ids, sourceFields(category), false);
           await ledger.prepareSources(category.tableId, ids);

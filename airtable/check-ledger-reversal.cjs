@@ -7,7 +7,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const tableId = "tblR61NG9i0giid28", recordId = "rec00000000000001";
 const original = "11111111-1111-4111-8111-111111111111", reversal = "22222222-2222-4222-8222-222222222222";
 const fieldIds = {
-    tblAxlsdmJN0X0sQs: { reverse: "fld8oS4rTOmZtuTl6", reverseDate: "fldAgNtldwTtWCfo2", journalIds: "fld9td99xEJHKbdyo", reversalIds: "fldoEz58DXpKGdXBF" },
+    tblrnXm1HN9y6HPxY: { reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW", journalIds: "fldAnSta5oo9el7xm", reversalIds: "fldDSYAiyS6IjgAA7" },
     tblR61NG9i0giid28: { reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P", journalIds: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
     tbldQXuqNEp8G5pfs: { reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", journalIds: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },
     tblV26TC0f6CKDneL: { reverse: "fldEN2QtqnbyNjjDW", reverseDate: "fld5t7Tr5qraHGWP8", journalIds: "fldi0ML7ThX0lD1vg", reversalIds: "fldxgFR0EWkD0fMLD" },
@@ -67,7 +67,7 @@ function harness({ fields = {}, config = {}, ok = true, result, missing = false,
         assert.equal(h.calls[0].source.tableId, "tbldQXuqNEp8G5pfs"); assert.equal(h.calls[0].journalEntryIds, undefined);
     });
     await check("line and log sources reverse only their own journals", async () => {
-        for (const sourceTableId of ["tblV26TC0f6CKDneL", "tbl1LgiUYt7Gc492d", "tblC0dbO5UMXzHma9", "tblAxlsdmJN0X0sQs"]) {
+        for (const sourceTableId of ["tblV26TC0f6CKDneL", "tbl1LgiUYt7Gc492d", "tblC0dbO5UMXzHma9", "tblrnXm1HN9y6HPxY"]) {
             const h = harness({ config: { sourceTableId }, fields: { reverseDate: "2026-10-15" } });
             await h.run(); assert.equal(h.calls[0].source.tableId, sourceTableId);
             assert.equal(h.state.reversalIds, null);

@@ -13,26 +13,30 @@ An external caller may schedule 11 PM America/Chicago or call the same endpoint 
 
 ## Current category controls
 
-Only fully implemented Expense and Invoice Entry rules are enabled: 21 Expense and six Invoice
-Entry. Four working partials and six red deferred rules are disabled. Three black rules are
+Only fully implemented Expense and Invoice Entry rules are enabled: 22 Expense and eight Invoice
+Entry. Two working partials and five red deferred rules are disabled. Three black rules are
 excluded from the registry. Five replaced Invoice Entry rules are also removed from discovery.
 Unreferenced obsolete/black catalog rows are deleted; referenced historical rules are retained
 inactive/disabled so their journals and reversals remain valid.
 
 Payment and Other rules remain disabled and unchanged. The six replaced native Expense/Invoice
 Entry posting automations are OFF. Existing reversal automations remain ON; no external schedule
-has been activated. Shipping is partial and disabled; its endpoint and script support reversal,
-but its native checkbox automation is not yet configured.
+has been activated. Shipping uses the current Shipping Records, Transactions and MTAs tables. Its deposit cap is
+rechecked atomically against the invoice-linked ledger balance before posting.
 
 `ledger_rules.enabled` is checked before normal discovery and again inside the posting transaction.
 `active` remains a descriptive label. Exact journal replay and dedicated reversal still work when
 a category is disabled. See [category enablement](../../../docs/category-enablement.md).
 
+Operating Expense invoice and payment rules share the 37-account allowlist in
+`rules/expense-accounts.ts`. The FIN Operating Expense Account Triggers checkbox is a review aid,
+not a runtime dependency. Dedicated Expense categories stay outside this allowlist.
+
 ## Requests
 
 | Parameter | Behavior |
 | --- | --- |
-| `test` | Default false. True means GET-only Airtable preview, with no database client or writes. |
+| `test` | Default false. True means no-write preview; shipping also reads posted deposit availability. |
 | `dryRun` | Default true. False permits posting. A normal dry run still saves run checkpoints. |
 | `categoryCodes` | Optional array of up to 60 stable codes. Normal runs also apply enabled switches. |
 | `source` | Optional `{tableId, recordId}`. Restricts discovery and processing to that owning record. |
@@ -59,6 +63,10 @@ will not implicitly post its linked payments or invoice lines; request those own
 Single-record mode queries `RECORD_ID()` directly and lets the category handler read its linked
 records. It never scans an entire related table merely to locate that named source.
 
+Within one targeted invocation, the owning source is refreshed between category evaluations,
+while linked invoices, lines and accounts are reused. The linked graph is an invocation snapshot;
+it is not cached across requests. Full-sync batches retain their normal full-cache invalidation.
+
 All processing keeps the last-30-UTC-calendar-days safety window by default. Accounting dates,
 not Created Time, determine inclusion. Override it explicitly when reviewing an older record:
 
@@ -78,7 +86,8 @@ The override applies to direct queries, linked discovery and the final calculate
 It does not bypass category filters, Sent/cancellation/reversal guards, duplicate protection,
 account validation, or closed-period review. Full and manual calls are otherwise identical.
 
-`test:true` does not consult database enablement or period/account state. To preview just the
+`test:true` does not consult database enablement or period/account state. Shipping alone reads
+the posted balance of 221.100 for its linked deposit invoice using a read-only transaction. To preview just the
 current enabled categories, supply their categoryCodes. It returns proposed source/rule/date,
 accounts and signed amount. Test cursor data is validated against the original source and dates;
 it cannot inject another record into a single-source preview.

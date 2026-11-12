@@ -4,7 +4,7 @@ import { lockLedgerSource } from "./period-review.ts";
 
 export const FIN_BASE = "app0Q1UMEdUeWl538";
 export const LINK_FIELDS = {
-  tblAxlsdmJN0X0sQs: { postings: "fldfKQTnuiuyHJqEw", ids: "fld9td99xEJHKbdyo", reversalIds: "fldoEz58DXpKGdXBF" },
+  tblrnXm1HN9y6HPxY: { postings: "fldpzQMtRabsTFN3p", ids: "fldAnSta5oo9el7xm", reversalIds: "fldDSYAiyS6IjgAA7" },
   tblR61NG9i0giid28: { postings: "fldFcvTSQ5035ZYVa", ids: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
   tbldQXuqNEp8G5pfs: { postings: "fld2K7xKmNnLoi4u6", ids: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },
   tblV26TC0f6CKDneL: { postings: "fldggH4cOAdWpW8WO", ids: "fldi0ML7ThX0lD1vg", reversalIds: "fldxgFR0EWkD0fMLD" },

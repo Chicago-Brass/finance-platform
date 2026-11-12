@@ -3,7 +3,7 @@ export { FIN_BASE } from "../_shared/ledger-links.ts";
 import { LINK_FIELDS } from "../_shared/ledger-links.ts";
 
 export const POSTING_FIELDS = {
-  tblAxlsdmJN0X0sQs: { postings: LINK_FIELDS.tblAxlsdmJN0X0sQs.postings, ids: LINK_FIELDS.tblAxlsdmJN0X0sQs.ids, reverse: "fld8oS4rTOmZtuTl6", reverseDate: "fldAgNtldwTtWCfo2" },
+  tblrnXm1HN9y6HPxY: { postings: LINK_FIELDS.tblrnXm1HN9y6HPxY.postings, ids: LINK_FIELDS.tblrnXm1HN9y6HPxY.ids, reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW" },
   tblR61NG9i0giid28: { postings: LINK_FIELDS.tblR61NG9i0giid28.postings, ids: LINK_FIELDS.tblR61NG9i0giid28.ids, reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P" },
   tbldQXuqNEp8G5pfs: { postings: LINK_FIELDS.tbldQXuqNEp8G5pfs.postings, ids: LINK_FIELDS.tbldQXuqNEp8G5pfs.ids, reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", cancelled: "fldbovm1ab4HOZDBe" },
   tblV26TC0f6CKDneL: { postings: LINK_FIELDS.tblV26TC0f6CKDneL.postings, ids: LINK_FIELDS.tblV26TC0f6CKDneL.ids, reverse: "fldEN2QtqnbyNjjDW", reverseDate: "fld5t7Tr5qraHGWP8" },
@@ -242,18 +242,19 @@ export const expenseWorkerFields = {
 // Current Invoice Entry chart. Shipping links use the actual tables exposed by FIN.
 export const invoiceWorkerFields = {
   TABLES: { invoices: paymentSentFields.TABLES.invoices, accounts: paymentSentFields.TABLES.accounts, payments: paymentSentFields.TABLES.payments,
-    shipping: "tblAxlsdmJN0X0sQs", mtas: "tblNcoC7APgbJ3kgf" },
+    shipping: "tblrnXm1HN9y6HPxY", mtas: "tblDhJAJFVYBQ4plD", transactions: "tblKAChQnBIblK2gS" },
   INVOICE_FIELDS: {
     type: "fld9e6yDIv0PtBDV0", vendorTypeAP: "fldXwodwAuXLJt5rP", vendorTypeAR: "fldbMLaxgnu81a0O0",
     kind: "fld11boAS4dCyyuZW", cancelled: "fldbovm1ab4HOZDBe", prepaid: "fldckuYNfSzBXq0AX",
-    amount: "fldm5nXoW7MrwjkhW", date: "fldSungTQU5nIEIvi", accounts: "fldT5u0prSS8G1H4x",
+    amount: "fldm5nXoW7MrwjkhW", paymentProportion: "fld9UHq6aOrCVzmwL", date: "fldSungTQU5nIEIvi", accounts: "fldT5u0prSS8G1H4x",
     payments: "fldeNFOgl9OBHPlNm", branch: "fldt5PjqGDrINUYT5", vendors: "fld77UN3hpnMagzkj",
     clients: "fld9aY5ze2BbaoWG5", staff: "fldJXrFmx3Y6Szxa5", transactions: "fldxUmaAhUJjAGnrw",
     purchaseOrders: "fldcIaoLYHgegP17m", states: "fld3kO1XElo5S3Hhy",
   },
   PAYMENT_FIELDS: expenseWorkerFields.PAYMENT_FIELDS,
-  SHIPPING_FIELDS: { shipped: "fldluJJSvhtYasYQ7", date: "fldTcXR9nHM4XTJZo",
-    mtas: "fld4XfIBm2RnK0yfo", transactions: "flduv7e2XhfIYwQ6h" },
-  MTA_FIELDS: { amount: "fldSsRsBXUOkXSU8c", branch: "fldUaZWYWb6jOPbFA", states: "fldM5NdON38IvCXGD" },
+  SHIPPING_FIELDS: { shipped: "fldT5SpQIhqNKSpsq", date: "fldGfOdjTKM2AqznR",
+    mtas: "fldkAdTo7X05U5HuJ", transactions: "fldOG66uC3CWkKSAO" },
+  TRANSACTION_FIELDS: { invoices: "fldm8qyxxm7LQMvuB" },
+  MTA_FIELDS: { amount: "fldfkUx44zs8bTvB2", branch: "fldio1eQK3rm26DJW", states: "fldUDSoJo5Iu3Yx1G" },
   ACCOUNT_FIELDS: paymentSentFields.ACCOUNT_FIELDS,
 } as const;

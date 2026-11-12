@@ -116,9 +116,12 @@ test("only signed-in users may call it, and it runs under the caller's row-level
     const [row] = await batch(["2026-11-04"], [null], tx);
     assert.deepEqual(row.accounts, [], "a signed-in user outside the allowlist sees no rows");
   });
-  const member = ["insert into public.app_users (email, role) values ('viewer@example.com', 'viewer')", `set local request.jwt.claims = '{"email":"viewer@example.com"}'`];
+  const member = ["insert into public.app_users (email, role) values ('viewer@example.com', 'viewer'), ('other@example.com', 'viewer')", `set local request.jwt.claims = '{"email":"viewer@example.com"}'`];
   const expected = await single("2026-11-04", null);
   await asRole("authenticated", member, async tx => {
+    assert.deepEqual((await tx`select email from public.app_users`).map(user => user.email), ["viewer@example.com"], "members can read only their own app-user row");
+    const [plan] = await tx`explain (format json) select email from public.app_users`;
+    assert.match(JSON.stringify(plan), /InitPlan/, "JWT email is evaluated once for the statement");
     const [row] = await batch(["2026-11-04"], [null], tx);
     assert.deepEqual(row.accounts, expected);
     await assert.rejects(() => tx`insert into public.journal_entries (entry_date, description) values ('2026-11-04', 'Viewer cannot post')`, error => error.code === "42501");

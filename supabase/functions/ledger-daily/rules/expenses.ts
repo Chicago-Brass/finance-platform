@@ -1,4 +1,5 @@
 import { expenseWorkerFields as F } from "../definitions.ts";
+import { OPERATING_EXPENSE_ACCOUNTS } from "./expense-accounts.ts";
 import { fromStart } from "../scope.ts";
 import { and, or } from "./common.ts";
 import type { CategoryDefinition, FormulaBuilder } from "../types.ts";
@@ -11,6 +12,7 @@ const expenseInvoice = (q: FormulaBuilder) => invoiceType(q, "AP - Expenses (Non
 const staffInvoice = (q: FormulaBuilder) => invoiceType(q, "AP - Staff");
 const prepaidInvoice = (q: FormulaBuilder) => and(invoiceType(q, "AP - Assets"), q.eq(T.invoices, I.prepaid, 1), `${q.field(T.invoices, I.accounts)}!=""`);
 const invoiceAccount = (q: FormulaBuilder, code: string) => q.includes(T.invoices, I.accounts, code);
+const operatingAccounts = (q: FormulaBuilder) => or(...OPERATING_EXPENSE_ACCOUNTS.map(code => invoiceAccount(q, code)));
 const lineAccounts = (q: FormulaBuilder, codes: string[]) => and(or(...codes.map(code => q.includes(T.lines, L.accounts, code))), `LEN(${q.field(T.lines, L.amount)}&"")>0`);
 const fromInvoices = (filter: CategoryDefinition["filter"], linksFieldId: string = I.payments): CategoryDefinition["related"] => ({ tableId: T.invoices, filter, linksFieldId });
 const fromPaidLines = (codes: string[], vendor = "AP - Staff"): CategoryDefinition["related"] => ({
@@ -33,7 +35,7 @@ function linePayment(code: string, name: string, codes: string[], vendor = "AP -
 const deferred = (code: string, name: string, tableId: string = T.invoices) => expense(code, name, tableId, () => "FALSE()", { status: "deferred" });
 
 export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
-    expense("EXP-01", "Operating expense invoice", T.invoices, q => and(expenseInvoice(q), invoiceAccount(q, "006.002"), q.eq(T.invoices, I.noVendorBill, 0)), { status: "partial" }),
+    expense("EXP-01", "Operating expense invoice", T.invoices, q => and(expenseInvoice(q), operatingAccounts(q), q.eq(T.invoices, I.noVendorBill, 0))),
     expense("EXP-02", "Company credit-card purchase", T.payments, q => and(q.eq(T.payments, P.sent, 1), q.includes(T.payments, P.accounts, "231.100")), {
         related: fromInvoices(q => and(expenseInvoice(q), q.eq(T.invoices, I.noVendorBill, 1), `${q.field(T.invoices, I.accounts)}!=""`)),
     }),
@@ -47,7 +49,7 @@ export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
     expense("EXP-11", "Bank-fee invoice", T.invoices, q => and(expenseInvoice(q), invoiceAccount(q, "007.002"), q.eq(T.invoices, I.noVendorBill, 0))),
     deferred("EXP-12", "Bad-debt reserve"),
     lineEntry("EXP-13", "Income-tax invoice", taxAccounts, expenseInvoice),
-    expense("EXP-14", "Operating expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(expenseInvoice(q), invoiceAccount(q, "006.002"), q.eq(T.invoices, I.noVendorBill, 0))) }),
+    expense("EXP-14", "Operating expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(expenseInvoice(q), operatingAccounts(q), q.eq(T.invoices, I.noVendorBill, 0))) }),
     expense("EXP-15", "Product invoice", T.invoices, q => invoiceType(q, "AP - Product")),
     expense("EXP-16", "Product payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => invoiceType(q, "AP - Product")) }),
     expense("EXP-17", "Prepaid expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(prepaidInvoice(q), q.eq(T.invoices, I.status, "Fully Paid"))) }),
