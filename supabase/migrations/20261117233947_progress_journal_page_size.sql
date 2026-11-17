@@ -43,4 +43,3 @@ begin
 end $$;
 revoke all on function public.get_ledger_rule_journals(text,date,date,integer) from public,anon;
 grant execute on function public.get_ledger_rule_journals(text,date,date,integer) to authenticated,service_role;
-
