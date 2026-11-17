@@ -8,6 +8,7 @@ import { LedgerAccountFilter } from "./LedgerAccountFilter";
 import { LedgerFilters } from "./LedgerFilters";
 import { GeneralLedgerTable, TrialBalanceTable } from "./LedgerTable";
 import { PostingRulesTable } from "./PostingRulesTable";
+import { JournalEntryDrawer } from "./JournalEntryDrawer";
 import { ReportPageHeader } from "./ReportPageHeader";
 import { useReportNavigate } from "./ReportNavigation";
 import type { ReportQuery } from "./ReportData";
@@ -37,7 +38,7 @@ export function TrialBalanceWorkspace({ asOf, branch, data }: { asOf: string; br
   </article>;
 }
 
-export function GeneralLedgerWorkspace({ options, data, countData, accountData, categoryData }: { options: LedgerOptions; data: ReportQuery<LedgerData>; countData: ReportQuery<number>; accountData: ReportQuery<LedgerAccountOption[]>; categoryData: ReportQuery<LedgerCategoryOption[]> }) {
+export function GeneralLedgerWorkspace({ options, entryNumber, data, countData, accountData, categoryData }: { options: LedgerOptions; entryNumber?: number; data: ReportQuery<LedgerData>; countData: ReportQuery<number>; accountData: ReportQuery<LedgerAccountOption[]>; categoryData: ReportQuery<LedgerCategoryOption[]> }) {
   const navigate = useReportNavigate();
   const [scope, setScope] = useState(options);
   const scopeValue = useRef(options);
@@ -103,6 +104,7 @@ export function GeneralLedgerWorkspace({ options, data, countData, accountData, 
     </DateFilter>
     {options.from > options.to && <div className="report-alerts" role="status"><p className="check check-bad">Start date is later than end date. Choose a valid date range.</p></div>}
     <ReportDataPanel query={data} label="Loading ledger records">{data.data && <GeneralLedgerTable {...options} accounts={accounts} rows={data.data.rows} hasNext={data.data.hasNext} page={data.data.page} pageSize={data.data.pageSize} total={countData.data} countPending={countData.pending} />}</ReportDataPanel>
+    {entryNumber !== undefined && <JournalEntryDrawer entryNumber={entryNumber} onClose={() => navigate(ledgerHref(options))} />}
   </article>;
 }
 

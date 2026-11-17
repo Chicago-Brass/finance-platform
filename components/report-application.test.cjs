@@ -9,7 +9,7 @@ const root=path.resolve(__dirname,'..');
 function appHarness(){
   let pathname='/income-statement',search=new URLSearchParams('year=2026&from=1&to=3');
   const calls=[],pending={data:undefined,pending:true,error:false,retry(){}};
-  const Income=()=>null,Balance=()=>null,Trial=()=>null,Ledger=()=>null,Rules=()=>null;
+  const Income=()=>null,Balance=()=>null,Trial=()=>null,Ledger=()=>null,Rules=()=>null,Progress=()=>null,Periods=()=>null;
   const mocks={
     react:{...React,useEffect(){}},
     'next/navigation':{useSearchParams:()=>search},
@@ -17,6 +17,8 @@ function appHarness(){
     './ReportData':{useReportQuery:url=>{calls.push(url);return pending;}},
     './StatementWorkspace':{IncomeStatementWorkspace:Income,BalanceSheetWorkspace:Balance},
     './LedgerWorkspaces':{TrialBalanceWorkspace:Trial,GeneralLedgerWorkspace:Ledger,PostingRulesWorkspace:Rules},
+    './ProgressWorkspace':{ProgressWorkspace:Progress},
+    './PeriodManagement':{PeriodManagement:Periods},
   };
   const cache=new Map();
   function load(file){
@@ -28,7 +30,7 @@ function appHarness(){
     cache.set(file,module.exports);return module.exports;
   }
   const App=load(path.join(__dirname,'ReportApplication.tsx')).ReportApplication;
-  return {calls,Income,Balance,Trial,Ledger,Rules,render(route,params=''){
+  return {calls,Income,Balance,Trial,Ledger,Rules,Progress,Periods,render(route,params=''){
     pathname=route;search=new URLSearchParams(params);
     const shell=App({children:'account page'});
     return typeof shell==='string'?{shell}: {shell,workspace:shell.type(shell.props)};
@@ -59,6 +61,13 @@ test('Each destination gets its own immediate shell without waiting for financia
   assert.equal(ui.calls.length,count,'non-report pages do not request financial data');
 });
 
+test('Progress and Periods render their destination workspace before server navigation finishes',()=>{
+  const ui=appHarness();
+  assert.equal(ui.render('/progress').shell.type,ui.Progress);
+  assert.equal(ui.render('/periods').shell.type,ui.Periods);
+  assert.equal(ui.calls.length,0,'self-fetching workspaces own their requests');
+});
+
 test('Display changes share one financial request key and metadata is only requested for Ledger',()=>{
   const ui=appHarness();
   ui.render('/income-statement','year=2026&from=1&to=3&grain=month');
@@ -78,4 +87,11 @@ test('Ledger totals request starts independently and reuses its cache key across
   assert.equal(ui.calls.at(-3),calls[1]);
   ui.render('/general-ledger','from=2026-01-01&to=2026-12-31&type=expense&page=2');
   assert.notEqual(ui.calls.at(-3),calls[1]);
+});
+
+test('Exact journal deep links reach the drawer without becoming a fuzzy Ledger query',()=>{
+  const ui=appHarness(),ledger=ui.render('/general-ledger','from=2026-11-17&to=2026-11-17&entry=93');
+  assert.equal(ledger.workspace.type,ui.Ledger);assert.equal(ledger.workspace.props.entryNumber,93);
+  assert.equal(ledger.workspace.props.options.query,'');
+  assert(ui.calls.filter(Boolean).every(url=>!url.includes('entry=93')&&!url.includes('q=93')),'entry selection cannot pollute table/cache filters');
 });

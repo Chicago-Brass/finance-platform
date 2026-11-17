@@ -17,9 +17,10 @@ const seed=fs.readFileSync(new URL('../seed.sql',import.meta.url),'utf8');
 const deferred=['EXP-12','EXP-22','EXP-24','EXP-25'];
 const lineRows=()=>sql`select rule_code,side,line_order,account_code,account_selector,label,is_optional from public.ledger_rule_lines where rule_code like 'EXP-%' order by rule_code,side`;
 
-test('fresh migration plus seed registers all 26 current Expense rules and keeps deferred categories inactive',async()=>{
+test('fresh migration plus seed retains the 22 Expense rules and removes black archive categories',async()=>{
  const rows=await sql`select rule_code,category,sort_order,trigger_name,when_to_post,active from public.ledger_rules where rule_code like 'EXP-%' order by rule_code`;
- assert.equal(rows.length,26);
+ assert.equal(rows.length,22);
+ assert(rows.every(row=>!deferred.includes(row.rule_code)));
  for(const row of rows){
   const chart=CHART[row.rule_code];assert(chart);
   assert.equal(row.category,'expense');assert.equal(row.sort_order,chart.row);

@@ -38,13 +38,21 @@ export class DatabaseRunStore implements RunStore {
   async save(job: RunJob): Promise<void> { await this.persist(job, false); }
   async release(job: RunJob): Promise<void> { await this.persist(job, true); }
   private async persist(job: RunJob, release: boolean): Promise<void> {
+    const attempts = job.attempts?.slice() ?? [];
     await service(this.sql, async tx => {
+      if (attempts.length) await tx`insert into public.ledger_rule_attempts
+        (run_id,rule_code,source_table,source_record_id,outcome,error,occurred_at)
+        select ${job.id}::uuid,a."ruleCode",a."sourceTable",a."sourceRecordId",a.outcome,a.error,a."occurredAt"
+        from jsonb_to_recordset(${tx.json(attempts)}) as a("ruleCode" text,"sourceTable" text,"sourceRecordId" text,outcome text,error text,"occurredAt" timestamptz)
+        on conflict(run_id,rule_code,source_table,source_record_id) do update
+        set outcome=excluded.outcome,error=excluded.error,occurred_at=excluded.occurred_at`;
       const rows = await tx`update public.ledger_daily_runs set state=${tx.json(job.state)},
         lease_token=case when ${release} then null else lease_token end,
         locked_until=case when ${release} then null else now()+interval '3 minutes' end, updated_at=now()
         where id=${job.id}::uuid and lease_token=${job.leaseToken}::uuid returning id`;
       if (!rows.length) throw new Error("Daily run lease was lost.");
     });
+    job.attempts?.splice(0, attempts.length);
   }
 }
 

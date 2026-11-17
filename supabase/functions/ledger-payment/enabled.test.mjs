@@ -15,7 +15,7 @@ const event=recordId=>({invoiceRecordId:recordId,eventType:'entry_requested',ent
 
 test('existing and newly registered rules default enabled without changing the active label',async()=>{
  const retired=await sql`select enabled from public.ledger_rules where rule_code in ('INV-01','INV-03','INV-04','INV-05','INV-06','INV-02','INV-09','INV-11')`;
- assert.equal(retired.length,1,'Only the deferred price-credit Invoice Entry rule remains; black and obsolete rows are removed.');
+ assert.equal(retired.length,0,'Black and obsolete rules, including the deferred price-credit rule, are removed.');
  const [credit]=await sql`select enabled from public.ledger_rules where rule_code='INV-08'`;assert.equal(credit.enabled,true);
  assert(retired.every(rule=>!rule.enabled));
  await sql`insert into public.ledger_rules (rule_code,category,sort_order,trigger_name,active) values ('TEST-ENABLED','expense',999,'Synthetic toggle default',false)`;

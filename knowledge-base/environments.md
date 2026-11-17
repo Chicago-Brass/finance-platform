@@ -39,6 +39,17 @@ gitignored scripts environment. Unprefixed `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
 `LEDGER_WEBHOOK_SECRET` continue to identify production. Check the target before a write.
 Never expose a secret/server key through `NEXT_PUBLIC_` or commit any credentials.
 
+## Sign-in lifetime
+
+Production and develop use Supabase Auth's native absolute session limit of seven days
+(`sessions_timebox: 168` hours in the Management API Auth configuration). A token refresh does
+not restart this clock. Users must sign in again after the session expires. Supabase checks the
+limit when refreshing tokens; an already-issued access token can remain valid for up to the
+existing one-hour JWT lifetime. Changing the limit does not immediately revoke existing tokens.
+Keep both hosted Auth configurations aligned; Git merges and database migrations do not apply it.
+
+See [Supabase session limits](https://supabase.com/docs/guides/auth/sessions).
+
 Develop has its own Auth users and sessions. The branch began with no Auth users; production
 passwords and sessions were not copied. Existing five finance app memberships were copied, but
 an Auth account must exist separately before localhost sign-in can work. Its reference account,

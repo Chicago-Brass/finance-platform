@@ -19,7 +19,21 @@ Airtable supplies category/account calculations. The shared Edge writer validate
 
 ## UI
 
-`/periods` shares the report navigation and layout. Each month has posted journals, review requests and append-only history. Posted entries reuse the journal drawer. Review details show the exact account pairs and signed amounts, source links and relevant dates. The review list defaults to pending and link-repair requests, with an All requests filter. Closing with unresolved pending requests requires explicit deferral and a reason.
+`/periods` shares the report navigation and layout. Its toolbar contains Date range and Group by;
+presets and custom ranges support multiple years or quarters. Ranges use whole accounting months.
+The left list selects the month, quarter or year, newest first, with compact green Open or red Closed pills.
+Missing periods display Closed without creating a period or bypassing the review requirement.
+Mixed groups keep a neutral Mixed pill. Posted journals, review requests and append-only history
+aggregate over the selected group. Yellow badges show pending-review counts on both the group and tab.
+Close period and Reopen period appear only in month grouping for authorized users. Grouped views
+do not change several months at once. Posted entries reuse the journal drawer.
+Review details show the exact account pairs and signed amounts, source links and relevant dates.
+The review list defaults to pending and link-repair requests, with an All requests filter inside
+that panel. Its Actions column provides View and an authorized Allow entry button. Allow entry
+opens the existing reason/confirmation flow for that request's own accounting month; it does not
+reopen the period or approve unrelated requests. Posted requests awaiting Airtable links offer
+Retry links instead, without posting another journal.
+Closing with unresolved pending requests requires explicit deferral and a reason.
 
 History records actors, reasons, decisions, resulting journal IDs and a compact account-balance snapshot on close. The overview labels adjustments posted after the last close. Existing statement/ledger links and Excel/PDF exports are reused; there is no separate report-versioning engine.
 
@@ -36,7 +50,10 @@ History records actors, reasons, decisions, resulting journal IDs and a compact 
 - `supabase/migrations/20261109155126_period_management.sql`: capability, queue, history, reporting view and financial guards.
 - `supabase/migrations/20261109162203_enforce_pending_period_review.sql`: prevents direct/manual posting from bypassing a queued review after reopening.
 
-The staged daily worker remains unscheduled. It recognizes held requests and does not mark them posted. Invalid requests still fail validation instead of becoming trusted approvals. This queue covers received events; it does not discover Airtable records that have never reached the pipeline.
+The production daily worker runs at 11 PM America/Chicago; develop remains unscheduled. It
+recognizes held requests and does not mark them posted. Invalid requests still fail validation
+instead of becoming trusted approvals. This queue covers received events; it does not discover
+Airtable records that have never reached the pipeline.
 
 ## Checks
 

@@ -7,6 +7,11 @@ export function ledgerPageNumber(value: string | string[] | undefined) {
   return Number.isSafeInteger(page) && page >= 1 ? page : 1;
 }
 
+export function ledgerEntryParam(value: string | string[] | undefined) {
+  const text = Array.isArray(value) ? value[0] : value, number = Number(text);
+  return text && /^\d+$/.test(text) && Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
 const ACCOUNT_CODE = /^\d{3}\.\d{3}$/;
 
 /** Accepts only a ledger account code such as 112.300; anything else means no filter. */

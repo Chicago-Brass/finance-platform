@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { todayChicago } from "@/lib/dates";
 import { formatDate } from "@/lib/reports/report-utils";
@@ -8,18 +8,16 @@ import { formatReportAmount } from "@/lib/format";
 import { useReportRefresh, useReportRevision } from "./ReportData";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, FilterField } from "./FilterControls";
+import { DismissibleMenu } from "./DismissibleMenu";
+import { CalendarMark } from "./ReportViewControls";
+import { periodGroups, periodPresets, periodRange, type PeriodGrouping, type PeriodOverview, type PeriodRange } from "@/lib/periods/ranges";
 import { DetailDrawer } from "./DetailDrawer";
 import { JournalEntryDrawer } from "./JournalEntryDrawer";
 import "./period-management.css";
 
-type Period = {
-  period_month: string;
-  status: string;
+type Period = PeriodOverview & {
   closed_at: string | null;
   closed_by: string | null;
-  posted_count: number;
-  pending_count: number;
-  adjustments_after_close: number;
 };
 type Posting = {
   debitAccount: { number?: string; recordId?: string };
@@ -96,6 +94,7 @@ type Action = {
   action: "open" | "close" | "approve" | "reject";
   requestId?: string;
   label: string;
+  month?: string;
 };
 const monthLabel = (month: string) =>
   new Intl.DateTimeFormat("en-US", {
@@ -113,8 +112,23 @@ const stamp = (date: string | null) =>
     : "-";
 const titleCase = (value: string) => value.split("_").join(" ");
 
+export function PeriodStatusPill({ status }: { status: string }) {
+  const state = status === "open" ? "open" : status === "mixed" ? "mixed" : "closed";
+  return <span className={`period-badge ${state}`}>{state === "open" ? "Open" : state === "mixed" ? "Mixed" : "Closed"}</span>;
+}
+
+export function PeriodReviewActions({ status, writebackPending, canManage, onView, onAllow }: {
+  status: string; writebackPending: boolean; canManage: boolean; onView: () => void; onAllow: () => void;
+}) {
+  return <div className="period-row-actions"><button type="button" className="btn btn-quiet" onClick={onView}>View</button>
+    {canManage && (status === "pending" || (status === "posted" && writebackPending)) && <button type="button" className="btn btn-primary" onClick={onAllow}>{status === "pending" ? "Allow entry" : "Retry links"}</button>}
+  </div>;
+}
+
 export function PeriodManagement() {
-  const initial = todayChicago().slice(0, 7) + "-01";
+  const today = todayChicago(), initial = today.slice(0, 7) + "-01";
+  const [range, setRange] = useState<PeriodRange>({from: initial.slice(0, 4) + "-01-01", to: initial.slice(0, 4) + "-12-31"});
+  const [grouping, setGrouping] = useState<PeriodGrouping>("month");
   const [month, setMonth] = useState(initial),
     [tab, setTab] = useState("posted"),
     [page, setPage] = useState(1),
@@ -123,6 +137,7 @@ export function PeriodManagement() {
   const [data, setData] = useState<Data | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const [overview, setOverview] = useState<Pick<Data, "periods" | "canManage"> | null>(null);
   const [action, setAction] = useState<Action | null>(null),
     [reason, setReason] = useState(""),
     [defer, setDefer] = useState(false),
@@ -135,13 +150,15 @@ export function PeriodManagement() {
   const refreshReports = useReportRefresh();
   const revision = useReportRevision();
   const selectedMonthButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { selectedMonthButton.current?.scrollIntoView({block:"nearest"}); },[month]);
+  const groups = useMemo(() => periodGroups(range, grouping, overview?.periods), [range, grouping, overview?.periods]);
+  const group = groups.find(item => item.months.includes(month)) ?? groups[0];
+  useEffect(() => { selectedMonthButton.current?.scrollIntoView({block:"nearest"}); }, [group.key]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError("");
     fetch(
-      `/api/periods?${new URLSearchParams({ month, tab, page: String(page), status: reviewFilter })}`,
+      `/api/periods?${new URLSearchParams({ from: group.from, to: group.to, overviewFrom: range.from, overviewTo: range.to, tab, page: String(page), status: reviewFilter })}`,
       { signal: controller.signal, cache: "no-store" },
     )
       .then(async (r) => {
@@ -150,7 +167,7 @@ export function PeriodManagement() {
         return body as Data;
       })
       .then((body) => {
-        if (!controller.signal.aborted) setData(body);
+        if (!controller.signal.aborted) { setData(body); setOverview({periods: body.periods, canManage: body.canManage}); }
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e.message);
@@ -159,7 +176,7 @@ export function PeriodManagement() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [month, tab, page, reviewFilter, version, revision]);
+  }, [group.from, group.to, range.from, range.to, tab, page, reviewFilter, version, revision]);
   useEffect(() => {
     setDetails(null);
     setDetailError("");
@@ -182,8 +199,26 @@ export function PeriodManagement() {
       });
     return () => controller.abort();
   }, [selected, month, version]);
-  const year = Number(month.slice(0, 4));
-  const period = data?.periods.find((p) => p.period_month === month);
+  const period = overview?.periods.find((p) => p.period_month === month);
+  const monthly = grouping === "month";
+  const changeRange = (value: PeriodRange) => {
+    try {
+      const next = periodRange(value.from, value.to);
+      if (next.from === range.from && next.to === range.to) return;
+      setRange(next);
+      changeMonth(month >= next.from && month <= next.to ? month : next.to.slice(0, 7) + "-01");
+      setData(null); setLoading(true); setSelected(null); setNotice("");
+      setError("");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Choose a valid date range."); }
+  };
+  const changeGrouping = (value: string) => {
+    if (value === grouping) return;
+    setGrouping(value as PeriodGrouping); setPage(1); setSelected(null); setData(null); setLoading(true);
+  };
+  const changeTab = (value: string) => {
+    if (value === tab) return;
+    setTab(value); setPage(1); setSelected(null); setData(null); setLoading(true);
+  };
   const begin = (value: Action) => {
     setReason("");
     setDefer(false);
@@ -191,10 +226,13 @@ export function PeriodManagement() {
     setAction(value);
   };
   const changeMonth = (value: string) => {
+    if (value === month) return;
     setMonth(value);
     setPage(1);
     setSelected(null);
     setData(null);
+    setLoading(true);
+    setNotice("");
   };
   const submit = async () => {
     if (!action) return;
@@ -204,7 +242,7 @@ export function PeriodManagement() {
       const client = createClient();
       const { data: result, error: failure } = await client.functions.invoke(
         "ledger-periods",
-        { body: { ...action, month, reason, deferPending: defer } },
+        { body: { ...action, month: action.month ?? month, reason, deferPending: defer } },
       );
       if (failure) {
         const body =
@@ -235,60 +273,39 @@ export function PeriodManagement() {
       setBusy(false);
     }
   };
-  const last = new Date(Date.UTC(year, Number(month.slice(5, 7)), 0))
-    .toISOString()
-    .slice(0, 10);
+  const last = group.to;
   return (
     <article className="report-page period-page">
       <div className="report-heading">
-        <h1 className="report-title">Period Management</h1>
+        <h1 className="report-title">Periods</h1>
         <p className="report-entity">
           Chicago Brass Inc. - Accounting controls
         </p>
       </div>
       <FilterBar label="Period controls">
-        <SearchableSelect
-          label="Year"
-          value={String(year)}
-          options={Array.from(
-            { length: Number(initial.slice(0, 4)) - 1990 + 6 },
-            (_, i) => {
-              const y = 1990 + i;
-              return { value: String(y), label: String(y) };
-            },
-          )}
-          onChange={(value) => changeMonth(value + month.slice(4))}
-          className="period-year"
-        />
-        <SearchableSelect
-          label="Period"
-          value={month}
-          options={Array.from({ length: 12 }, (_, i) => {
-            const value = `${year}-${String(i + 1).padStart(2, "0")}-01`;
-            return { value, label: monthLabel(value) };
-          })}
-          onChange={changeMonth}
-          className="period-month"
-        />
-        {tab === "pending" && (
-          <SearchableSelect
-            label="Review status"
-            value={reviewFilter}
-            options={[
-              { value: "pending", label: "Pending / repair needed" },
-              { value: "all", label: "All requests" },
-            ]}
-            onChange={(value) => {
-              setReviewFilter(value);
-              setPage(1);
-            }}
-            className="period-month"
-          />
-        )}
-        <span className={`period-badge ${period?.status || "not_open"}`}>
-          {titleCase(period?.status || "not_open")}
-        </span>
-        {data?.canManage && (
+        <FilterField label="Date range" className="control-bar-period period-range-control">
+          <DismissibleMenu className="period-picker" key={`${range.from}:${range.to}`}>
+            <summary className="period-picker-trigger"><CalendarMark /><span>{formatDate(range.from)} - {formatDate(range.to)}</span><span aria-hidden="true">▾</span></summary>
+            <div className="period-picker-panel ledger-range-panel">
+              <div className="date-presets" aria-label="Quick accounting periods">
+                {periodPresets(today).map(preset => <button key={preset.label} type="button" className={`preset-link${range.from === preset.range.from && range.to === preset.range.to ? " is-active" : ""}`} onClick={event => { changeRange(preset.range); event.currentTarget.closest("details")?.removeAttribute("open"); }}>{preset.label}</button>)}
+              </div>
+              <form aria-label="Custom accounting date range" onSubmit={event => {
+                event.preventDefault(); const fields = new FormData(event.currentTarget);
+                changeRange({from: String(fields.get("from")), to: String(fields.get("to"))});
+              }}>
+                <div className="ledger-date-fields">
+                  <FilterField label="Start date" htmlFor="period-from"><input id="period-from" type="date" name="from" defaultValue={range.from} min="1900-01-01" max="2199-12-31" required /></FilterField>
+                  <FilterField label="End date" htmlFor="period-to"><input id="period-to" type="date" name="to" defaultValue={range.to} min="1900-01-01" max="2199-12-31" required /></FilterField>
+                </div>
+                <p className="filter-help">Includes complete accounting months. Choose any multi-year or multi-quarter range.</p>
+                <button className="btn btn-primary" type="submit">Apply range</button>
+              </form>
+            </div>
+          </DismissibleMenu>
+        </FilterField>
+        <SearchableSelect label="Group by" value={grouping} options={[{value:"month",label:"Month"},{value:"quarter",label:"Quarter"},{value:"year",label:"Year"}]} onChange={changeGrouping} className="period-grouping" />
+        {monthly && overview?.canManage && (
           <button
             className="btn btn-primary period-action"
             disabled={loading}
@@ -298,19 +315,14 @@ export function PeriodManagement() {
                   ? { action: "close", label: "Close period" }
                   : {
                       action: "open",
-                      label:
-                        period?.status === "closed"
-                          ? "Reopen period"
-                          : "Open period",
+                      label: "Reopen period",
                     },
               )
             }
           >
             {period?.status === "open"
               ? "Close period"
-              : period?.status === "closed"
-                ? "Reopen period"
-                : "Open period"}
+              : "Reopen period"}
           </button>
         )}
       </FilterBar>
@@ -332,52 +344,40 @@ export function PeriodManagement() {
       )}
       <div className="period-workspace">
         <aside className="period-list" aria-label="Accounting periods">
-          {Array.from({ length: 12 }, (_, i) => {
-            const value = `${year}-${String(i + 1).padStart(2, "0")}-01`,
-              item = data?.periods.find((p) => p.period_month === value);
-            return (
-              <button
-                key={value}
-                ref={month === value ? selectedMonthButton : undefined}
-                className={month === value ? "is-selected" : ""}
-                aria-current={month === value ? "date" : undefined}
-                onClick={() => changeMonth(value)}
-              >
-                <strong>{monthLabel(value)}</strong>
-                <span>
-                  {titleCase(item?.status || "not_open")}
-                  {Number(item?.pending_count) > 0
-                    ? ` | ${item?.pending_count} pending`
-                    : ""}
-                </span>
-              </button>
-            );
-          })}
+          {groups.map(item => (
+            <button key={item.key} ref={group.key === item.key ? selectedMonthButton : undefined}
+              className={group.key === item.key ? "is-selected" : ""} aria-current={group.key === item.key ? "date" : undefined}
+              onClick={() => changeMonth(item.from)}>
+              <span className="period-list-heading"><strong>{item.label}</strong>{item.pending > 0 && <span className="period-pending-count" aria-label={`${item.pending} pending review`}>{item.pending.toLocaleString()}</span>}</span>
+              <span className="period-list-summary"><PeriodStatusPill status={item.status} /><span>{item.posted.toLocaleString()} posted</span></span>
+            </button>
+          ))}
         </aside>
         <section className="period-detail" aria-label="Selected period">
           <div className="period-detail-heading">
             <div className="period-detail-meta">
-              <h2>{monthLabel(month)}</h2>
+              <h2>{group.label}</h2>
               <p>
-                {period?.closed_at
+                {monthly ? period?.closed_at
                   ? `Last closed ${stamp(period.closed_at)} by ${period.closed_by}`
-                  : "No close recorded."}
+                  : "No close recorded."
+                  : `${group.months.length} accounting months - open and close each month separately.`}
               </p>
-              {Number(period?.adjustments_after_close) > 0 && (
+              {group.adjustments > 0 && (
                 <p className="period-warning">
-                  Adjusted after close: {period?.adjustments_after_close}{" "}
+                  Adjusted after close: {group.adjustments}{" "}
                   journals. See History for approvals.
                 </p>
               )}
             </div>
             <div className="period-report-links">
               <a
-                href={`/income-statement?year=${year}&from=${Number(month.slice(5, 7))}&to=${Number(month.slice(5, 7))}`}
+                href={`/income-statement?year=${group.from.slice(0, 4)}&from=${Number(group.from.slice(5, 7))}&to=${Number(group.to.slice(5, 7))}`}
               >
                 Income Statement
               </a>
               <a href={`/balance-sheet?asof=${last}`}>Balance Sheet</a>
-              <a href={`/general-ledger?from=${month}&to=${last}`}>
+              <a href={`/general-ledger?from=${group.from}&to=${last}`}>
                 General Ledger
               </a>
             </div>
@@ -396,18 +396,24 @@ export function PeriodManagement() {
                 key={item.id}
                 role="tab"
                 aria-selected={tab === item.id}
-                onClick={() => {
-                  setTab(item.id);
-                  setPage(1);
+                tabIndex={tab === item.id ? 0 : -1}
+                onClick={() => changeTab(item.id)}
+                onKeyDown={event => {
+                  const tabs = ["posted", "pending", "history"], index = tabs.indexOf(tab);
+                  const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
+                  if (next < 0) return;
+                  event.preventDefault(); changeTab(tabs[next]);
+                  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
                 }}
               >
                 {item.label}
-                {item.id === "pending" && Number(period?.pending_count) > 0
-                  ? ` (${period?.pending_count})`
-                  : ""}
+                {item.id === "pending" && group.pending > 0 && <span className="period-pending-count" aria-label={`${group.pending} pending review`}>{group.pending.toLocaleString()}</span>}
               </button>
             ))}
           </div>
+          {tab === "pending" && <div className="period-review-filter"><SearchableSelect label="Review status" value={reviewFilter}
+            options={[{value:"pending",label:"Pending / repair needed"},{value:"all",label:"All requests"}]}
+            onChange={value => {setReviewFilter(value); setPage(1); setData(null); setLoading(true);}} className="period-review-status" /></div>}
           <div
             className="period-table-wrap"
             role="tabpanel"
@@ -463,7 +469,7 @@ export function PeriodManagement() {
                     <th>Accounting date</th>
                     <th>Source / category</th>
                     <th>Status</th>
-                    <th>Review</th>
+                    <th className="period-actions-heading">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -494,12 +500,8 @@ export function PeriodManagement() {
                         )}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-quiet"
-                          onClick={() => setSelected(row.id)}
-                        >
-                          View
-                        </button>
+                        <PeriodReviewActions status={row.status} writebackPending={row.writeback_pending} canManage={data.canManage}
+                          onView={() => setSelected(row.id)} onAllow={() => begin({action:"approve",requestId:row.id,month:row.accounting_date.slice(0,7)+"-01",label:row.status === "pending" ? "Allow entry" : "Repair Airtable links"})} />
                       </td>
                     </tr>
                   ))}
@@ -728,11 +730,12 @@ export function PeriodManagement() {
                         begin({
                           action: "approve",
                           requestId: details.item.id,
-                          label: "Approve this request",
+                          label: "Allow entry",
+                          month: details.item.accounting_date.slice(0,7)+"-01",
                         });
                       }}
                     >
-                      Approve
+                      Allow entry
                     </button>
                     <button
                       className="btn btn-quiet"
@@ -779,7 +782,7 @@ export function PeriodManagement() {
           <header className="drill-header">
             <div className="drill-heading">
               <h2 id="period-action-title">{action.label}</h2>
-              <p>{monthLabel(month)}</p>
+              <p>{monthLabel(action.month ?? month)}</p>
             </div>
             <button
               data-drawer-close

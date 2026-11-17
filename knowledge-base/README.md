@@ -14,6 +14,7 @@ pipeline. These guides describe the repository, data contracts and operating pro
 | [Airtable triggers](airtable-triggers.md) | Automation editors, script ownership, mappings and unresolved categories |
 | [Manual journals](../docs/manual-journals.md) | Approved parent journals, line pairs, invoice exclusions and cancellation |
 | [Period management](../docs/period-management.md) | Closing, review queue, permissions, exceptions and audit history |
+| [Rule progress](../docs/rule-progress.md) | Stable chart codes, grouped catalog, posted journals and sync-attempt analytics |
 | [Testing](testing.md) | Local checks, browser review and release verification |
 | [Ledger sync webhook](../supabase/functions/ledger-daily/README.md) | Deployed webhook for all three category sheets, global lock, checkpoints, writeback and production-only daily dispatch |
 

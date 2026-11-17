@@ -9,9 +9,9 @@ const url=process.env.LEDGER_TEST_DATABASE_URL;
 if(!url||!['127.0.0.1','localhost'].includes(new URL(url).hostname))throw Error('Use the disposable ledger test runner.');
 const sql=postgres(url,{prepare:false,max:1,onnotice(){}});after(()=>sql.end());
 const migration=fs.readFileSync(new URL('../migrations/20261111231329_finalize_expense_invoice_rules.sql',import.meta.url),'utf8');
-test('only the 30 fully implemented Expense and Invoice Entry rules are enabled',async()=>{
- const rows=await sql`select rule_code,enabled from public.ledger_rules where category in ('expense','invoice_entry')`;
- assert.equal(rows.length,37);assert.equal(rows.filter(r=>r.enabled).length,30);
+test('original Expense and Invoice handlers retain their enablement after regrouping and archive cleanup',async()=>{
+ const rows=await sql`select rule_code,enabled from public.ledger_rules where rule_code like 'EXP-%' or rule_code like 'INV-%'`;
+ assert.equal(rows.length,32);assert.equal(rows.filter(r=>r.enabled).length,30);
  for(const row of rows)assert.equal(row.enabled,CHART[row.rule_code].status==='Fully',row.rule_code);
  const removed=await sql`select rule_code from public.ledger_rules where rule_code in ('EXP-08','INV-02','INV-11','INV-01','INV-03','INV-04','INV-05','INV-06')`;
  assert.equal(removed.length,0);

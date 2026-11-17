@@ -12,6 +12,8 @@ import { TrialBalanceWorkspace, GeneralLedgerWorkspace, PostingRulesWorkspace } 
 import { useReportQuery } from "./ReportData";
 import type { ReportQuery } from "./ReportData";
 import { useReportPath } from "./ReportNavigation";
+import { ProgressWorkspace } from "./ProgressWorkspace";
+import { PeriodManagement } from "./PeriodManagement";
 
 type LedgerData = Awaited<ReturnType<typeof getGeneralLedger>>;
 const TITLES = { income: "Income Statement", balance: "Balance Sheet", trial: "Trial Balance", ledger: "General Ledger", rules: "T-Chart" };
@@ -19,6 +21,8 @@ const TITLES = { income: "Income Statement", balance: "Balance Sheet", trial: "T
 /** The destination shell renders from the URL; financial data arrives afterward through JSON. */
 export function ReportApplication({ children }: { children: ReactNode }) {
   const pathname = useReportPath(), params = useSearchParams();
+  if (pathname === "/progress") return <ProgressWorkspace />;
+  if (pathname === "/periods") return <PeriodManagement />;
   const screen = Object.values(REPORT_PATHS).some(path => path === pathname)
     ? parseReportScreen(pathname, Object.fromEntries(params)) : null;
   return screen ? <ActiveReport key={pathname} screen={screen} /> : children;
@@ -36,7 +40,7 @@ function ActiveReport({ screen }: { screen: ReportScreen }) {
     case "income": return <IncomeStatementWorkspace options={screen.options} data={query as ReportQuery<IncomeStatementData>} />;
     case "balance": return <BalanceSheetWorkspace options={screen.options} data={query as ReportQuery<BalanceSheetData>} />;
     case "trial": return <TrialBalanceWorkspace asOf={screen.options.asOf} branch={screen.options.branch} data={query as ReportQuery<TbRow[]>} />;
-    case "ledger": return <GeneralLedgerWorkspace options={screen.options} data={query as ReportQuery<LedgerData>} countData={count} accountData={accounts} categoryData={categories} />;
+    case "ledger": return <GeneralLedgerWorkspace options={screen.options} entryNumber={screen.entryNumber} data={query as ReportQuery<LedgerData>} countData={count} accountData={accounts} categoryData={categories} />;
     case "rules": return <PostingRulesWorkspace data={query as ReportQuery<TChartRow[]>} />;
   }
 }

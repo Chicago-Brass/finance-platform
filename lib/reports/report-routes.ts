@@ -1,6 +1,6 @@
 import { branchParam } from "./branch";
 import { cleanDate, startOfYear, todayChicago } from "../dates";
-import { ledgerAccountParam, ledgerHref, ledgerPageNumber, ledgerSearchParam, ledgerSideParam, ledgerTypeParam, ledgerCategoryParam, ledgerAmountParam } from "@/components/ledger-table-utils";
+import { ledgerAccountParam, ledgerHref, ledgerPageNumber, ledgerSearchParam, ledgerSideParam, ledgerTypeParam, ledgerCategoryParam, ledgerAmountParam, ledgerEntryParam } from "@/components/ledger-table-utils";
 import { parseIncomeStatementParams } from "./income-statement";
 import type { IncomeStatementOptions } from "./income-statement";
 import { parseBalanceSheetParams } from "./balance-sheet";
@@ -21,7 +21,7 @@ export type ReportScreen =
   | { kind: "income"; options: IncomeStatementOptions; request: string }
   | { kind: "balance"; options: BalanceSheetOptions; request: string }
   | { kind: "trial"; options: { asOf: string; branch?: string }; request: string }
-  | { kind: "ledger"; options: LedgerOptions; request: string; countRequest: string }
+  | { kind: "ledger"; options: LedgerOptions; entryNumber?: number; request: string; countRequest: string }
   | { kind: "rules"; request: string };
 
 const request = (report: ReportKind, params: Record<string, string> = {}) => `/api/reports/data?${new URLSearchParams({ report, ...params })}`;
@@ -49,7 +49,7 @@ export function parseReportScreen(pathname: string, params: Record<string, strin
       accountType: ledgerTypeParam(params.type), category: ledgerCategoryParam(params.category),
       min: ledgerAmountParam(params.min), max: ledgerAmountParam(params.max),
     };
-    return { kind: "ledger", options, request: `/api/reports/data?report=ledger&${ledgerHref(options).slice(1)}`, countRequest: `/api/reports/data?report=ledger-count&${ledgerHref({ ...options, page: undefined }).slice(1)}` };
+    return { kind: "ledger", options, entryNumber: ledgerEntryParam(params.entry), request: `/api/reports/data?report=ledger&${ledgerHref(options).slice(1)}`, countRequest: `/api/reports/data?report=ledger-count&${ledgerHref({ ...options, page: undefined }).slice(1)}` };
   }
   if (pathname === REPORT_PATHS.rules) return { kind: "rules", request: request("rules") };
   throw new RangeError("Unknown report.");
