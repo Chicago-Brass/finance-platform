@@ -29,24 +29,29 @@ export function createCategories(client) {
 
     async function handleProductInvoice(data, results) {
         if (!invoiceMatches(data.invoice, "AP - Product")) return;
-        await addInvoice(results, data, "Every time a product invoice is created", "004.010", "211.100");
+        const grossUnits = moneyUnits(data.invoice.value(I.amount), 4, "Invoice Amount")
+            - moneyUnits(data.invoice.value(I.discountTotal) ?? 0, 4, "Discount Lines Total");
+        if (!Number.isSafeInteger(grossUnits)) throw new Error("Gross Invoice Amount exceeds safe money precision.");
+        await addResult(results, data, "Every time a product invoice is created", "004.010", "211.100",
+            moneyUnits(grossUnits / 10000, 2, "Gross Invoice Amount"), [data.invoice]);
     }
 
     async function handleProductPayment(data, results) {
         if (!sent(data)) return;
         const invoices = data.invoices.filter(invoice => invoiceMatches(invoice, "AP - Product"));
+        if (!invoices.length || await paymentAccount(data.payment) === "231.100") return;
         await addPayment(results, data, "Every time a product invoice is paid", invoices, "211.100");
     }
 
     async function handleCardPurchase(data, results) {
-        if (!sent(data) || await paymentAccount(data.payment) !== "231.100") return;
+        if (!sent(data)) return;
         const invoices = [], accounts = [];
         for (const invoice of data.invoices) {
             if (!invoiceMatches(invoice, "AP - Expenses (Non-Sales Tax)") || !invoice.value(I.noVendorBill)) continue;
             const account = await invoiceAccount(invoice);
             if (account) { invoices.push(invoice); accounts.push(account); }
         }
-        if (!invoices.length) return;
+        if (!invoices.length || await paymentAccount(data.payment) !== "231.100") return;
         const debit = singleAccount(accounts, "Card purchase expense");
         await addPayment(results, data, "Company credit-card purchase with NO vendor bill", invoices, debit, "231.100");
     }
@@ -182,7 +187,7 @@ export function createCategories(client) {
 
     const ids = (record, field) => [...new Set((record.value(field) || []).map(link => link.id))];
     const invoiceMatches = (invoice, vendorType) => invoice.text(I.type) === "AP" && invoice.text(I.vendorType) === vendorType && !invoice.value(I.cancelled);
-    const sent = data => Boolean(data.payment.value(P.sent)) && !data.payment.value(P.cancelled) && !data.payment.value(P.returned);
+    const sent = data => Boolean(data.payment.value(P.sent)) && !data.payment.value(P.cancelled) && data.payment.text(P.recordType) === "Regular Payment";
 
     async function accountNumbers(accountIds) {
         const records = await client.readRecords(T.accounts, accountIds, Object.values(A));
@@ -250,7 +255,6 @@ export function createCategories(client) {
         // shortcut: these invoices receive one full payment; revisit selection if partial payments are introduced.
         const invoices = data.invoices.filter(invoice => invoiceMatches(invoice, vendorType) && invoice.text(I.status) === "Fully Paid");
         if (!invoices.length) return;
-        const credit = await paymentAccount(data.payment);
         for (const invoice of invoices) {
             const lines = await client.readRecords(T.lines, ids(invoice, I.lines), Object.values(L));
             const groups = new Map();
@@ -265,6 +269,8 @@ export function createCategories(client) {
                 if (!Number.isSafeInteger(group.cents)) throw new Error("Account line total exceeds safe money precision.");
                 group.lines.push(line);
             }
+            if (!groups.size) continue;
+            const credit = await paymentAccount(data.payment);
             for (const [account, group] of groups) {
                 await addResult(results, data, name, debit, credit, group.cents, [invoice], { entryKey: invoice.id + ":" + account, branchField, lines: group.lines });
             }

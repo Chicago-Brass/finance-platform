@@ -7,7 +7,7 @@ import { initialState, runLedgerSync } from "./runner.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
 import type { CategoryDefinition, LedgerStore, RunState, RunStore, SyncSource, SyncDateRange } from "./types.ts";
 
-export interface TestOptions { categoryCodes: string[]; maxRecords: number; cursor?: unknown; source?: SyncSource; dateRange?: SyncDateRange }
+export interface TestOptions { categoryCodes: string[]; maxRecords: number; cursor?: unknown; source?: SyncSource; dateRange?: SyncDateRange; createdFrom?: string }
 export interface TestRecord {
   table: string;
   tableId: string;
@@ -22,7 +22,7 @@ export interface TestRecord {
 }
 
 export async function testLedgerSync(client: AirtableClient, options: TestOptions, evaluate = createCategoryEvaluator(client)) {
-  const state = testState(options.cursor, options.categoryCodes, options.source, options.dateRange);
+  const state = testState(options.cursor, options.categoryCodes, options.source, options.dateRange, options.createdFrom);
   const records: TestRecord[] = [];
   // The shared runner can only collect previews with this state; write methods fail closed.
   const noWrites = async (): Promise<never> => { throw new Error("Test mode forbids posting and writeback."); };
@@ -55,7 +55,7 @@ export async function testLedgerSync(client: AirtableClient, options: TestOption
     stats: result.stats, errors: result.errors,
     blockedCategories: result.blockedCategories, deferredCategories: result.deferredCategories,
     airtableRequests: client.requests, databaseWrites: 0, airtableWrites: 0,
-    requestForResume: result.done ? null : { test: true, categoryCodes: options.categoryCodes, maxRecords: options.maxRecords, ...(options.source ? { source: options.source } : {}), ...(options.dateRange ? { fromDate: options.dateRange.from, toDate: options.dateRange.to } : {}), cursor: state },
+    requestForResume: result.done ? null : { test: true, categoryCodes: options.categoryCodes, maxRecords: options.maxRecords, ...(options.createdFrom ? { createdFrom: options.createdFrom } : {}), ...(options.source ? { source: options.source } : {}), ...(options.dateRange ? { fromDate: options.dateRange.from, toDate: options.dateRange.to } : {}), cursor: state },
   };
 }
 
@@ -77,14 +77,14 @@ async function proposedRecords(client: AirtableClient, tableId: string, recordId
   }));
 }
 
-function testState(cursor: unknown, categoryCodes: string[], source?: SyncSource, dateRange?: SyncDateRange): RunState {
-  const initial = initialState(categoryCodes, true, source, dateRange);
+function testState(cursor: unknown, categoryCodes: string[], source?: SyncSource, dateRange?: SyncDateRange, createdFrom?: string): RunState {
+  const initial = initialState(categoryCodes, true, source, dateRange, createdFrom);
   if (cursor === undefined) return initial;
   if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) throw new RangeError("Invalid test cursor.");
   const state = cursor as RunState;
   const ids = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 50_000 && value.every(id => typeof id === "string" && /^rec[A-Za-z0-9]{14}$/.test(id));
   const integer = (value: unknown, max: number) => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max;
-  if (JSON.stringify(state.dateRange ?? null) !== JSON.stringify(initial.dateRange ?? null) || state.dryRun !== true || JSON.stringify(state.source ?? null) !== JSON.stringify(initial.source ?? null) || JSON.stringify(state.categoryIds) !== JSON.stringify(initial.categoryIds)
+  if (state.createdFrom !== initial.createdFrom || JSON.stringify(state.dateRange ?? null) !== JSON.stringify(initial.dateRange ?? null) || state.dryRun !== true || JSON.stringify(state.source ?? null) !== JSON.stringify(initial.source ?? null) || JSON.stringify(state.categoryIds) !== JSON.stringify(initial.categoryIds)
     || !integer(state.categoryIndex, initial.categoryIds.length) || !["related", "discover", "process"].includes(state.phase)
     || !(state.offset === null || typeof state.offset === "string" && state.offset.length <= 2048)
     || !ids(state.relatedIds) || !ids(state.recordIds)

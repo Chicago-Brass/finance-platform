@@ -11,7 +11,8 @@ External/manual call -> ledger-daily -> filtered FIN reads -> category pairs + r
 
 The T-Chart defines category behavior. The sync worker owns current Expense/Invoice Entry
 classification and calculations; the shared writer validates and records the final pairs. Airtable
-owns source data and native reversal requests. No external schedule is active. The frontend reads
+owns source data and native reversal requests. Production runs the private daily dispatcher;
+develop is unscheduled. See [environments](environments.md). The frontend reads
 posted data and never repairs source records.
 
 ## Runtime and source map

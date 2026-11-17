@@ -15,9 +15,12 @@ is also excluded. The FIN checkbox is a review aid and is never queried by the w
 - Two working partials and five red deferred rules are disabled.
 - Three black definitions and five obsolete Invoice Entry definitions are removed from the worker.
   Unreferenced catalog rows are deleted; a referenced historical rule remains inactive/disabled.
-- Payment and Other category switches remain unchanged and disabled.
+- Sixteen complete Payment categories are enabled. Two blocked loan categories
+  remain in code but are disabled. MAN-01 is enabled separately for parent-owned manual journals;
+  unrelated Other rules stay disabled.
 - Six superseded native Expense/Invoice posting automations are OFF. Reversal stays ON.
-- No external scheduler has been activated. Full and single-record sync use the same webhook.
+- Production runs the 11 PM Chicago dispatcher; develop has no cron or production writer secrets.
+  Full and single-record sync use the same webhook. See [environments](../knowledge-base/environments.md).
 
 Disabling rejects a new packet atomically, including a mixed packet with another enabled category.
 Exact replays and dedicated reversals remain available. A newly disabled category is skipped on
@@ -28,9 +31,10 @@ A switch does not cancel an already running transaction.
 categoryCodes to preview a selected scope. The test still enforces source/category filters and
 accounting-date bounds; it cannot confirm database account postability or open periods.
 
-The final catalog migration updates only Expense/Invoice Entry controls and current metadata.
-The seed ends with the same authoritative cleanup. Migration replay does not delete journals or
-change Payment/Other metadata. Raw debit/credit labels match the reviewed workbook; structured
+The current catalog migrations update Expense/Invoice Entry controls and the reordered Payment
+category metadata. The seed retains catalog cleanup defaults. The hosted 46-rule operational selection is captured in
+`supabase/operations/enable-fully-implemented.sql` and must be reapplied after reseeding. Migration replay does not
+delete journals. Retired referenced rules remain disabled for historical reversal. Raw debit/credit labels match the reviewed workbook; structured
 account associations remain available for conformance.
 
 See the [webhook contract](../supabase/functions/ledger-daily/README.md) for source selection,

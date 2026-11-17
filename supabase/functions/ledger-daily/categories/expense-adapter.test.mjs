@@ -26,7 +26,7 @@ function fixture(){
     fldZpOBUbuVJbuaOG:links(ID.invoice),fldwr0Pfp8OHsNj5N:links(account('005.102')),fldkhhHCD2qKD71rI:12.50,
   });
   const payment=put(T.payments,ID.payment,{
-    fld03L3JpNZBLauEC:true,fld0mYG8IMrDaNzdE:'2026-11-10',fldhP2S68pT3XkZmX:-50.25,
+    fld03L3JpNZBLauEC:true,fldRT5cjyYzDUHMmm:{name:'Regular Payment'},fld0mYG8IMrDaNzdE:'2026-11-10',fldhP2S68pT3XkZmX:-50.25,
     fldCIQSOdytBGi91S:links(account('112.100')),fldzPDwsJ1ZT2tVIs:links(ID.invoice),
     fldkoW3MMQEe0Lwm1:'AP',fldJlmVZzUf5tuz0m:'AP - Expenses (Non-Sales Tax)',
     fldxjaur2SnqKmRfN:'Synthetic Payment Reference',

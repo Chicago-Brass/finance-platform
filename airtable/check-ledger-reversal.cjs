@@ -7,6 +7,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const tableId = "tblR61NG9i0giid28", recordId = "rec00000000000001";
 const original = "11111111-1111-4111-8111-111111111111", reversal = "22222222-2222-4222-8222-222222222222";
 const fieldIds = {
+    tblCoBk0WB46B662R: { reverse: "flddPrINXnyy3oyBH", reverseDate: "fld1TFuRQFzFCpl1q", journalIds: "fldZ5cy7agivOFyCv", reversalIds: "fld07eKm90lD9REm0" },
     tblrnXm1HN9y6HPxY: { reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW", journalIds: "fldAnSta5oo9el7xm", reversalIds: "fldDSYAiyS6IjgAA7" },
     tblR61NG9i0giid28: { reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P", journalIds: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
     tbldQXuqNEp8G5pfs: { reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", journalIds: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },

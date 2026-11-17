@@ -5,8 +5,10 @@
 Expense and Invoice Entry posting now use the shared `ledger-daily` webhook. It supports an
 external 11 PM America/Chicago caller, a manual full call, or `source: {tableId, recordId}` for
 one owner. The last-30-days safety window remains, with explicit fromDate/toDate overrides.
-No external scheduler is activated. The 30 full rules are enabled; two partials and five red
-rules are disabled. Three black and five obsolete definitions are excluded.
+Production now schedules 11 PM Chicago with automatic batch continuation. The 46 complete
+T-Chart rules and MAN-01 manual journal rule are enabled; partial/blocked/deferred and unrelated
+Other rules are disabled. See
+[environments](environments.md). Three black and five obsolete definitions are excluded.
 
 The six superseded native posting automations are OFF: Expense Invoice Create Entry,
 Depreciation Created, Pre-pay Amortization Created, Invoice Full Paid, Invoice Entry Invoice
@@ -23,20 +25,21 @@ retained scripts and links, not an alternate current posting path for those two 
 
 The [ledger sync webhook](../supabase/functions/ledger-daily/README.md) contains Payment,
 Expense and Invoice Entry categories for an external/manual caller. It has a global run lock and
-a no-write test mode. It replaces their superseded native posting triggers; no schedule is active.
+a no-write test mode. It replaces their superseded native posting triggers. Airtable automation
+URLs remain production URLs; development must not write FIN posting metadata.
 
-Reversal uses the same `airtable/ledger-reversal.js` in six ON checkbox automations:
-Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table and Shipping Records. It stamps a blank
+Reversal uses the same `airtable/ledger-reversal.js` in seven ON checkbox automations:
+Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table, Shipping Records and Direct Journal Entries (Cancel Entry). It stamps a blank
 manual Reverse Date once, then sends only `{source: {tableId, recordId}, reversalDate}` to the
 separate `ledger-reversal` endpoint. It does not read or rewrite cached journal IDs. Unchecking
 does nothing; restoration remains deferred. See the [reversal guide](../docs/ledger-reversal.md)
-for field maps and all six automation links.
+for field maps and the automation links.
 
 Posting/reversal receivers maintain `Ledger Postings` objects `{rule,key,datetime,id}` and both
 original/reversal ID arrays on the exact owning source record. They use server-only `AIRTABLE_PAT`,
 share the source lock and independently read back Airtable after metadata writes. Original
 posting markers remain after reversal. The daily worker uses this same writeback contract;
-no daily cron is enabled.
+production-only daily dispatch is enabled.
 
 On 12 November 2026, `ledger-payment` v20, `ledger-reversal` v8, `ledger-periods` v3
 (JWT verification enabled) and `ledger-daily` v12 were published; 42 downloaded runtime modules
@@ -73,7 +76,11 @@ interfaces can be synced/filtered mirrors. Scripts read native FIN records, not 
 The updated Expense worker uses source-owned invoice, invoice-line, payment and log rules.
 See the [current Expense implementation](../docs/expense-audit.md) for its 26-code registry and
 account mappings. The native automation inventory below describes retained older senders. Current
-Invoice Entry rules are documented separately; Payment rules remain disabled and await review.
+Invoice Entry rules are documented separately. Current Payment implementation is in the
+[Payment category matrix](../docs/ledger-payment-category-matrix.md): 18 retained source-owned
+rules replace the old Sent/Cancelled/Reconciled routing. Eleven fully implemented Payment switches
+are enabled; two working overlaps and five blocked partials are disabled. The native posting senders below
+remain OFF; only source-owned reversal automations remain active.
 
 ## Retained native automation and source map
 
@@ -123,16 +130,13 @@ Field constants use IDs with readable comments. Recheck live field ownership/typ
 - Each invoice's Linked Chart of Accounts identifies one account. Each invoice line also has one
   account; an invoice can contain several lines with different accounts. Sum matching line amounts
   by account and create one journal per account. Invoice-amount categories use the full invoice amount.
-- Payment row 20 requires different payment-linked and invoice-linked bank account IDs. The saved
-  ON native sender was verified after reload; the local daily worker includes the same filter.
-- Use Payments.Invoice Type and Vendor Type; multiple distinct vendor types fail.
-- Blank first shipment or Payment Date on/before first shipment is deposit; later means settlement.
-  The source is Invoices.First Ship Out Date (from Linked Transaction); no Clear to Purchase filter.
-- Sent + Return Payment (AP) owns the AP-return path; outgoing vendor-bank payments exclude returns.
-- PAY-04 uses 0 < Overpaid Amount <= 1 per payment or 0 < verified Invoice Remaining Balance <= 5 once per invoice. Both use Dr 007.002 / Cr 121.100.
-- Invoice-owned settlement handlers use Payment Invoice Status = Fully Paid. PAY-11 reads actual
-  applied credits; PAY-27 uses Purchased Discounts & Rebate Total. Ownership remains the invoice.
-- Invoice Create Entry uses Invoice Date. Return entries use Payment Date.
+- Payment categories are owned by the Invoice, Invoice Line or Payment specified in the chart.
+  Row 8 vendor credits are payment-owned; rows 7/19 discounts/rebates are line-owned.
+- Payment rows 3/4/8/11 negate their designated source amounts by explicit approval. Other
+  functioning Payment rows preserve their signed source amounts.
+- Payment row 9 handles only Sent AP returns. No new cancellation or reconciliation posting
+  route is registered. Reverse Ledger remains a separate explicit action.
+- CC batch mini-payment invoices provide branch/reference context, not extra filters.
 - Expense row 12 / EXP-11 posts Invoice Amount once, debit 007.002 and credit the bank on Linked
   Payments -> Account to Pay/Receive. FIN 112.100 maps to 112.100; FIN 0747 maps to 112.300. All
   payments must identify the same supported bank. Missing/mixed banks fail; no Sent filter or
@@ -143,7 +147,6 @@ Field constants use IDs with readable comments. Recheck live field ownership/typ
 
 | Handler | Unresolved mapping or restriction |
 | --- | --- |
-| PAY-10 | Discount credit account scope/split |
 | PAY-15 | Working salary/payroll-tax/401k liability groups; wire/FX fees and benefits excluded |
 | PAY-23 | Bank/recovery component split and account mapping |
 | PAY-14 | Deferred payroll category |
@@ -185,5 +188,13 @@ separate and credits its single invoice-linked account. The deposit pair is AR /
 invoicing, then selected payment account / AR on payment. Payments post their full signed amount.
 Shipping sums linked MTA Extended Sell Price, without a deposit cap yet. Asset rules currently
 qualify 143.300 and exclude prepaid invoices. See [Invoice Entry rules](../docs/invoice-entry-audit.md)
-for current rows, source fields, deferred rows and deployment limits. No daily scheduler or native
+for current rows, source fields, deferred rows and deployment limits. At the time of that historical review, no daily scheduler or native
 posting cutover is activated by this revision.
+
+## Direct manual journals
+
+Approved Direct Journal Entries are posted by MAN-01 in the shared daily webhook, one journal
+per parent with all its Journal Lines. [Manual Journal | Cancel Entry](https://airtable.com/app0Q1UMEdUeWl538/wfl7tuVmVFiIqk0dt/wacrRJYNIu8ZkFRSl)
+is the parent-owned reversal automation, using Cancel Entry and the existing production endpoint.
+Ordinary T-Charts exclude manual-linked invoices and their whole payments.
+See [the manual journal contract](../docs/manual-journals.md).

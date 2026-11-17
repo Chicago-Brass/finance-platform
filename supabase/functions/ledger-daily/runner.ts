@@ -1,17 +1,17 @@
 import { inSyncDateRange } from "./scope.ts";
 import { AirtableClient } from "./airtable.ts";
 import { CATEGORIES, DEFERRED_CATEGORIES, candidateFormula, and, or } from "./queries.ts";
-import { POSTING_FIELDS, paymentSentFields, paymentEventsFields } from "./definitions.ts";
+import { POSTING_FIELDS, paymentSentFields, paymentEventsFields, MANUAL_TABLE, MANUAL_FIELDS, INVOICE_MANUAL_FIELD } from "./definitions.ts";
 import { createCategoryEvaluator, sourceFields } from "./categories/index.ts";
 import { writeBack } from "./writeback.ts";
 import { BudgetExceeded, retry } from "./retry.ts";
 import type { LedgerStore, RunState, RunStore, CategoryDefinition, SyncSource, SyncDateRange } from "./types.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
 
-export function initialState(categoryCodes: string[], dryRun: boolean, source?: SyncSource, dateRange?: SyncDateRange): RunState {
+export function initialState(categoryCodes: string[], dryRun: boolean, source?: SyncSource, dateRange?: SyncDateRange, createdFrom?: string): RunState {
   const unknown = categoryCodes.filter(code => !CATEGORIES.some(c => c.code === code));
   if (unknown.length) throw new Error(`Unknown ledger categories: ${unknown.join(", ")}.`);
-  return { dryRun, ...(source ? { source } : {}), ...(dateRange ? { dateRange } : {}), categoryIds: CATEGORIES.filter(c => (!source || c.tableId === source.tableId) && (categoryCodes.length ? categoryCodes.includes(c.code) : c.status !== "deferred")).map(c => c.id), categoryIndex: 0, phase: "related", offset: null, relatedIds: [], relatedIndex: 0, recordIds: [], recordIndex: 0,
+  return { dryRun, ...(createdFrom ? { createdFrom } : {}), ...(source ? { source } : {}), ...(dateRange ? { dateRange } : {}), categoryIds: CATEGORIES.filter(c => (!source || c.tableId === source.tableId) && (categoryCodes.length ? categoryCodes.includes(c.code) : c.status !== "deferred")).map(c => c.id), categoryIndex: 0, phase: "related", offset: null, relatedIds: [], relatedIndex: 0, recordIds: [], recordIndex: 0,
     stats: { candidates: 0, processed: 0, matched: 0, posted: 0, existing: 0, zero: 0, errors: 0 }, errors: [], done: false };
 }
 
@@ -49,11 +49,12 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
         recordError(state, category, "", "Not yet implemented: category filters and mapping are deferred.");
         advanceCategory(state); await runs.save(job); continue;
       }
+      // Fresh creation-bounded runs query owners first; preserve an existing related snapshot on resume.
+      const related = !state.source && (!state.createdFrom || state.relatedIds.length > 0 || (state.phase === "related" && state.offset !== null)) ? category.related : undefined;
       if (state.phase === "related") {
-        // A named source goes straight to its own query; the handler checks its linked records.
-        const related = state.source ? undefined : category.related;
         if (related) {
-          const page = await client.queryRecords(related.tableId, related.filter(client), [related.linksFieldId], state.offset);
+          const relatedFilter = and(related.filter(client), related.tableId === paymentSentFields.TABLES.invoices ? `LEN(${client.field(related.tableId, INVOICE_MANUAL_FIELD)}&"")=0` : "");
+          const page = await client.queryRecords(related.tableId, relatedFilter, [related.linksFieldId], state.offset);
           let ids = [...new Set<string>(page.records.flatMap(record => (record.value(related.linksFieldId) || []).map((link: { id: string }) => link.id)))];
           if (related.through && ids.length) {
             const parents = await client.readRecords(related.through.tableId, ids, [related.through.linksFieldId]);
@@ -67,12 +68,12 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
       }
       if (state.phase === "discover") {
         const linked = state.relatedIds.slice(state.relatedIndex, state.relatedIndex + 40);
-        if (category.related && !state.source && !linked.length) { state.phase = "process"; await runs.save(job); continue; }
-        const formula = and(candidateFormula(category, client), state.source ? `RECORD_ID()=${JSON.stringify(state.source.recordId)}` : "");
-        const page = await client.queryIds(category.tableId, category.related && !state.source ? and(formula, or(...linked.map(id => `RECORD_ID()=${JSON.stringify(id)}`))) : formula, state.offset);
+        if (related && !linked.length) { state.phase = "process"; await runs.save(job); continue; }
+        const formula = and(candidateFormula(category, client, state.createdFrom), state.source ? `RECORD_ID()=${JSON.stringify(state.source.recordId)}` : "");
+        const page = await client.queryIds(category.tableId, related ? and(formula, or(...linked.map(id => `RECORD_ID()=${JSON.stringify(id)}`))) : formula, state.offset);
         state.recordIds.push(...page.ids); state.offset = page.offset; state.stats.candidates += page.ids.length;
-        if (category.related && !state.source && !page.offset) state.relatedIndex += linked.length;
-        if (!page.offset && (state.source || !category.related || state.relatedIndex >= state.relatedIds.length)) { state.recordIds = [...new Set(state.recordIds)]; state.phase = "process"; }
+        if (related && !page.offset) state.relatedIndex += linked.length;
+        if (!page.offset && (!related || state.relatedIndex >= state.relatedIds.length)) { state.recordIds = [...new Set(state.recordIds)]; state.phase = "process"; }
         await runs.save(job); continue;
       }
       if (category.status === "blocked" && state.phase === "process") {
@@ -97,7 +98,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
         // Snapshot eligibility can change while another category is being processed.
         const cancelled = category.tableId === paymentSentFields.TABLES.invoices ? source.value(POSTING_FIELDS.tbldQXuqNEp8G5pfs.cancelled) : category.eventType === "sent" && source.value(paymentEventsFields.PAYMENT_FIELDS.cancelled);
         const unsent = category.tableId === paymentSentFields.TABLES.payments && category.eventType === "sent" && !source.value(paymentSentFields.PAYMENT_FIELDS.sent);
-        if (cancelled || unsent || (control && (source.value(control.reverse) || source.value(control.reverseDate)))) {
+        if (cancelled || unsent || (category.tableId === MANUAL_TABLE && source.value(MANUAL_FIELDS.posted)) || (control && (source.value(control.reverse) || source.value(control.reverseDate)))) {
           log("Skipped cancelled/reversed source", { category: category.code, recordId });
         } else if (await ledger.hasReversals(category.tableId, recordId)) {
           throw new Error("Source has historical reversals; restoration is not implemented.");

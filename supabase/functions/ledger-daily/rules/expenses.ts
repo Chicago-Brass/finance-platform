@@ -51,7 +51,7 @@ export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
     lineEntry("EXP-13", "Income-tax invoice", taxAccounts, expenseInvoice),
     expense("EXP-14", "Operating expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(expenseInvoice(q), operatingAccounts(q), q.eq(T.invoices, I.noVendorBill, 0))) }),
     expense("EXP-15", "Product invoice", T.invoices, q => invoiceType(q, "AP - Product")),
-    expense("EXP-16", "Product payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => invoiceType(q, "AP - Product")) }),
+    expense("EXP-16", "Product payment", T.payments, q => and(q.eq(T.payments, P.sent, 1), `NOT(${q.includes(T.payments, P.accounts, "231.100")})`), { related: fromInvoices(q => invoiceType(q, "AP - Product")) }),
     expense("EXP-17", "Prepaid expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(prepaidInvoice(q), q.eq(T.invoices, I.status, "Fully Paid"))) }),
     linePayment("EXP-18", "Tech allowance payment", ["005.102"]),
     linePayment("EXP-19", "W2, owner and 1099 payroll payment", w2Accounts),

@@ -1,8 +1,11 @@
 // Stable FIN table/field IDs. Field names for filterByFormula are resolved from the live schema.
 export { FIN_BASE } from "../_shared/ledger-links.ts";
 import { LINK_FIELDS } from "../_shared/ledger-links.ts";
+import { MANUAL_TABLE, MANUAL_FIELDS, INVOICE_MANUAL_FIELD } from "../_shared/manual-journal.ts";
+export { MANUAL_TABLE, MANUAL_FIELDS, MANUAL_LINE_TABLE, MANUAL_LINE_FIELDS, INVOICE_MANUAL_FIELD } from "../_shared/manual-journal.ts";
 
 export const POSTING_FIELDS = {
+  [MANUAL_TABLE]: { postings: MANUAL_FIELDS.postings, ids: MANUAL_FIELDS.ids, reverse: MANUAL_FIELDS.cancelled, reverseDate: MANUAL_FIELDS.reverseDate },
   tblrnXm1HN9y6HPxY: { postings: LINK_FIELDS.tblrnXm1HN9y6HPxY.postings, ids: LINK_FIELDS.tblrnXm1HN9y6HPxY.ids, reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW" },
   tblR61NG9i0giid28: { postings: LINK_FIELDS.tblR61NG9i0giid28.postings, ids: LINK_FIELDS.tblR61NG9i0giid28.ids, reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P" },
   tbldQXuqNEp8G5pfs: { postings: LINK_FIELDS.tbldQXuqNEp8G5pfs.postings, ids: LINK_FIELDS.tbldQXuqNEp8G5pfs.ids, reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq", cancelled: "fldbovm1ab4HOZDBe" },
@@ -225,14 +228,14 @@ export const prepayFields = {
 // Current Expense chart entry points. Native automation field groups above remain unchanged.
 export const expenseWorkerFields = {
   TABLES: { ...expenseFields.TABLES, payments: paymentSentFields.TABLES.payments, prepay: prepayFields.TABLE, depreciation: depreciationFields.TABLE },
-  INVOICE_FIELDS: { ...expenseFields.INVOICE_FIELDS, status: "fld2YNpvvqweloE6S", cancelled: "fldbovm1ab4HOZDBe", prepayLogs: "fldINdIcixfdPbgw0", noVendorBill: "fldYZBfXWpNCWd0sg" },
+  INVOICE_FIELDS: { ...expenseFields.INVOICE_FIELDS, manualJournals: INVOICE_MANUAL_FIELD, discountTotal: "fldsPglrh1E185nU4", status: "fld2YNpvvqweloE6S", cancelled: "fldbovm1ab4HOZDBe", prepayLogs: "fldINdIcixfdPbgw0", noVendorBill: "fldYZBfXWpNCWd0sg" },
   LINE_FIELDS: { ...expenseFields.LINE_FIELDS, status: "fldmIVFZRPfKf0QoX", vendorType: "fldflW5cKyjNYB0SJ" },
   PAYMENT_FIELDS: {
     name: paymentSentFields.PAYMENT_FIELDS.name, amount: paymentSentFields.PAYMENT_FIELDS.amount,
     reference: paymentSentFields.PAYMENT_FIELDS.reference, date: paymentSentFields.PAYMENT_FIELDS.date,
     sent: paymentSentFields.PAYMENT_FIELDS.sent, accounts: paymentSentFields.PAYMENT_FIELDS.accounts,
     invoices: paymentSentFields.PAYMENT_FIELDS.invoices, cancelled: paymentEventsFields.PAYMENT_FIELDS.cancelled,
-    returned: paymentSentFields.PAYMENT_FIELDS.returned,
+    recordType: paymentSentFields.PAYMENT_FIELDS.recordType,
   },
   PREPAY_FIELDS: { ...prepayFields.FIELDS, cancelled: "fldtR0eFChr1XDIoN" },
   DEPRECIATION_FIELDS: depreciationFields.FIELDS,
@@ -244,6 +247,7 @@ export const invoiceWorkerFields = {
   TABLES: { invoices: paymentSentFields.TABLES.invoices, accounts: paymentSentFields.TABLES.accounts, payments: paymentSentFields.TABLES.payments,
     shipping: "tblrnXm1HN9y6HPxY", mtas: "tblDhJAJFVYBQ4plD", transactions: "tblKAChQnBIblK2gS" },
   INVOICE_FIELDS: {
+    manualJournals: INVOICE_MANUAL_FIELD,
     type: "fld9e6yDIv0PtBDV0", vendorTypeAP: "fldXwodwAuXLJt5rP", vendorTypeAR: "fldbMLaxgnu81a0O0",
     kind: "fld11boAS4dCyyuZW", cancelled: "fldbovm1ab4HOZDBe", prepaid: "fldckuYNfSzBXq0AX",
     amount: "fldm5nXoW7MrwjkhW", paymentProportion: "fld9UHq6aOrCVzmwL", date: "fldSungTQU5nIEIvi", accounts: "fldT5u0prSS8G1H4x",
@@ -256,5 +260,18 @@ export const invoiceWorkerFields = {
     mtas: "fldkAdTo7X05U5HuJ", transactions: "fldOG66uC3CWkKSAO" },
   TRANSACTION_FIELDS: { invoices: "fldm8qyxxm7LQMvuB" },
   MTA_FIELDS: { amount: "fldfkUx44zs8bTvB2", branch: "fldio1eQK3rm26DJW", states: "fldUDSoJo5Iu3Yx1G" },
+  ACCOUNT_FIELDS: paymentSentFields.ACCOUNT_FIELDS,
+} as const;
+
+// Payment categories use their actual owning invoice, line or payment as the source.
+export const paymentWorkerFields = {
+  TABLES: paymentSentFields.TABLES,
+  INVOICE_FIELDS: { ...invoiceWorkerFields.INVOICE_FIELDS,
+    lines: paymentSentFields.INVOICE_FIELDS.lines, status: paymentSentFields.INVOICE_FIELDS.paymentStatus, application: paymentSentFields.INVOICE_FIELDS.application,
+    creditsApplied: paymentSentFields.INVOICE_FIELDS.creditsApplied, sourceCredits: paymentSentFields.INVOICE_FIELDS.sourceCredits,
+    creditAvailable: "fldREWnrJBr5DqkBB", loan: "fldb10Ii6QnjYHTId" },
+  PAYMENT_FIELDS: { ...expenseWorkerFields.PAYMENT_FIELDS, type: paymentSentFields.PAYMENT_FIELDS.type,
+    miniPayments: paymentSentFields.PAYMENT_FIELDS.miniPayments },
+  LINE_FIELDS: paymentSentFields.LINE_FIELDS,
   ACCOUNT_FIELDS: paymentSentFields.ACCOUNT_FIELDS,
 } as const;

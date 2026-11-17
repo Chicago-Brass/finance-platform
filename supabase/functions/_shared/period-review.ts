@@ -1,5 +1,6 @@
 import type { TransactionSql, JSONValue } from "npm:postgres@3.4.9";
 import { PostingError } from "../ledger-payment/errors.ts";
+import { MANUAL_TABLE } from "./manual-journal.ts";
 
 export interface ReviewSource {
   tableId: string;
@@ -24,7 +25,9 @@ export async function lockLedgerSource(
   source: ReviewSource,
 ) {
   const prefix =
-    source.tableId === "tblR61NG9i0giid28"
+    source.tableId === MANUAL_TABLE
+      ? "FIN manual journal:"
+      : source.tableId === "tblR61NG9i0giid28"
       ? "FIN payment:"
       : source.tableId === "tblV26TC0f6CKDneL"
         ? "FIN invoice line:"

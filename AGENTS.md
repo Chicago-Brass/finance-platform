@@ -31,14 +31,27 @@ architecture, data contracts and operating guidance; do not add chat summaries o
    or database credential to browser code.
 
 The sync webhook uses a global run lock, resumable batches and the existing shared secret.
-The external scheduler is not activated. Fully implemented Expense/Invoice Entry rules are
-on; partials, deferred rules and Payment/Other rules remain off. Superseded native posting
-senders are off; six source-owned reversal automations are on. Read the worker README and
-[category controls](docs/category-enablement.md) before changing deployment or enablement.
+Production Supabase main (`inzobaubbikyiekcfarj`) runs the daily 11 PM America/Chicago job.
+The production cron selects accounting dates from November 17, 2026 through its Chicago day,
+and only owning records created on/after November 17, 2026 midnight America/Chicago. Existing
+checkpoints retain their original dates. Manual API calls can omit the creation floor and override
+accounting dates to process older records.
+The 46 fully implemented T-Chart rules and MAN-01 manual journal rule are enabled; partial,
+blocked, deferred and unrelated Other rules are off.
+Superseded native posting senders are off; seven source-owned reversal automations remain on and
+point to production. Local development uses persistent Supabase develop (`vaaykmqshkuunewjrxuy`),
+not the production database. Never copy production FIN writeback credentials or schedules there.
+Read [environments](knowledge-base/environments.md) for local configuration, Auth separation,
+production-only scheduling and the current two-month testing period. Check the actual target
+before tests or resets; an explicitly requested production test is different from local development.
 
 Follow the T-Chart's official trigger, debit and credit mappings. A matched unresolved category
 must throw `Not yet implemented` before prepared data is sent. Do not add unstated conditions,
 reverse earlier entries automatically or retrofit source records to make a test pass.
+
+Manual journals use the parent Direct Journal Entry, all linked Journal Lines, Date Approved and
+parent Branch. Its Cancel Entry checkbox reverses the whole journal. Ordinary T-Charts exclude
+manual-linked invoices and skip their whole payments. See [manual journals](docs/manual-journals.md).
 
 The writer uses parameterized direct SQL. Existing database guards, period checks, read RPCs and
 legacy posting/reversal functions remain unless their removal is explicitly authorized.

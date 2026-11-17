@@ -14,7 +14,7 @@ const posting = amount => ({ debitAccount: { number: "211.100" }, creditAccount:
 const event = (recordId, amounts = ["10.00"], invoice = false) => ({
   ...(invoice ? { invoiceRecordId: recordId } : { paymentRecordId: recordId }),
   eventType: invoice ? "entry_requested" : "sent", entryDate: "2026-10-29",
-  categories: amounts.map((amount, i) => ({ ruleCode: "PAY-07", entryKey: String(i), transactionType: "Reversal test", postings: [posting(amount)] })),
+  categories: amounts.map((amount, i) => ({ ruleCode: "PAY-09", entryKey: String(i), transactionType: "Reversal test", postings: [posting(amount)] })),
 });
 const request = (recordId, invoice = false, journalEntryIds = []) => ({ source: { tableId: invoice ? INVOICES : PAYMENTS, recordId }, journalEntryIds, reversalDate: "2026-11-09" });
 const journals = recordId => sql`select * from public.journal_entries where source_record_id=${recordId} order by entry_number`;
@@ -79,7 +79,7 @@ test("invoice reversal stays invoice-owned and does not touch linked payment jou
 test("mixed completed and pending reversals return the complete ID set", async () => {
   const recordId = id(9005); await postPayment(sql, event(recordId));
   await reverseJournals(sql, request(recordId));
-  const anotherEvent = event(recordId, ["2.00"]); anotherEvent.eventType = "reconciled"; anotherEvent.categories[0].ruleCode = "PAY-26";
+  const anotherEvent = event(recordId, ["2.00"]); anotherEvent.eventType = "reconciled"; anotherEvent.categories[0].ruleCode = "PAY-13";
   await postPayment(sql, anotherEvent);
   const result = await reverseJournals(sql, request(recordId));
   assert.equal(result.reversedCount, 1); assert.equal(result.duplicateCount, 1);
@@ -167,19 +167,19 @@ test("closed periods retain pending reversals and nonreversible rules stay prote
   await sql`insert into public.accounting_periods (period_month,status) values ('2098-01-01','closed') on conflict(period_month) do update set status='closed'`;
   assert.equal((await reverseJournals(sql,blocked)).status,"pending_review");
   assert.equal((await journals(recordId)).length, 2);
-  const [rule] = await sql`select reversible from public.ledger_rules where rule_code='PAY-07'`;
-  await sql`update public.ledger_rules set reversible=false where rule_code='PAY-07'`;
+  const [rule] = await sql`select reversible from public.ledger_rules where rule_code='PAY-09'`;
+  await sql`update public.ledger_rules set reversible=false where rule_code='PAY-09'`;
   try {
     await assert.rejects(reverseJournals(sql, request(recordId)), /reversible/);
     assert.equal((await journals(recordId)).length, 2);
   } finally {
-    await sql`update public.ledger_rules set reversible=${rule.reversible} where rule_code='PAY-07'`;
+    await sql`update public.ledger_rules set reversible=${rule.reversible} where rule_code='PAY-09'`;
   }
 });
 
 test("a blocked later journal rolls back an earlier reversal in the same request", async () => {
   const recordId = id(9009), value = event(recordId, ["1.00", "2.00"]);
-  value.categories[1].ruleCode = "PAY-26";
+  value.categories[1].ruleCode = "PAY-13";
   await postPayment(sql, value);
   const rows = await sql`select rule_code from public.journal_entries where source_record_id=${recordId} order by id`;
   const blockedRule = rows.at(-1).rule_code;

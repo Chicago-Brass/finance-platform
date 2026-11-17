@@ -7,6 +7,7 @@ import { AirtableClient } from "./airtable.ts";
 import { DatabaseLedgerStore, DatabaseRunStore, enabledRuleCodes } from "./store.ts";
 import { testLedgerSync } from "./test-mode.ts";
 import { runLedgerSync } from "./runner.ts";
+import { inDatabaseRegion } from "../_shared/database-region.ts";
 
 const environment = {
   databaseUrl: Deno.env.get("SUPABASE_DB_URL") ?? "",
@@ -14,7 +15,8 @@ const environment = {
   airtableToken: Deno.env.get("AIRTABLE_PAT") ?? "",
 };
 let sql: ReturnType<typeof postgres> | undefined;
-Deno.serve(request => handleDailyRequest(request, environment, async ({ runKey, state, maxRecords }) => {
+const region = { projectUrl: Deno.env.get("SUPABASE_URL") ?? "", executionRegion: Deno.env.get("SB_REGION") ?? "", webhookSecret: environment.webhookSecret };
+Deno.serve(request => inDatabaseRegion(request, "ledger-daily", region, request => handleDailyRequest(request, environment, async ({ runKey, state, maxRecords }) => {
   sql ??= postgres(environment.databaseUrl, { prepare: false, max: 1, idle_timeout: 20, connect_timeout: 10, ssl: { rejectUnauthorized: true } });
   const deadline = Date.now() + 90_000;
   const client = new AirtableClient(environment.airtableToken, deadline, fetch, { dateRange: state.dateRange });
@@ -33,4 +35,4 @@ Deno.serve(request => handleDailyRequest(request, environment, async ({ runKey, 
     sql ??= postgres(environment.databaseUrl, {prepare:false,max:1,idle_timeout:20,connect_timeout:10,ssl:{rejectUnauthorized:true}});
     return readDepositBalance(sql, id);
   }));
-}));
+})));

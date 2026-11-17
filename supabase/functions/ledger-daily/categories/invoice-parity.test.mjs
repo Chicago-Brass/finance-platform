@@ -18,7 +18,7 @@ function fixture(){
  const rows=new Map();const put=(t,n,f)=>{const r=new Record(t,n,f);rows.set(t+'/'+n,r);return r;};
  let next=10;const account=code=>{const a=id(next++);put(T.accounts,a,{[A.number]:code});return a;};
  const invoice=put(T.invoices,id(1),{[I.type]:{name:'AR'},[I.kind]:{name:'Deposit Invoice'},[I.vendorTypeAR]:{name:'AR - Product'},[I.amount]:-123.45,[I.paymentProportion]:1,[I.date]:'2026-11-01',[I.branch]:{name:'Chicago'},[I.clients]:links(id(9)),[I.accounts]:links(account('004.002'))});
- const payment=put(T.payments,id(2),{[P.sent]:true,[P.amount]:-60.25,[P.date]:'2026-11-02',[P.invoices]:links(invoice.id),[P.accounts]:links(account('0747')),[P.reference]:'Synthetic payment'});
+ const payment=put(T.payments,id(2),{[P.sent]:true,[P.recordType]:{name:'Regular Payment'},[P.amount]:-60.25,[P.date]:'2026-11-02',[P.invoices]:links(invoice.id),[P.accounts]:links(account('0747')),[P.reference]:'Synthetic payment'});
  const mta=put(T.mtas,id(3),{[M.amount]:10.005,[M.branch]:[{name:'Chicago'}],[M.states]:links(id(8))});
  const mta2=put(T.mtas,id(4),{[M.amount]:10.005,[M.branch]:[{name:'Chicago'}]});
  const shipping=put(T.shipping,id(5),{[S.shipped]:true,[S.date]:'2026-11-03T06:00:00Z',[S.mtas]:links(mta.id,mta2.id),[S.transactions]:links(id(7))});
@@ -88,7 +88,16 @@ test('filters reject unsent, canceled, wrong kinds and unrelated asset accounts'
 test('non-product credit is dynamic, multiple accounts fail and full payment is never allocated',async()=>{
  const f=fixture();f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};f.invoice.fields[I.accounts]=links(f.account('010.003'));assert.equal((await f.evaluate('INV-10')).categories[0].postings[0].creditAccount.number,'010.003');
  f.invoice.fields[I.accounts].push(...links(f.account('004.002')));await assert.rejects(()=>f.evaluate('INV-10'),/exactly one/);
+ f.invoice.fields[I.accounts]=links(f.account('010.003'));
  f.payment.fields[P.invoices].push(...links(f.put(T.invoices,id(6),{...f.invoice.fields}).id));const p=await f.evaluate('INV-18');assert.equal(p.categories[0].postings.length,1);assert.equal(p.categories[0].postings[0].amount,'-60.25');
+});
+test('cashback invoices and their payments are excluded from generic non-product entries',async()=>{
+ const f=fixture();f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};f.invoice.fields[I.accounts]=links(f.account('004.011'));
+ assert.equal(await f.evaluate('INV-10'),null);assert.equal(await f.evaluate('INV-18'),null);
+ const q={field:(_t,id)=>'{'+id+'}',eq:(_t,id,v)=>'{'+id+'}='+JSON.stringify(v),includes:(_t,id,v)=>'FIND('+JSON.stringify(v)+',{'+id+'})>0'};
+ assert(INVOICE_CATEGORIES.find(c=>c.code==='INV-10').filter(q).includes('NOT(FIND("004.011"'));
+ assert(INVOICE_CATEGORIES.find(c=>c.code==='INV-18').related.filter(q).includes('NOT(FIND("004.011"'));
+ f.invoice.fields[I.accounts]=links(f.account('004.002'));assert(await f.evaluate('INV-10'));assert(await f.evaluate('INV-18'));
 });
 test('mixed deposit and balance payment allocates the current payment once',async()=>{
  const f=fixture();f.payment.fields[P.amount]=2043;f.invoice.fields[I.amount]=1883;f.invoice.fields[I.paymentProportion]=1883/2043;

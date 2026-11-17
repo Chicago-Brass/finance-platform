@@ -11,6 +11,10 @@ const DEFAULTS = {
 };
 
 export function supabaseConfig() {
+  if (process.env.NODE_ENV === "development" &&
+      (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) {
+    throw new Error("Configure the develop Supabase branch in .env.development.local before running localhost.");
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULTS.url;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || DEFAULTS.key;
   return { url, key };

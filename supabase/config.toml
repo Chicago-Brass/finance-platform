@@ -7,7 +7,7 @@ verify_jwt = false # The function authenticates Airtable's x-ledger-secret.
 verify_jwt = false # Dedicated endpoint using the same x-ledger-secret authentication.
 
 [functions.ledger-daily]
-verify_jwt = false # Authenticated by the existing ledger secret. No cron is enabled.
+verify_jwt = false # Existing ledger secret; scheduling is managed by the production dispatcher.
 
 [functions.ledger-periods]
 verify_jwt = true # User JWT plus live app_users.can_manage_periods, never the webhook secret.

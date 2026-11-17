@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {expenseWorkerFields as F} from '../definitions.ts';
+import {expenseWorkerFields as F,paymentWorkerFields as PF} from '../definitions.ts';
 import {createCategories} from './expenses.js';
 import {OPERATING_EXPENSE_ACCOUNTS,OPERATING_EXPENSE_ACCOUNT_MAPPING} from '../rules/expense-accounts.ts';
 import {createCategoryEvaluator,sourceFields} from './index.ts';
@@ -26,7 +26,7 @@ function fixture({vendor='AP - Expenses (Non-Sales Tax)',account='006.002',bank=
   [I.transactions]:links('transaction'),[I.purchaseOrders]:links('po'),[I.states]:[{id:'state',name:'Illinois'}],
  },'Synthetic Invoice');
  const payment=put(T.payments,PAYMENT,{
-  [P.sent]:true,[P.amount]:amount,[P.date]:'2026-06-03',[P.invoices]:links(INVOICE),[P.accounts]:links(accountId(bank)),
+  [P.sent]:true,[P.recordType]:{name:'Regular Payment'},[P.amount]:amount,[P.date]:'2026-06-03',[P.invoices]:links(INVOICE),[P.accounts]:links(accountId(bank)),
   [P.reference]:'Synthetic Payment Ref',
  },'Synthetic Payment');
  const line=(id,code,value)=>{
@@ -115,6 +115,23 @@ test('card expense checks this payment account without requiring Fully Paid',asy
  assert.equal(postings(await f.evaluate('EXP-02',PAYMENT)).length,0);
 });
 
+test('product bank and credit-card payments post through separate categories',async()=>{
+ const q={field:(_t,f)=>`{${f}}`,eq:(_t,f,v)=>`{${f}}=${JSON.stringify(v)}`,includes:(_t,f,v)=>`FIND(${JSON.stringify(v)},{${f}})>0`};
+ const expense=CATEGORIES.find(c=>c.code==='EXP-16'),card=CATEGORIES.find(c=>c.code==='PAY-08');
+ assert.equal(card.status,'implemented');
+ assert(expense.filter(q).includes(`NOT(${q.includes(T.payments,P.accounts,'231.100')})`));
+ assert(card.filter(q).includes(q.includes(T.payments,P.accounts,'231.100')));
+ for(const bank of ['112.100','0747','112.200','231.100']){
+  const f=fixture({vendor:'AP - Product',bank,amount:125.25}),evaluate=createCategoryEvaluator(f.client);
+  const regular=await evaluate(expense,f.payment),creditCard=await evaluate(card,f.payment);
+  assert.equal(!!regular,bank!=='231.100',bank);
+  assert.equal(!!creditCard,bank==='231.100',bank);
+  const packet=regular??creditCard,p=packet.categories[0].postings[0];
+  assert.deepEqual([p.debitAccount.number,p.creditAccount.number,p.amount],['211.100',bank,'125.25']);
+  assert.equal(packet.paymentRecordId,PAYMENT);
+ }
+});
+
 test('one Payment Amount is emitted once when several matching invoices are linked',async()=>{
  const f=fixture({amount:125});const second='rec'+'J'.repeat(14);
  f.put(T.invoices,second,{...f.invoice.fields,[I.amount]:-250},'Second Synthetic Invoice');
@@ -122,6 +139,17 @@ test('one Payment Amount is emitted once when several matching invoices are link
  const result=await f.evaluate('EXP-14',PAYMENT),actual=postings(result);
  assert.deepEqual(actual.map(pair),[['211.100','112.100',125]]);
  assert.deepEqual([...actual[0].invoiceRecordIds].sort(),[INVOICE,second].sort());
+});
+
+test('unrelated owner-first payments do not require a bank before category qualification',async()=>{
+ for(const code of ['EXP-16','EXP-02','EXP-18','EXP-19','EXP-20','EXP-21','EXP-26']){
+  const f=fixture({vendor:code==='EXP-26'?'AP - Expenses (Non-Sales Tax)':'AP - Staff'});
+  f.payment.fields[P.accounts]=[];
+  f.line('unrelated-line','999.999',10);
+  assert.equal(postings(await f.evaluate(code,PAYMENT)).length,0,code);
+ }
+ const f=fixture({vendor:'AP - Product'});f.payment.fields[P.accounts]=[];
+ await assert.rejects(f.evaluate('EXP-16',PAYMENT),/Payment account must identify one account/);
 });
 
 test('aggregate Expense payments preserve unknown branch attribution',async()=>{
@@ -191,13 +219,13 @@ test('a matching invoice line cannot silently split its amount across multiple a
  await assert.rejects(()=>f.evaluate('EXP-05',line.id),/one invoice|single invoice|one matching invoice/i);
 });
 
-test('cancelled parents and cancelled or returned payments cannot post Expense entries',async()=>{
+test('cancelled parents and cancelled or non-Regular payments cannot post Expense entries',async()=>{
  const f=fixture({vendor:'AP - Staff'}),line=f.line('salary','005.002',10);
  f.invoice.fields[I.cancelled]=true;
  assert.equal(postings(await f.evaluate('EXP-06',line.id)).length,0);
  f.invoice.fields[I.cancelled]=false;f.payment.fields[P.cancelled]=true;
  assert.equal(postings(await f.evaluate('EXP-19',PAYMENT)).length,0);
- f.payment.fields[P.cancelled]=false;f.payment.fields[P.returned]=true;
+ f.payment.fields[P.cancelled]=false;f.payment.fields[P.recordType]={name:'Return Payment'};
  assert.equal(postings(await f.evaluate('EXP-19',PAYMENT)).length,0);
 });
 
@@ -291,4 +319,29 @@ test('dynamic expense accounts use the approved FIN to ledger identities',async(
   prepaid.put(T.prepay,PREPAY,{[U.invoices]:links(INVOICE),[U.amount]:12.34,[U.date]:'2026-06-03'});
   assert.deepEqual(postings(await prepaid.evaluate('EXP-04',PREPAY)).map(pair),[[ledger,'135.000',12.34]]);
  }
+});
+
+
+test('product invoice restores its signed gross amount before final cent rounding',async()=>{
+ for(const [net,discount,total] of [[97,-3,100],[10.0049,-0.0002,10.01],[-97,3,-100],[97,null,97],[3,3,0]]){
+  const f=fixture({vendor:'AP - Product'});f.invoice.fields[I.amount]=net;f.invoice.fields[I.discountTotal]=discount;
+  const ps=postings(await f.evaluate('EXP-15',INVOICE));
+  assert.deepEqual(ps.map(pair),total? [['004.010','211.100',total]]:[]);
+ }
+ const f=fixture({vendor:'AP - Product'});f.invoice.fields[I.amount]=null;
+ await assert.rejects(()=>f.evaluate('EXP-15',INVOICE),/Invoice Amount/);
+ f.invoice.fields[I.amount]=97;f.invoice.fields[I.discountTotal]='invalid';
+ await assert.rejects(()=>f.evaluate('EXP-15',INVOICE),/Discount Lines Total/);
+});
+test('gross product AP is cleared by the separate bank payment and line-owned discount',async()=>{
+ const f=fixture({vendor:'AP - Product',amount:97});f.client.dateRange={from:'2026-05-01',to:'2026-06-30'};
+ f.invoice.fields[I.amount]=97;f.invoice.fields[I.discountTotal]=-3;f.invoice.fields[PF.INVOICE_FIELDS.status]={name:'Fully Paid'};
+ const line=f.line('discount-line','004.011',-3);line.fields[PF.LINE_FIELDS.type]={name:'Discount'};
+ const invoice=postings(await f.evaluate('EXP-15',INVOICE))[0];
+ const payment=postings(await f.evaluate('EXP-16',PAYMENT))[0];
+ const evaluate=createCategoryEvaluator(f.client),discount=await evaluate(CATEGORIES.find(c=>c.code==='PAY-10'),line);
+ assert.deepEqual(pair(invoice),['004.010','211.100',100]);assert.deepEqual(pair(payment),['211.100','112.100',97]);
+ const adjustment=discount.categories[0].postings[0];assert.deepEqual(pair(adjustment),['211.100','004.011',3]);
+ assert.equal(Number(invoice.amount)-Number(payment.amount)-Number(adjustment.amount),0);
+ assert.equal(discount.invoiceLineRecordId,line.id);assert.equal(discount.entryDate,'2026-06-03');
 });

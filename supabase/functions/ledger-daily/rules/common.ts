@@ -2,6 +2,12 @@ import { paymentSentFields as fields } from "../definitions.ts";
 import type { CategoryDefinition, FormulaBuilder } from "../types.ts";
 export const and = (...parts: string[]) => `AND(${parts.filter(Boolean).join(",")})`;
 export const or = (...parts: string[]) => `OR(${parts.filter(Boolean).join(",")})`;
+export function expectedPaymentRecordType(ruleCode: string) {
+  if (ruleCode === "PAY-12") return "Return Payment";
+  if (ruleCode === "PAY-30") return "Repayment";
+  if (ruleCode === "PAY-09") return "CC Batch Payment";
+  return "Regular Payment";
+}
 export const invoiceAccount = (q: FormulaBuilder, code: string) => q.includes(fields.TABLES.invoices, fields.INVOICE_FIELDS.accounts, code);
 export const invoiceType = (q: FormulaBuilder, type: string) => q.eq(fields.TABLES.invoices, "fld9e6yDIv0PtBDV0", type);
 export const invoiceVendor = (q: FormulaBuilder, type: string) => q.eq(fields.TABLES.invoices, type.startsWith("AR") ? "fldbMLaxgnu81a0O0" : "fldXwodwAuXLJt5rP", type);

@@ -1,5 +1,12 @@
 # Ledger sync webhook plan
 
+Current scheduling and database targets: [environments](../knowledge-base/environments.md).
+The original activation statements below describe the initial deployment, not current operation.
+
+Current Payment routing is documented in [the Payment category matrix](ledger-payment-category-matrix.md).
+It uses source-owned `ledger-daily` handlers. The older native Payment posting senders are OFF;
+their descriptions below are historical and must not be used as current category definitions.
+
 Expense rules refreshed 12 November 2026; Payment and Invoice Entry remain at their earlier snapshot from the downloaded live [T-Chart](https://chicagobrass.sharepoint.com/:x:/r/Intranet/_layouts/15/Doc.aspx?sourcedoc=%7BF609079B-B392-421C-A170-878D5E60CD60%7D&file=T-Chart.xlsx&action=default&mobileredirect=true) and native script source.
 
 ## Runtime
@@ -68,7 +75,7 @@ and the new Expense payment counterparts own their payment records.
 | PAY-07 / 8 | Pay a vendor / bill from the bank (ACH, wire, check, Nickel, Wise) | Fully | Payments | Payments |
 | PAY-08 / 9 | Pay a vendor with the company credit card | Fully | Payments | Payments |
 | PAY-09 / 10 | Pay the credit-card statement | Fully | Payments | Payments |
-| PAY-10 / 11 | Early-payment discount taken when paying a vendor | Blocked partial | Invoices | Invoices |
+| PAY-10 / 7 | Early-payment discount taken when paying a vendor | Fully | Invoice Lines | Invoice Lines |
 | PAY-11 / 12 | Bill paid using vendor credits (no cash) | Fully | Invoices | Invoices |
 | PAY-12 / 13 | Vendor payment cancelled / returned | Partially | Payments | Payments; Payments |
 | PAY-13 / 14 | Vendor sends us a refund | Fully | Payments | Payments |
@@ -274,13 +281,15 @@ Category - Payment, row 10.
 
 ### PAY-10 - Early-payment discount taken when paying a vendor
 
-Category - Payment, row 11.
+Category - Payment, row 7. Invoice Line owns the journal and reversal.
 
-- Amount = SUM(Invoice Lines.Line Amount) per Invoice Lines.Chart of Accounts
-- Date = Payments.Payment Date
+- Filters = AP, Fully Paid, linked Sent payment, Discount line, non-expired status
+- Amount = -Invoice Lines.Line Amount
+- Date = Linked Payments.Payment Date
 - Branch = Invoices.Branch
 - Debit = 211.100
-- Credit = Pending
+- Credit = 004.011
+- Expense row 4 accrues Invoice Amount - Discount Lines Total; the payment remains a separate entry.
 
 ### PAY-11 - Bill paid using vendor credits (no cash)
 
@@ -453,7 +462,7 @@ Category - Payment, row 28.
 - Existing overlapping chart categories remain possible; cross-category deduplication is not inferred.
 - Payroll/loan partial payments still use the chart's full matching invoice-line totals. No new allocation was invented.
 - An already-posted category does not automatically add new account components after source edits. Use the correction workflow.
-- The checkpoint migration and webhook are deployed. Authorize scheduler activation and cut over old posting automations while retaining reversal.
+- The checkpoint migration and webhook are deployed. Production scheduling is now activated; retain reversal and keep develop unscheduled.
 - A single linked source graph must fit the per-call read budget.
 
 See the [worker README](../supabase/functions/ledger-daily/README.md) for the request/resume contract and read-only inspection command.

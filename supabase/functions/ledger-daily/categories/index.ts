@@ -1,15 +1,14 @@
-import { inSyncDateRange } from "../scope.ts";
-import { createCategories as sentCategories } from "./payment-sent.js";
-import { createCategories as eventCategories } from "./payment-events.js";
+import { createCategories as paymentCategories } from "./payments.js";
 import { createCategories as invoiceCategories } from "./invoice-entry.js";
 import { createCategories as currentExpenseCategories } from "./expenses.js";
+import { createCategories as manualCategories } from "./manual-journals.ts";
+import { hasManualInvoice } from "./manual-exclusion.ts";
 import { AirtableClient, AirtableRecord } from "../airtable.ts";
-import { paymentSentFields, paymentEventsFields, POSTING_FIELDS, invoiceWorkerFields, expenseWorkerFields } from "../definitions.ts";
+import { paymentWorkerFields, POSTING_FIELDS, invoiceWorkerFields, expenseWorkerFields, MANUAL_TABLE, MANUAL_FIELDS } from "../definitions.ts";
 import type { CategoryDefinition } from "../types.ts";
 import type { LedgerPaymentEvent } from "../../ledger-payment/ledger.ts";
+import { expectedPaymentRecordType } from "../rules/common.ts";
 
-const { TABLES: T, PAYMENT_FIELDS: P } = paymentSentFields;
-const E = paymentEventsFields.PAYMENT_FIELDS;
 export function accountingDate(value: unknown): string {
   if (typeof value !== "string" || !value) throw new Error("The category's accounting date is missing.");
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -20,60 +19,28 @@ export function accountingDate(value: unknown): string {
 }
 
 export function createCategoryEvaluator(client: AirtableClient, readDepositBalance?: (invoiceRecordId: string) => Promise<number>) {
-  const modules = { "payment-sent": sentCategories(client), "payment-events": eventCategories(client),
-    "invoice-entry": invoiceCategories(client, readDepositBalance),
-    "expenses": currentExpenseCategories(client) };
+  const modules = { payments: paymentCategories(client), "invoice-entry": invoiceCategories(client, readDepositBalance),
+    expenses: currentExpenseCategories(client), manual: manualCategories(client) };
   return async (category: CategoryDefinition, source: AirtableRecord): Promise<LedgerPaymentEvent | null> => {
-    if (!category.code.startsWith("PAY-")) return await evaluateSourceCategory(modules, category, source);
-    let inputId = source.id;
-    if (category.input === "linked-payment") {
-      const ids = (source.value("fldeNFOgl9OBHPlNm") || []).map((link: { id: string }) => link.id);
-      const payments = await client.readRecords(T.payments, ids, [...Object.values(P), E.cancelled, POSTING_FIELDS[T.payments].reverse, POSTING_FIELDS[T.payments].reverseDate]);
-      const eligible = payments.filter(p => inSyncDateRange(p.text(P.date).slice(0,10), client.dateRange) && p.value(P.sent) && !p.value(E.cancelled) && !p.value(POSTING_FIELDS[T.payments].reverse) && !p.value(POSTING_FIELDS[T.payments].reverseDate));
-      eligible.sort((a, b) => b.text(P.date).localeCompare(a.text(P.date)) || a.id.localeCompare(b.id));
-      if (!eligible.length) return null;
-      // Invoice-owned settlements use the latest eligible Sent payment's date, not Invoice Date.
-      inputId = eligible[0].id;
-    }
-    const module = category.module === "payment-sent" ? modules["payment-sent"] : category.module === "payment-events" ? modules["payment-events"] : undefined;
-    if (!module) throw new Error(`No payment category module ${category.module}.`);
-    const { data, results } = await module.evaluate(category.code, inputId, category.eventType);
-    const matches = results.filter((result: any) => {
-      if (category.tableId === T.invoices) return result.invoice?.id === source.id;
-      return !result.invoice;
-    });
-    if (!matches.length || !matches.some((r: any) => r.postings.some((p: any) => Number(p.amount) !== 0))) return null;
-    const payment = data.payment;
-    const dateField = category.eventType === "cancelled" ? E.cancelledDate : category.eventType === "reconciled" ? E.reconciledDate : P.date;
-    return {
-      paymentRecordId: payment.id,
-      paymentName: payment.name,
-      eventType: category.eventType,
-      entryDate: accountingDate(payment.value(dateField)),
-      source: { tableId: category.tableId, recordId: source.id, recordName: source.name },
-      referenceNumber: category.tableId === T.invoices ? source.id : payment.text(P.reference),
-      categories: matches.map((result: any) => ({
-        ruleCode: category.code,
-        entryKey: result.entryKey,
-        transactionType: result.category.trim().replace(/[\u2013\u2014]/g, "-"),
-        postings: result.postings,
-      })),
-    };
+    if (category.module !== "manual" && await hasManualInvoice(client, category, source)) return null;
+    return evaluateSourceCategory(modules, category, source);
   };
 }
 
 async function evaluateSourceCategory(modules: any, category: CategoryDefinition, source: AirtableRecord): Promise<LedgerPaymentEvent | null> {
+  if (category.tableId === expenseWorkerFields.TABLES.payments && source.text(expenseWorkerFields.PAYMENT_FIELDS.recordType) !== expectedPaymentRecordType(category.code)) return null;
   const module=modules[category.module];
   if(!module)throw new Error(`No category module ${category.module}.`);
   const {data,results}=await module.evaluate(category.code, source.id, category.tableId);
   const matches=results.filter((result:any)=>result.postings.some((posting:any)=>Number(posting.amount)!==0));
   if(!matches.length)return null;
-  if (category.module === "expenses" || category.module === "invoice-entry") {
+  if (["expenses", "invoice-entry", "payments", "manual"].includes(category.module)) {
     const tables = expenseWorkerFields.TABLES;
     const identities: Record<string, string> = {
       [tables.invoices]: "invoiceRecordId", [tables.lines]: "invoiceLineRecordId",
       [tables.payments]: "paymentRecordId", [tables.prepay]: "prepayLogRecordId",
       [tables.depreciation]: "depreciationRecordId", [invoiceWorkerFields.TABLES.shipping]: "shippingRecordId",
+      [MANUAL_TABLE]: "manualJournalRecordId",
     };
     const identity = identities[category.tableId];
     if (!identity) throw new Error(`Unsupported source table ${category.tableId}.`);
@@ -93,6 +60,7 @@ async function evaluateSourceCategory(modules: any, category: CategoryDefinition
 
 export function sourceFields(category: CategoryDefinition): string[] {
   const control = POSTING_FIELDS[category.tableId as keyof typeof POSTING_FIELDS];
+  if (category.module === "manual") return Object.values(MANUAL_FIELDS);
   if (category.module === "expenses") {
     const fieldsByTable: Record<string, Readonly<Record<string, string>>> = {
       [expenseWorkerFields.TABLES.invoices]: expenseWorkerFields.INVOICE_FIELDS,
@@ -112,6 +80,12 @@ export function sourceFields(category: CategoryDefinition): string[] {
     if (!fields) throw new Error(`Unsupported Invoice Entry source table ${category.tableId}.`);
     return [...new Set([...Object.values(fields), ...Object.values(control ?? {})])];
   }
-  if (category.tableId === T.invoices) return [...new Set(["fldMZyzqDidRujeZS", "fldeNFOgl9OBHPlNm", "fldbovm1ab4HOZDBe", ...Object.values(control)])];
-  return [...new Set([...Object.values(P), ...Object.values(E), ...Object.values(control)])];
+  if (category.module === "payments") {
+    const fields = category.tableId === paymentWorkerFields.TABLES.invoices ? paymentWorkerFields.INVOICE_FIELDS
+      : category.tableId === paymentWorkerFields.TABLES.payments ? paymentWorkerFields.PAYMENT_FIELDS
+      : category.tableId === paymentWorkerFields.TABLES.lines ? paymentWorkerFields.LINE_FIELDS : null;
+    if (!fields) throw new Error(`Unsupported Payment source table ${category.tableId}.`);
+    return [...new Set([...Object.values(fields), ...Object.values(control ?? {})])];
+  }
+  throw new Error(`Unsupported category module ${category.module}.`);
 }

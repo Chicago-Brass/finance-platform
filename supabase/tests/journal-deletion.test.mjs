@@ -10,7 +10,7 @@ const sql=postgres(url,{prepare:false,max:2,onnotice(){}});
 after(()=>sql.end());
 const table='tblR61NG9i0giid28';
 const event=(id,amount='10.00')=>({paymentRecordId:id,eventType:'sent',entryDate:'2026-11-01',categories:[{
-  ruleCode:'PAY-07',transactionType:'Journal deletion check',postings:[{debitAccount:{number:'211.100'},creditAccount:{number:'112.100'},amount}],
+  ruleCode:'PAY-09',transactionType:'Journal deletion check',postings:[{debitAccount:{number:'211.100'},creditAccount:{number:'112.100'},amount}],
 }]});
 
 test('deleting selected posted journals cascades their lines and preserves unrelated journals',async()=>{

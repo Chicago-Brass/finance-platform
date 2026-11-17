@@ -1,4 +1,4 @@
-// FIN Reverse Ledger - stamp Reverse Date once and request source-owned reversals.
+// FIN Reverse Ledger / Cancel Entry - stamp Reverse Date once and request source-owned reversals.
 // Runtime: native Airtable automation. Secret: Dual Ledger Webhook Secret. See DOCS below.
 
 // ==================== CORE ====================
@@ -12,7 +12,7 @@ async function main() {
     const record = await table.selectRecordAsync(sourceRecordId, { fields: [fields.reverse, fields.reverseDate] });
     if (!record) throw new Error(`Source record not found: ${sourceRecordId}`);
     if (!record.getCellValue(fields.reverse)) {
-        console.log("Reverse Ledger is unchecked. No action.");
+        console.log("Reverse Ledger / Cancel Entry is unchecked. No action.");
         return;
     }
     let reversalDate = record.getCellValue(fields.reverseDate);
@@ -42,6 +42,9 @@ async function main() {
 
 /** @type {Record<string, {reverse: string, reverseDate: string}>} */
 const SOURCE_FIELDS = {
+    tblCoBk0WB46B662R: { // FIN Direct Journal Entries - reuse Cancel Entry
+        reverse: "flddPrINXnyy3oyBH", reverseDate: "fld1TFuRQFzFCpl1q",
+    },
     tblrnXm1HN9y6HPxY: { // FIN Shipping Record
         reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW",
     },
@@ -86,10 +89,10 @@ function printResult(recordId, date, result) {
 DOCS
 PURPOSE / RUNTIME
   Native FIN automation. One record read; no category, allocation or amount calculations.
-  One instance per owning table. Trigger: Reverse Ledger is checked.
+  One instance per owning table. Trigger: Reverse Ledger is checked, or Cancel Entry for Direct Journal Entries.
 INPUTS / SECRET
   sourceTableId: a configured FIN Payments, Invoices, Invoice Lines, Prepay Expenses Log
-    or Depreciation Table ID from SOURCE_FIELDS.
+    Depreciation Table, Shipping Records or Direct Journal Entries ID from SOURCE_FIELDS.
   sourceRecordId: trigger's Airtable record ID.
   SOURCE_FIELDS holds the reverse checkbox and manual date-only field IDs for each table.
   ledgerReversalUrl: https://inzobaubbikyiekcfarj.supabase.co/functions/v1/ledger-reversal

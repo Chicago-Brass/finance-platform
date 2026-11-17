@@ -1,13 +1,16 @@
 # FIN source-record reversal
 
 The dedicated `ledger-reversal` endpoint reverses the stored journals owned by one FIN record.
-It supports Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table and Shipping Records.
+It supports Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation Table, Shipping Records and Direct Journal Entries.
 It does not recalculate categories or amounts, or reverse linked records merely referenced by
 the source. Unchecking Reverse Ledger does nothing; restoration remains deferred.
+The endpoint routes authenticated calls to Oregon before opening its database transactions,
+using the same shared routing as posting. Existing native automation URLs need no changes.
 
 ## Native automations
 
-All six Reverse Ledger checkbox automations are ON and use `airtable/ledger-reversal.js`:
+The six Reverse Ledger automations and the manual Cancel Entry automation are ON and use
+`airtable/ledger-reversal.js`:
 
 | Owning table | Table ID | Automation |
 | --- | --- | --- |
@@ -17,8 +20,9 @@ All six Reverse Ledger checkbox automations are ON and use `airtable/ledger-reve
 | Prepay Expenses Log | `tbl1LgiUYt7Gc492d` | [Prepaid Log Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflK3FbhAacWxaC2N) |
 | Depreciation Table | `tblC0dbO5UMXzHma9` | [Depreciation Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wfl9mtZA0btC00cOv) |
 | Shipping Records | `tblrnXm1HN9y6HPxY` | [Shipping Record Reverse Ledger](https://airtable.com/app0Q1UMEdUeWl538/wflUVlZPcnma65OQo) |
+| Direct Journal Entries | `tblCoBk0WB46B662R` | [Manual Journal Cancel Entry](https://airtable.com/app0Q1UMEdUeWl538/wfl7tuVmVFiIqk0dt) |
 
-Each triggers when its own record's Reverse Ledger is checked. Inputs are `sourceTableId`
+Each triggers when its own record's Reverse Ledger is checked, or Cancel Entry for manual journals. Inputs are `sourceTableId`
 (the fixed owning table), `sourceRecordId` (the trigger record ID), and `ledgerReversalUrl`.
 The script uses `input.secret("Dual Ledger Webhook Secret")`, matching the existing Edge secret.
 
@@ -200,3 +204,7 @@ The owning native configurations were freshly reviewed ON and published before t
 No direct reversal-endpoint calls substituted for the checkbox triggers. Prepaid logs and
 Shipping Record were not included in this live cohort; restoration/unchecking remains deferred.
 See [Ledger status](ledger-current-status.md) for the enabled scope and remaining sample gaps.
+
+Manual journals reuse Cancel Entry instead of adding Reverse Ledger. They own the three ledger
+metadata fields and stable Reverse Date on the parent. Cancellation also withdraws a pending
+closed-period posting request. See [manual journals](manual-journals.md).

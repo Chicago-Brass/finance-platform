@@ -1,6 +1,7 @@
 # Ledger database and data contracts
 
 Hosted project: [DUAL ENTRY - inzobaubbikyiekcfarj](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj).
+Local development uses persistent develop `vaaykmqshkuunewjrxuy`; see [environments](environments.md).
 The schema and catalog are tracked in `supabase/`. Environment contents and journal completeness
 must be verified separately from source or migration history.
 
@@ -29,7 +30,9 @@ intermediate local files or reset the hosted ledger to load a seed.
 The deployed ledger sync webhook uses `ledger_daily_runs` for a global unfinished-run check,
 renewable run leases and JSON checkpoints. Its migration was applied and recorded on DUAL ENTRY
 on 10 November 2026. It adds no
-database posting function, frontend grants or active schedule.
+database posting function or frontend grants. The later production dispatcher and clock-alignment migrations install
+a private invoker function; scheduling and Vault credentials are
+production-only operations, not migration defaults.
 
 Business references use text arrays: vendor_ref, customer_ref, order_ref, po_ref, invoice_ref,
 employee_ref and state_ref. The 7 November reference migration preserves prior single links as
@@ -64,6 +67,10 @@ is success; unreadable or partial outcomes are reported without assuming rollbac
 shares the source advisory lock and never deletes older or duplicate journal IDs. Daily processing
 reports source errors and continues; run-budget exhaustion still pauses for resume. There is no
 cross-system transaction, so interrupted or late-write outcomes can require manual reconciliation.
+Writeback retries the same metadata up to three times, verifying after each failed response;
+HTTP 429 requires a 30-second cooldown. Permission/validation failures do not retry. Time and
+request budgets can stop retries early. Safe error details name the operation, status and attempt;
+an unreadable outcome never authorizes a compensating delete.
 An original with a linked reversal must have the reversal removed first, as required by the
 existing foreign key. This schema capability does not add automatic deletion to any webhook
 or clear Airtable metadata.

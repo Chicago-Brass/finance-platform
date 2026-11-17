@@ -11,7 +11,7 @@ export function createCategories(client, readDepositBalance) {
         await addInvoice(results, data, "Deposit Invoice Created", "121.100", "221.100");
     }
     async function handleDepositPayment(data, results) {
-        if (!data.payment.value(P.sent)) return;
+        if (!sent(data)) return;
         const invoices = data.invoices.filter(isDeposit);
         await addPayment(results, data, "Deposit Invoice Paid", invoices, "121.100", true, invoicePaymentCents(data, "INV-13"));
     }
@@ -48,7 +48,7 @@ export function createCategories(client, readDepositBalance) {
         await addInvoice(results, data, "Full or Balance Invoice Created", "121.100", "004.001");
     }
     async function handleBalancePayment(data, results) {
-        if (!data.payment.value(P.sent)) return;
+        if (!sent(data)) return;
         const invoices = data.invoices.filter(isBalance);
         await addPayment(results, data, "Full or Balance Invoice Paid", invoices, "121.100", true, invoicePaymentCents(data, "INV-16"));
     }
@@ -60,7 +60,7 @@ export function createCategories(client, readDepositBalance) {
     }
     async function handleAssetPayment(data, results) {
         // Partial implementation - functioning: the same approved asset scope as its invoice counterpart.
-        if (!data.payment.value(P.sent)) return;
+        if (!sent(data)) return;
         const invoices = [];
         for (const invoice of data.invoices) if (await assetAccount(invoice)) invoices.push(invoice);
         await addPayment(results, data, "Fixed Asset Invoice Paid", invoices, "211.100");
@@ -68,11 +68,14 @@ export function createCategories(client, readDepositBalance) {
     async function handleNonProductInvoice(data, results) {
         if (!isNonProduct(data.invoice)) return;
         const account = await singleAccount(data.invoice, I.accounts, "Non-product invoice");
+        if (["004.011", "311.200", "004.004"].includes(account)) return;
         await addInvoice(results, data, "Non-product Client Invoice Created", "121.100", account);
     }
     async function handleNonProductPayment(data, results) {
-        if (!data.payment.value(P.sent)) return;
-        await addPayment(results, data, "Non-product Client Invoice Paid", data.invoices.filter(isNonProduct), "121.100", true);
+        if (!sent(data)) return;
+        const invoices = [];
+        for (const invoice of data.invoices) if (isNonProduct(invoice) && !["004.011", "311.200", "004.004"].includes(await singleAccount(invoice, I.accounts, "Non-product invoice"))) invoices.push(invoice);
+        await addPayment(results, data, "Non-product Client Invoice Paid", invoices, "121.100", true);
     }
     async function handleVendorReturn(data, results) {
         const invoice = data.invoice;
@@ -85,6 +88,7 @@ export function createCategories(client, readDepositBalance) {
 
     // ==================== UTILS ====================
 
+    function sent(data) { return data.payment.value(P.sent) && !data.payment.value(P.cancelled) && data.payment.text(P.recordType) === "Regular Payment"; }
     function ids(record, field) { return (record.value(field) || []).map(link => link.id); }
     function isAR(invoice) { return invoice.text(I.type) === "AR" && !invoice.value(I.cancelled); }
     function isDeposit(invoice) { return isAR(invoice) && invoice.text(I.vendorTypeAR) === "AR - Product" && invoice.text(I.kind) === "Deposit Invoice"; }

@@ -7,13 +7,15 @@ pipeline. These guides describe the repository, data contracts and operating pro
 
 | Guide | Scope |
 | --- | --- |
+| [Environments](environments.md) | Production/develop database targets, local configuration and cron |
 | [Implementation](implementation.md) | Runtime architecture, source map, routes, data loading and UI |
 | [Design patterns](design-patterns.md) | Accounting invariants, layer responsibilities and coding conventions |
 | [Database](database.md) | Tables, read interfaces, writer, security and migrations |
 | [Airtable triggers](airtable-triggers.md) | Automation editors, script ownership, mappings and unresolved categories |
+| [Manual journals](../docs/manual-journals.md) | Approved parent journals, line pairs, invoice exclusions and cancellation |
 | [Period management](../docs/period-management.md) | Closing, review queue, permissions, exceptions and audit history |
 | [Testing](testing.md) | Local checks, browser review and release verification |
-| [Ledger sync webhook](../supabase/functions/ledger-daily/README.md) | Deployed webhook for all three category sheets, global lock, checkpoints and writeback; external scheduler not activated |
+| [Ledger sync webhook](../supabase/functions/ledger-daily/README.md) | Deployed webhook for all three category sheets, global lock, checkpoints, writeback and production-only daily dispatch |
 
 The full category/query/field mapping is in the [ledger sync plan](../docs/ledger-sync-plan.md).
 
@@ -39,7 +41,8 @@ The full category/query/field mapping is in the [ledger sync plan](../docs/ledge
 - Preserve `mae/testing`, the separate presentation/testing branch. Its account groupings use
   workbook data and older P&L codes; its amounts are not live-ledger fixtures.
 - [DUAL ENTRY](https://supabase.com/dashboard/project/inzobaubbikyiekcfarj) is the hosted ledger.
-  Local app development uses the configured hosted project unless explicitly configured otherwise.
+  Local app development uses persistent Supabase develop, `vaaykmqshkuunewjrxuy`.
+  See [environments](environments.md) for the required local settings and isolation.
 
 The reporting app displays the existing ledger dataset. UI verification does not certify that the
 ledger is a complete or reconciled copy of Airtable. Data migration or financial repair is a

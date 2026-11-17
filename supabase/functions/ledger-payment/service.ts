@@ -2,10 +2,12 @@ import { postCappedShipment } from "../_shared/shipping-deposit.ts";
 import type { Sql } from "npm:postgres@3.4.9";
 import { postPayment, type LedgerPaymentEvent } from "./ledger.ts";
 import { LINK_FIELDS, syncLedgerLinks, validateLinkSource, LedgerWritebackError, type LedgerSource } from "../_shared/ledger-links.ts";
+import { MANUAL_TABLE } from "../_shared/manual-journal.ts";
 
 // Every supported source writes its journals back to its owning Airtable record.
 export async function postAndSync(sql: Sql, event: LedgerPaymentEvent, token: string, fetcher: typeof fetch = fetch, options: { allowAdditionalCategories?: boolean; deadline?: number } = {}) {
   const source: LedgerSource | undefined = event.source ?? (
+    event.manualJournalRecordId ? { tableId: MANUAL_TABLE, recordId: event.manualJournalRecordId } :
     event.invoiceLineRecordId ? { tableId: "tblV26TC0f6CKDneL", recordId: event.invoiceLineRecordId } :
     event.depreciationRecordId ? { tableId: "tblC0dbO5UMXzHma9", recordId: event.depreciationRecordId } :
     event.shippingRecordId ? { tableId: "tblrnXm1HN9y6HPxY", recordId: event.shippingRecordId } :

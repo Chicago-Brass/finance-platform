@@ -1,4 +1,4 @@
-import { paymentSentFields as F, paymentEventsFields as E, invoiceWorkerFields, depreciationFields, prepayFields } from "./definitions.ts";
+import { paymentSentFields as F, paymentEventsFields as E, invoiceWorkerFields, depreciationFields, prepayFields, MANUAL_TABLE, MANUAL_FIELDS } from "./definitions.ts";
 import type { CategoryDefinition, FormulaBuilder, SyncDateRange } from "./types.ts";
 
 // Temporary scope: the last 30 UTC calendar days, including today, never Created Time.
@@ -14,6 +14,7 @@ export function fromStart(q: FormulaBuilder, table: string, field: string) {
   return `AND(${value}>=DATETIME_PARSE("${from}"),${value}<DATEADD(DATETIME_PARSE("${to}"),1,'days'))`;
 }
 export function sourceDateFilter(category: CategoryDefinition, q: FormulaBuilder): string {
+  if (category.tableId === MANUAL_TABLE) return fromStart(q, MANUAL_TABLE, MANUAL_FIELDS.date);
   if (category.tableId === F.TABLES.payments) {
     const field = category.eventType === "cancelled" ? E.PAYMENT_FIELDS.cancelledDate : category.eventType === "reconciled" ? E.PAYMENT_FIELDS.reconciledDate : F.PAYMENT_FIELDS.date;
     return fromStart(q, category.tableId, field);

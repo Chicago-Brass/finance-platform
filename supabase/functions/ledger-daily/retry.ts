@@ -2,7 +2,7 @@ export class RetryableError extends Error {
   readonly delayMs?: number;
   constructor(message: string, delayMs?: number) { super(message); this.delayMs = delayMs; }
 }
-export class BudgetExceeded extends Error {}
+export class BudgetExceeded extends Error { override name = "BudgetExceeded"; }
 export const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 // Only transient failures retry. Posting retries reuse the same source/category identity.

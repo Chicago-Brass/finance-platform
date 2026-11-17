@@ -18,7 +18,7 @@ trap cleanup EXIT HUP INT TERM
 docker run --rm -d --name "$container_name" -p 127.0.0.1::5432 \
   -e POSTGRES_PASSWORD=local-only-ledger-check \
   public.ecr.aws/supabase/postgres:17.11.0.004 \
-  postgres -D /var/lib/postgresql/data -c listen_addresses='*' >/dev/null
+  postgres -D /var/lib/postgresql/data -c listen_addresses='*' -c shared_preload_libraries=pg_net >/dev/null
 attempt=0
 until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | grep -q "/bin/postgres " && pg_isready -U postgres' >/dev/null 2>&1; do
   attempt=$((attempt + 1))
@@ -29,6 +29,8 @@ until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | gre
   sleep 1
 done
 docker exec "$container_name" createdb -U postgres ledger_check
+docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d ledger_check \
+  -c 'create schema extensions; create extension supabase_vault; create extension pg_net with schema extensions;'
 for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
   docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledger_check < "$file"
 done
@@ -40,4 +42,4 @@ docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d ledge
   -c 'drop function public.create_journal_entry(jsonb,jsonb,boolean); drop function public.reverse_journal_entry(uuid,date,text);'
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')
 LEDGER_TEST_DATABASE_URL="postgres://postgres:local-only-ledger-check@127.0.0.1:$port/ledger_check" \
-  node --test --test-concurrency=1 "$test_dir/post-airtable-payment.test.mjs" "$test_dir/reverse-airtable-ledger.test.mjs" "$test_dir/shipping-deposit.test.mjs" "$test_dir/daily-payment-worker.test.mjs" "$test_dir/ledger-writeback.test.mjs" "$test_dir/period-management.test.mjs" "$test_dir/journal-deletion.test.mjs" "$test_dir/expense-catalog.test.mjs" "$test_dir/finalized-catalog.test.mjs" "$project_dir/supabase/functions/ledger-payment/enabled.test.mjs" "$test_dir/tchart-labels.test.mjs"
+  node --test --test-concurrency=1 "$test_dir/post-airtable-payment.test.mjs" "$test_dir/reverse-airtable-ledger.test.mjs" "$test_dir/shipping-deposit.test.mjs" "$test_dir/daily-payment-worker.test.mjs" "$test_dir/ledger-writeback.test.mjs" "$test_dir/period-management.test.mjs" "$test_dir/journal-deletion.test.mjs" "$test_dir/expense-catalog.test.mjs" "$test_dir/finalized-catalog.test.mjs" "$project_dir/supabase/functions/ledger-payment/enabled.test.mjs" "$test_dir/tchart-labels.test.mjs" "$test_dir/payment-categories.test.mjs" "$test_dir/manual-journals.test.mjs"

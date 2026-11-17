@@ -1,5 +1,14 @@
 # FIN ledger automation scripts
 
+All FIN automation endpoint URLs target production `inzobaubbikyiekcfarj`. Local development
+uses Supabase develop `vaaykmqshkuunewjrxuy`, without FIN writer secrets or cron. Production
+now schedules the shared webhook at 11 PM Chicago with continuation. See
+[environments](../knowledge-base/environments.md); dated deployment evidence below is historical.
+
+Current Payment routing is documented in [the Payment category matrix](../docs/ledger-payment-category-matrix.md).
+It uses source-owned `ledger-daily` handlers. The older native Payment posting senders are OFF;
+their descriptions below are historical and must not be used as current category definitions.
+
 The reversal-only script `ledger-reversal.js` is published in five ON automations: Payments,
 Invoices, Invoice Lines, Prepay Expenses Log and Depreciation Table. It stamps a blank manual
 Reverse Date once and sends only source identity and date to `ledger-reversal`. Supabase finds
@@ -13,7 +22,7 @@ these fields using server-only `AIRTABLE_PAT`. Original posting markers remain a
 On 12 November 2026, `ledger-payment` v20, `ledger-reversal` v8, `ledger-periods` v3
 and `ledger-daily` v12 were published. All 42 downloaded runtime modules matched local source.
 All five native reversal automations were reloaded ON with correct inputs, shared secret and
-exact saved script matches. The daily webhook remains unscheduled. Temporary test automations
+exact saved script matches. The daily webhook was unscheduled at that date; production scheduling was enabled on 17 November. Temporary test automations
 were removed after verification.
 
 Current isolated checks passed 11 native reversal cases, 91 disposable database checks,
@@ -255,3 +264,10 @@ node airtable/check-prepay-created.cjs
 ```
 
 Native fetches are mocked. Receiver posting checks use the disposable local database only.
+
+## Manual journal cancellation
+
+`Manual Journal | Cancel Entry` uses `ledger-reversal.js` with FIN Direct Journal Entries
+`tblCoBk0WB46B662R`. Trigger: Cancel Entry checked. The parent owns its stable Reverse Date and
+all journal IDs. Posting is MAN-01 in the shared daily webhook, not a native line-by-line sender.
+See [manual journals](../docs/manual-journals.md).

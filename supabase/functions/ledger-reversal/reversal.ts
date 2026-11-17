@@ -1,7 +1,8 @@
 // Reverse the stored journals of one FIN source record. Never recalculate source amounts.
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
-import { holdForReview, lockLedgerSource } from "../_shared/period-review.ts";
+import { holdForReview, lockLedgerSource, history } from "../_shared/period-review.ts";
 import { PostingError } from "../ledger-payment/errors.ts";
+import { MANUAL_TABLE } from "../_shared/manual-journal.ts";
 
 export interface ReversalRequest {
   source: { tableId: string; recordId: string };
@@ -32,7 +33,7 @@ export interface ReversalResult {
 
 const PAYMENTS = "tblR61NG9i0giid28";
 const INVOICES = "tbldQXuqNEp8G5pfs";
-const SOURCES = [PAYMENTS, INVOICES, "tblV26TC0f6CKDneL", "tblC0dbO5UMXzHma9", "tbl1LgiUYt7Gc492d", "tblrnXm1HN9y6HPxY"];
+const SOURCES = [PAYMENTS, INVOICES, "tblV26TC0f6CKDneL", "tblC0dbO5UMXzHma9", "tbl1LgiUYt7Gc492d", "tblrnXm1HN9y6HPxY", MANUAL_TABLE];
 
 // ==================== CORE ====================
 
@@ -42,6 +43,13 @@ export async function reverseJournals(sql: Sql, request: ReversalRequest, option
   const execute = async (tx: TransactionSql): Promise<ReversalResult> => {
     await tx`set local role service_role`;
     await lockLedgerSource(tx,source);
+    if (source.tableId === MANUAL_TABLE) {
+      // Cancelling an unposted manual entry must also withdraw its closed-period review.
+      const pending = await tx`update public.ledger_posting_requests set status='rejected',review_reason='Manual entry cancelled in Airtable',reviewed_at=now(),updated_at=now()
+        where source_table=${source.tableId} and source_record_id=${source.recordId} and kind='posting' and status='pending'
+        returning id::text,accounting_date::text`;
+      for (const row of pending) await history(tx,row.accounting_date,"request_rejected","airtable","Manual entry cancelled in Airtable",row.id);
+    }
     const originals = await tx<OriginalJournal[]>`select e.id::text, e.status, e.rule_code, r.reversible,
       rev.id::text as reversal_id, rev.status as reversal_status, rev.entry_date::text as reversal_date
       from public.journal_entries e

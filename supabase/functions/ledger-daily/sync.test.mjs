@@ -11,14 +11,15 @@ import {POSTING_FIELDS,paymentSentFields as F,expenseWorkerFields as E} from './
 const fake={field:(t,f)=>`{${f}}`,eq:(t,f,v)=>`{${f}}=${JSON.stringify(v)}`,includes:(t,f,v)=>`FIND(${JSON.stringify(v)},{${f}})>0`};
 test('all supported chart rows are registered once, while deferred rows have no active path',()=>{
  const deferredExpenses=['EXP-12','EXP-22','EXP-24','EXP-25'];
- const expected=Object.entries(CHART).filter(([code,r])=>code.startsWith('EXP-')?!deferredExpenses.includes(code):r.status?.toLowerCase()!=='not yet').map(([code])=>code).sort();
+ const expected=[...Object.entries(CHART).filter(([code,r])=>code.startsWith('EXP-')?!deferredExpenses.includes(code):r.status?.toLowerCase()!=='not yet').map(([code])=>code),'MAN-01'].sort();
+ assert.equal(CHART['MAN-01'],undefined,'Manual entries are outside the T-Charts.');
  const active=[...new Set(CATEGORIES.filter(c=>c.status!=='deferred').map(c=>c.code))].sort();
  assert.deepEqual(active,expected);
  for(const c of CATEGORIES.filter(c=>c.status!=='deferred')){
   const formula=candidateFormula(c,fake);assert(formula);
   if(POSTING_FIELDS[c.tableId])assert(formula.includes(c.code));
  }
- assert(!initialState([],true).categoryIds.includes('PAY-14'));
+ assert(!initialState([],true).categoryIds.includes('EXP-22'));
  for(const code of deferredExpenses)assert(!initialState([],true).categoryIds.includes(code));
 });
 test('webhook may be invoked at any time and reports active work as HTTP409',async()=>{
@@ -39,16 +40,16 @@ test('database claim uses the global transaction lock before inserting a run and
   const query=strings.join('?');calls.push(query);
   if(query.includes('pg_try_advisory_xact_lock'))return[{acquired:true}];
   if(query.includes('select run_key'))return unfinished?[{run_key:unfinished}]:[];
-  if(query.includes('returning id::text'))return[{id:'job',state:values.find(v=>v&&typeof v==='object'&&'dryRun'in v)??initialState(['PAY-07'],true)}];
+  if(query.includes('returning id::text'))return[{id:'job',state:values.find(v=>v&&typeof v==='object'&&'dryRun'in v)??initialState(['PAY-09'],true)}];
   return[];
  };
  tx.json=x=>x;
  const sql={begin:fn=>fn(tx)};
- await assert.rejects(()=>new DatabaseRunStore(sql).claim('new',initialState(['PAY-07'],true)),error=>error instanceof SyncBusyError&&error.runKey==='other');
+ await assert.rejects(()=>new DatabaseRunStore(sql).claim('new',initialState(['PAY-09'],true)),error=>error instanceof SyncBusyError&&error.runKey==='other');
  assert(!calls.some(q=>q.includes('insert into')));
  assert(calls.findIndex(q=>q.includes('pg_try_advisory_xact_lock'))<calls.findIndex(q=>q.includes('select run_key')));
  unfinished='';calls.length=0;
- assert(await new DatabaseRunStore(sql).claim('new',initialState(['PAY-07'],true)));
+ assert(await new DatabaseRunStore(sql).claim('new',initialState(['PAY-09'],true)));
  assert(calls.some(q=>q.includes('insert into')));
 });
 
@@ -72,9 +73,9 @@ test('targeted checkpoints compare source and date values independently of JSONB
 });
 
 test('bank-transfer query and related filters use the same account IDs as its handler',()=>{
- const transfer=CATEGORIES.find(c=>c.code==='PAY-19');
- assert(transfer.related);assert(candidateFormula(transfer,fake).includes('PAY-19'));
- assert(transfer.related.filter(fake).includes('0747'));
+ const transfer=CATEGORIES.find(c=>c.code==='PAY-24');
+ assert(transfer.related);assert(candidateFormula(transfer,fake).includes('PAY-24'));
+ assert(transfer.related.filter(fake).includes('143.200'));
  const tax=CATEGORIES.find(c=>c.code==='EXP-13');assert(tax.filter(fake).includes('923100'));assert(tax.filter(fake).includes('923300'));
  for(const oldCode of ['242.100','242.200','011.001','011.002'])assert(!tax.filter(fake).includes(oldCode));
 });
@@ -111,19 +112,18 @@ test('AR batch allocations require a nonzero current Payment Amount',()=>{
  for(const code of ['INV-13','INV-16'])assert(candidateFormula(CATEGORIES.find(c=>c.code===code),fake).includes(`{${F.PAYMENT_FIELDS.amount}}!=0`),code);
 });
 
-test('rolling cutoff uses source accounting dates and linked Payment Date for invoice-owned settlements',()=>{
+test('rolling cutoff uses source accounting dates and linked Payment Date for discount lines',()=>{
  const {from,to}=syncDateRange();
  const query=code=>candidateFormula(CATEGORIES.find(c=>c.code===code),fake);
- assert(query('PAY-07').includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
- assert(query('PAY-06').includes(`{fldsRLo5cO8fSdut8}>=DATETIME_PARSE("${from}")`));
- assert(query('PAY-26').includes(`{fldnw5Y6ATOWrhNJq}>=DATETIME_PARSE("${from}")`));
+ assert(query('PAY-09').includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
  assert(query('INV-12').includes(`{fldSungTQU5nIEIvi}>=DATETIME_PARSE("${from}")`));
  assert(query('EXP-10').includes(`{fldQ299tE4wJB4SmH}>=DATETIME_PARSE("${from}")`));
  assert(query('EXP-04').includes(`{fldXoWjXIrS76p84x}>=DATETIME_PARSE("${from}")`));
- const interest=CATEGORIES.find(c=>c.code==='PAY-25');
- assert(interest.related.filter(fake).includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
- assert(!query('PAY-25').includes('fldSungTQU5nIEIvi'));
- assert(query('PAY-07').includes(`DATEADD(DATETIME_PARSE("${to}"),1,'days')`));
+ const discount=CATEGORIES.find(c=>c.code==='PAY-10');
+ assert(discount.related.filter(fake).includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
+ assert(query('PAY-27').includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
+ assert(!query('PAY-27').includes('fldSungTQU5nIEIvi'));
+ assert(query('PAY-09').includes(`DATEADD(DATETIME_PARSE("${to}"),1,'days')`));
 });
 
 test('rolling date range covers 30 calendar days across month/year boundaries',()=>{

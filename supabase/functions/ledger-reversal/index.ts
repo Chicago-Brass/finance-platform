@@ -3,6 +3,7 @@ import postgres from "npm:postgres@3.4.9";
 import { handleRequest } from "../ledger-payment/handler.ts";
 import { type ReversalRequest } from "./reversal.ts";
 import { reverseAndSync } from "./service.ts";
+import { inDatabaseRegion } from "../_shared/database-region.ts";
 
 // ==================== CONFIGURATION ====================
 const environment = {
@@ -16,4 +17,5 @@ const sql = environment.databaseUrl
   : undefined;
 
 // ==================== HTTP ENTRY ====================
-Deno.serve((request: Request) => handleRequest(request, environment, (event: ReversalRequest) => reverseAndSync(sql!, event, environment.airtableToken)));
+const region = { projectUrl: Deno.env.get("SUPABASE_URL") ?? "", executionRegion: Deno.env.get("SB_REGION") ?? "", webhookSecret: environment.webhookSecret };
+Deno.serve((request: Request) => inDatabaseRegion(request, "ledger-reversal", region, request => handleRequest(request, environment, (event: ReversalRequest) => reverseAndSync(sql!, event, environment.airtableToken))));

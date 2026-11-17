@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {postPayment} from './ledger.ts';
 import {lockLedgerSource} from '../_shared/period-review.ts';
+import {MANUAL_TABLE} from '../_shared/manual-journal.ts';
 
 const LINES='tblV26TC0f6CKDneL', INVOICES='tbldQXuqNEp8G5pfs';
 const id=n=>'rec'+String(n).padStart(14,'0');
@@ -38,11 +39,21 @@ test('an explicit or inferred invoice-line source reaches the same transaction p
 test('all supported source kinds have distinct stable source-lock keys',async()=>{
  const seen=[];const tx=async(_strings,...values)=>seen.push(values[0]);
  const sourceId=id(5);
- for(const tableId of ['tblR61NG9i0giid28',INVOICES,LINES,'tblC0dbO5UMXzHma9','tbl1LgiUYt7Gc492d','tblrnXm1HN9y6HPxY']){
+ for(const tableId of ['tblR61NG9i0giid28',INVOICES,LINES,'tblC0dbO5UMXzHma9','tbl1LgiUYt7Gc492d','tblrnXm1HN9y6HPxY',MANUAL_TABLE]){
   await lockLedgerSource(tx,{tableId,recordId:sourceId});
  }
- assert.deepEqual(seen,['FIN payment:','FIN invoice:','FIN invoice line:','FIN depreciation:','FIN prepay:','FIN shipping:'].map(prefix=>prefix+sourceId));
- assert.equal(new Set(seen).size,6);
+ assert.deepEqual(seen,['FIN payment:','FIN invoice:','FIN invoice line:','FIN depreciation:','FIN prepay:','FIN shipping:','FIN manual journal:'].map(prefix=>prefix+sourceId));
+ assert.equal(new Set(seen).size,7);
+});
+
+test('manual journals require one whole manual rule and cannot disguise another source',async()=>{
+ const sentinel=new Error('Transaction reached'),sql={begin(){throw sentinel;}};
+ const event={manualJournalRecordId:id(7),eventType:'entry_requested',entryDate:'2026-11-18',categories:[{ruleCode:'MAN-01',postings:[{}]}]};
+ await assert.rejects(()=>postPayment(sql,event),e=>e===sentinel);
+ for(const change of [e=>{e.eventType='created';},e=>{e.paymentRecordId=id(8);},e=>{e.invoiceRecordId=id(8);},e=>{e.invoiceLineRecordId=id(8);},e=>{e.manualJournalRecordId='invalid';},e=>{e.source={tableId:INVOICES,recordId:id(7)};},e=>{e.source={tableId:MANUAL_TABLE,recordId:id(8)};},e=>{e.categories=undefined;},e=>{e.categories=[];},e=>{e.categories[0].ruleCode='PAY-09';},e=>{e.categories[0].entryKey='line';},e=>{e.categories[0].postings=[];}]){
+  const value=structuredClone(event);change(value);await assert.rejects(()=>postPayment(sql,value),e=>e.name==='PostingError');
+ }
+ await assert.rejects(()=>postPayment(sql,{...event,manualJournalRecordId:undefined,paymentRecordId:id(7),eventType:'sent'}),e=>e.name==='PostingError');
 });
 
 

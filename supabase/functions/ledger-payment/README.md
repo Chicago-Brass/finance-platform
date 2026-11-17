@@ -63,13 +63,24 @@ returning success. Posting responses retain their original per-event counts/IDs 
 `ledgerPostings`. Invoice-owned payment packets update the invoice's fields, not the payment's.
 
 The source lock serializes metadata verification and compensation with posting and reversal.
-Writeback uses one PATCH followed by a filtered GET of the source's three ledger fields. A lost
-PATCH response is resolved by that read, without blindly sending another write. Verification reads
-can make up to three attempts within the writeback deadline.
+Writeback starts with one PATCH followed by a filtered GET of the source's three ledger fields.
+A lost successful PATCH response is resolved by that read without repeating the write. Posting,
+reversal and replay can make up to three PATCH attempts, but only after a transient failure and a
+successful GET proves the expected values are still absent. Network/5xx retries back off for 500
+then 1,000 milliseconds. A PATCH 429 waits 30 seconds before even its verification GET; GET 429s
+also wait 30 seconds. Permanent 4xx responses do not retry. Each request has a 15-second timeout;
+the existing writeback deadline limits attempts and reserves a complete PATCH/GET pair before
+another write. Repeated 429s can exhaust the budget before all three attempts. Verification reads
+can make up to three attempts within the same deadline. The daily worker reserves 12 network
+requests before financial posting: three PATCH attempts plus up to nine verification GET attempts.
 
 If the read confirms the new IDs are absent, the service deletes only journals newly created by
 this call, cascading their lines. It preserves earlier/duplicate journals. The response is HTTP 503
 with `code: airtable_writeback_failed` and `outcome: rolled_back`; an identical retry can post again.
+The 503 response and per-source error message include safe operation, status, attempt and reason
+when available. Metadata SQL/rollback failures retain a sanitized database code and are distinguished
+from PATCH/GET errors. These diagnostics never include response bodies, credentials or source
+financial values. A Supabase 503 does not by itself prove Airtable returned 429.
 If a read cannot complete, a partial save references new IDs, or the delete cannot be confirmed,
 the response uses `outcome: unconfirmed`. It does not claim a clean rollback. Exact replays still
 deduplicate. There is no repair queue. Supabase and Airtable do not share a transaction; a late
@@ -77,7 +88,7 @@ server-side Airtable save after the verification read or an interrupted invocati
 uncertain. Depreciation/prepaid native senders and review/reversal services retain their separate
 existing contracts. Accounting replay, source ownership and period guards remain enforced.
 
-Current writeback deployment: `ledger-payment` version 18 and `ledger-daily` version 6 were
+Historical writeback deployment: `ledger-payment` version 18 and `ledger-daily` version 6 were
 verified ACTIVE on 10 November 2026. All 33 downloaded runtime modules matched local source;
 invalid-secret requests returned HTTP 401. Failure scenarios used disposable PostgreSQL and
 synthetic Airtable responses. No hosted financial test or cron activation was executed.

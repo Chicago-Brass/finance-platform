@@ -12,7 +12,7 @@ const sql = postgres(databaseUrl, { prepare: false, max: 4, connect_timeout: 5, 
 const posting = (debit = "211.100", credit = "112.100", amount = "100.00", refs = {}) => ({
   debitAccount: { number: debit }, creditAccount: { number: credit }, amount, ...refs,
 });
-const event = (id, rule = "PAY-07", postings = [posting()], transactionType = "Airtable-selected transaction") => ({
+const event = (id, rule = "PAY-09", postings = [posting()], transactionType = "Airtable-selected transaction") => ({
   paymentRecordId: id, eventType: "sent", entryDate: "2026-10-29",
   paymentName: "Test payment", paymentAmount: "100.00", referenceNumber: "TEST-REF",
   categories: [{ ruleCode: rule, transactionType, postings }],
@@ -93,7 +93,7 @@ test("invalid account keys and branches fail without partial journals; missing b
 
 test("aggregate card payments with several branches keep nullable attribution without changing amounts", async () => {
   for (const [id, branch, expected] of [["recMixedCardBranch", ["Chicago", "Milwaukee"], null], ["recSharedCardBranch", ["Chicago", "Chicago"], "Chicago"]]) {
-    const value = event(id, "PAY-17", [posting("231.100", "112.100", "15.25", { branch })]);
+    const value = event(id, "PAY-21", [posting("231.100", "112.100", "15.25", { branch })]);
     assert.equal((await postPayment(sql, value)).postedCount, 1);
     const stored = await lines(id); assert.ok(stored.every(line => line.branch === expected));
     assert.deepEqual(stored.map(line => [line.debit, line.credit]), [["15.25", "0.00"], ["0.00", "15.25"]]);
@@ -305,16 +305,16 @@ test("the webhook reports real posting validation and replay conflicts without a
     method: "POST", headers: { "Content-Type": "application/json", "x-ledger-secret": environment.webhookSecret },
     body: JSON.stringify(packet),
   }), environment, (value) => postPayment(sql, value));
-  const invalid = event("recHttpInvalid", "PAY-07", [posting("211.100", "112.100", "NaN")]);
+  const invalid = event("recHttpInvalid", "PAY-09", [posting("211.100", "112.100", "NaN")]);
   assert.equal((await send(invalid)).status, 400);
   assert.equal((await entries(invalid.paymentRecordId)).length, 0);
-  const changed = event("recHttpPipeline", "PAY-07", [posting("211.100", "112.100", "101.00")]);
+  const changed = event("recHttpPipeline", "PAY-09", [posting("211.100", "112.100", "101.00")]);
   assert.equal((await send(changed)).status, 409);
   assert.equal((await entries(changed.paymentRecordId)).length, 1);
 });
 
 test("direct Edge code persists the free-text type, selected accounts and audit references", async () => {
-  const value = event("recSimple", "PAY-07", [posting("211.100", "112.100", "100.00", {
+  const value = event("recSimple", "PAY-09", [posting("211.100", "112.100", "100.00", {
     invoiceRecordId: "recInvoice", vendorRecordId: "recVendor", clientRecordId: "recClient",
     transactionRecordId: "recOrder", poRecordId: "recPO", staffRecordId: "recStaff",
     sourceRecordId: "recSourceLine", stateCode: "IL", branch: ["Chicago"],
@@ -537,7 +537,7 @@ test("source identity is validated and event names do not select posting behavio
 });
 
 test("changed financial data, transaction type and Sent category sets conflict", async () => {
-  const value = event("recChanged", "PAY-07", [posting("211.100", "112.100", "100.00", { invoiceRecordId: "recInvoice" })]);
+  const value = event("recChanged", "PAY-09", [posting("211.100", "112.100", "100.00", { invoiceRecordId: "recInvoice" })]);
   await postPayment(sql, value);
   for (const amount of ["101.00", "0.00"]) {
     const changed = copy(value); changed.categories[0].postings[0].amount = amount;
@@ -555,39 +555,39 @@ test("changed financial data, transaction type and Sent category sets conflict",
   const extra = copy(value); extra.categories.push({ ruleCode: "PAY-03", transactionType: "Extra category", postings: [posting("112.100", "221.300", "1.00")] });
   await failure(extra, "23505");
   const empty = copy(value); empty.categories = []; await failure(empty, "23505");
-  const reconciliation = event(value.paymentRecordId, "PAY-26", [posting("007.002", "112.100", "0.25")], "Reconciliation adjustment");
+  const reconciliation = event(value.paymentRecordId, "PAY-13", [posting("007.002", "112.100", "0.25")], "Reconciliation adjustment");
   reconciliation.eventType = "reconciled";
   await postPayment(sql, reconciliation);
   assert.equal((await postPayment(sql, value)).duplicateCount, 1, "reconciliation is a separate event");
 });
 
-test("the 21 current category fixtures preserve Airtable's supplied pairs and amounts", async () => {
+test("generic writer preserves supplied account pairs independently of current category routing", async () => {
   const cases = [
-    ["PAY-01", [posting("112.100", "221.100", "1.00")]],
-    ["PAY-02", [posting("112.100", "121.100", "1.00")]],
+    ["PAY-28", [posting("112.100", "221.100", "1.00")]],
+    ["PAY-29", [posting("112.100", "121.100", "1.00")]],
     ["PAY-03", [posting("112.100", "221.300", "1.00")]],
-    ["PAY-04", [posting("121.100", "010.001", "0.25")]],
-    ["PAY-05", [posting("221.100", "112.100", "1.00")]],
-    ["PAY-07", [posting("211.100", "112.100", "1.00")]],
+    ["PAY-30", [posting("121.100", "010.001", "0.25")]],
+    ["PAY-32", [posting("221.100", "112.100", "1.00")]],
+    ["PAY-09", [posting("211.100", "112.100", "1.00")]],
     ["PAY-08", [posting("211.100", "231.100", "1.00")]],
     ["PAY-09", [posting("231.100", "112.100", "1.00")]],
     ["PAY-13", [posting("112.100", "211.100", "1.00")]],
-    ["PAY-15", [posting("241.100", "112.100", "1.00"), posting("007.002", "112.100", "0.10")]],
+    ["PAY-20", [posting("241.100", "112.100", "1.00"), posting("007.002", "112.100", "0.10")]],
     ["PAY-16", [posting("232.100", "112.100", "1.00"), posting("007.003", "112.100", "0.00")]],
-    ["PAY-17", [posting("112.100", "231.200", "1.00")]],
-    ["PAY-18", [posting("231.200", "112.100", "1.00"), posting("007.003", "112.100", "0.10")]],
-    ["PAY-19", [posting("0747", "112.100", "1.00")]],
+    ["PAY-21", [posting("112.100", "231.200", "1.00")]],
+    ["PAY-16", [posting("231.200", "112.100", "1.00"), posting("007.003", "112.100", "0.10")]],
+    ["PAY-24", [posting("0747", "112.100", "1.00")]],
     ["PAY-20", [posting("316.100", "112.100", "1.00")]],
     ["PAY-21", [posting("112.100", "311.200", "1.00")]],
-    ["PAY-22", [posting("242.100", "112.100", "1.00"), posting("242.200", "112.100", "0.10", { stateCode: "IL" })]],
+    ["PAY-11", [posting("242.100", "112.100", "1.00"), posting("242.200", "112.100", "0.10", { stateCode: "IL" })]],
     ["PAY-23", [posting("112.100", "122.100", "1.00"), posting("004.004", "122.100", "0.10")]],
     ["PAY-24", [posting("143.200", "112.100", "1.00")]],
-    ["PAY-26", [posting("007.002", "112.100", "0.25")]],
+    ["PAY-13", [posting("007.002", "112.100", "0.25")]],
     ["PAY-27", [posting("231.100", "004.011", "1.00")]],
   ];
-  for (const [rule, postings] of cases) {
-    const value = event(`recRule-${rule}`, rule, postings, `Airtable category ${rule}`);
-    if (rule === "PAY-26") value.eventType = "reconciled";
+  for (const [index, [rule, postings]] of cases.entries()) {
+    const value = event(`recRule-${index}-${rule}`, rule, postings, `Airtable category ${rule}`);
+    if (rule === "PAY-13") value.eventType = "reconciled";
     const result = await postPayment(sql, value);
     assert.equal(result.postedCount, 1, rule);
     const rows = await lines(value.paymentRecordId);
@@ -608,7 +608,7 @@ test("reconciliation direction and suspense accounts come from the supplied pair
     ["recAdjustmentNegative", "0.25", "007.002", "112.100"],
     ["recAdjustmentLarge", "6.00", "112.100", "999.999"],
   ]) {
-    const value = event(id, "PAY-26", [posting(debit, credit, amount)], "Reconciliation selected in Airtable"); value.eventType = "reconciled";
+    const value = event(id, "PAY-13", [posting(debit, credit, amount)], "Reconciliation selected in Airtable"); value.eventType = "reconciled";
     await postPayment(sql, value);
     const rows = await lines(id);
     assert.equal(rows.find((row) => row.account_code === debit).debit, amount);
@@ -617,7 +617,7 @@ test("reconciliation direction and suspense accounts come from the supplied pair
 });
 
 test("one category keeps multiple invoice allocations and ignores posting ordering on retry", async () => {
-  const value = event("recSplit", "PAY-07", [posting("211.100", "112.100", "10.00", { invoiceRecordId: "recA" }), posting("211.100", "112.100", "20.00", { invoiceRecordId: "recB" })]);
+  const value = event("recSplit", "PAY-09", [posting("211.100", "112.100", "10.00", { invoiceRecordId: "recA" }), posting("211.100", "112.100", "20.00", { invoiceRecordId: "recB" })]);
   await postPayment(sql, value);
   assert.equal((await entries(value.paymentRecordId)).length, 1);
   assert.equal((await lines(value.paymentRecordId)).length, 4);
@@ -626,20 +626,20 @@ test("one category keeps multiple invoice allocations and ignores posting orderi
 });
 
 test("zero pairs are no-ops while invalid or missing money and type values fail", async () => {
-  const zero = event("recZero", "PAY-07", [{ amount: "0.00" }]);
+  const zero = event("recZero", "PAY-09", [{ amount: "0.00" }]);
   assert.equal((await postPayment(sql, zero)).results[0].status, "noop");
   assert.equal((await entries(zero.paymentRecordId)).length, 0);
   for (const amount of ["NaN", "Infinity", "-Infinity", "1e2", "1.001", "", "10000000000000000.00", null, 1]) {
-    await failure(event("recBadMoney", "PAY-07", [posting("211.100", "112.100", amount)]));
+    await failure(event("recBadMoney", "PAY-09", [posting("211.100", "112.100", amount)]));
   }
-  const missing = posting(); delete missing.amount; await failure(event("recMissingMoney", "PAY-07", [missing]));
+  const missing = posting(); delete missing.amount; await failure(event("recMissingMoney", "PAY-09", [missing]));
   const type = event("recMissingType"); delete type.categories[0].transactionType; await failure(type);
   const blank = event("recBlankType"); blank.categories[0].transactionType = ""; await failure(blank);
   await failure(event("recUnknownRule", "PAY-UNKNOWN", [posting("211.100", "112.100", "1.00")]));
   for (const entryDate of ["infinity", "2026-02-31", "2026-10-29T00:00:00Z"]) {
     const value = event("recBadDate"); value.entryDate = entryDate; await failure(value);
   }
-  const large = event("recMaximumMoney", "PAY-07", [posting("211.100", "112.100", "9999999999999999.99")]);
+  const large = event("recMaximumMoney", "PAY-09", [posting("211.100", "112.100", "9999999999999999.99")]);
   await postPayment(sql, large);
   assert.equal((await lines(large.paymentRecordId))[0].debit, "9999999999999999.99");
 });
@@ -679,7 +679,7 @@ test("account identity resolution takes precedence and invalid selected accounts
 
 test("a later invalid category rolls back all of the payment's journals", async () => {
   const value = event("recAtomic");
-  value.categories.push({ ruleCode: "PAY-19", transactionType: "Bad second pair", postings: [posting("missing", "112.100", "1.00")] });
+  value.categories.push({ ruleCode: "PAY-24", transactionType: "Bad second pair", postings: [posting("missing", "112.100", "1.00")] });
   await failure(value);
   assert.equal((await entries(value.paymentRecordId)).length, 0);
 });
@@ -688,7 +688,7 @@ test("all linked business references persist as arrays and reordered references 
   const references = { vendorRecordIds: ["vendorB", "vendorA"], clientRecordIds: ["clientA", "clientB"],
     staffRecordIds: ["staffA", "staffB"], transactionRecordIds: ["orderB", "orderA"], poRecordIds: ["poA", "poB"],
     invoiceRecordIds: ["invoiceA", "invoiceB"], stateRecordIds: ["stateA", "stateB"], branch: ["Chicago", ""] };
-  const value = event("recReferenceArrays", "PAY-07", [posting("211.100", "112.100", "12.34", references)]);
+  const value = event("recReferenceArrays", "PAY-09", [posting("211.100", "112.100", "12.34", references)]);
   await postPayment(sql, value);
   const stored = await lines(value.paymentRecordId);
   for (const row of stored) {
@@ -741,7 +741,7 @@ test("historically reversed source journals remain protected from reposting", as
   // Disposable fixture history only: the Edge writer never creates these reversal links.
   const [historical] = await sql`insert into public.journal_entries
     (entry_date, rule_code, source_event_type, description, source_system, source_table, source_record_id, reverses_entry_id)
-    values ('2026-10-30', 'PAY-07', 'cancelled', 'Historical fixture', 'airtable', 'tblR61NG9i0giid28', ${value.paymentRecordId}, ${original.id}::uuid)
+    values ('2026-10-30', 'PAY-09', 'cancelled', 'Historical fixture', 'airtable', 'tblR61NG9i0giid28', ${value.paymentRecordId}, ${original.id}::uuid)
     returning id`;
   await sql`insert into public.journal_lines (entry_id, line_no, account_code, debit, credit)
     select ${historical.id}::uuid, line_no, account_code, credit, debit from public.journal_lines where entry_id=${original.id}::uuid`;

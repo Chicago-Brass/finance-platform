@@ -22,7 +22,7 @@ const event = (n, date = "2097-05-15") => ({
   entryDate: date,
   categories: [
     {
-      ruleCode: "PAY-07",
+      ruleCode: "PAY-09",
       transactionType: "Period test",
       postings: [
         {
@@ -292,7 +292,7 @@ test("direct/manual posting cannot bypass a pending review after reopening",asyn
  await changePeriod(sql,manager,"open","2197-08-01","Review pending entry");
  await assert.rejects(()=>sql.begin(async tx=>{
    const [entry]=await tx`insert into public.journal_entries(entry_date,source_system,source_table,source_record_id,source_event_type,rule_code,description)
-     values ('2197-08-15','airtable','tblR61NG9i0giid28',${e.paymentRecordId},'sent','PAY-07','Manual bypass attempt') returning id`;
+     values ('2197-08-15','airtable','tblR61NG9i0giid28',${e.paymentRecordId},'sent','PAY-09','Manual bypass attempt') returning id`;
    await tx`insert into public.journal_lines(entry_id,line_no,account_code,debit,credit) values (${entry.id},1,'211.100',12.34,0),(${entry.id},2,'112.100',0,12.34)`;
    await tx`update public.journal_entries set status='posted' where id=${entry.id}`;
  }),/explicit review/);

@@ -122,7 +122,7 @@ export class AirtableClient implements FormulaBuilder {
     else this.cache.clear();
   }
   requireWritebackBudget(): void {
-    if (this.requests + 4 > this.maxRequests || Date.now() + 40_000 >= this.deadline) throw new BudgetExceeded("Reserve time and requests for writeback verification before posting.");
+    if (this.requests + 12 > this.maxRequests || Date.now() + 40_000 >= this.deadline) throw new BudgetExceeded("Reserve time and requests for writeback verification before posting.");
   }
   // Shared writeback uses the same request counter, pacing and read-only boundary as discovery.
   async fetch(url: string | URL | Request, options?: RequestInit): Promise<Response> {

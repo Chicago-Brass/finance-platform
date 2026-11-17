@@ -7,7 +7,8 @@ const product = (q: FormulaBuilder) => and(ar(q), q.eq(T.invoices, I.vendorTypeA
 const deposit = (q: FormulaBuilder) => and(product(q), q.eq(T.invoices, I.kind, "Deposit Invoice"));
 const balance = (q: FormulaBuilder) => and(product(q), or(q.eq(T.invoices, I.kind, "Full Invoice"), q.eq(T.invoices, I.kind, "Balance Invoice")));
 const asset = (q: FormulaBuilder) => and(q.eq(T.invoices, I.type, "AP"), q.eq(T.invoices, I.vendorTypeAP, "AP - Assets"), q.eq(T.invoices, I.prepaid, 0), q.includes(T.invoices, I.accounts, "143.300"));
-const nonProduct = (q: FormulaBuilder) => and(ar(q), q.eq(T.invoices, I.vendorTypeAR, "AR - Non-Product"));
+const nonProduct = (q: FormulaBuilder) => and(ar(q), q.eq(T.invoices, I.vendorTypeAR, "AR - Non-Product"),
+    `NOT(${q.includes(T.invoices, I.accounts, "004.011")})`, `NOT(${q.includes(T.invoices, I.accounts, "311.200")})`, `NOT(${q.includes(T.invoices, I.accounts, "004.004")})`);
 function invoice(code: string, name: string, filter: CategoryDefinition["filter"], extra: Partial<CategoryDefinition> = {}): CategoryDefinition {
     return { id: code, code, name, tableId: T.invoices, module: "invoice-entry", eventType: "entry_requested", input: "record", status: "implemented", filter, ...extra };
 }

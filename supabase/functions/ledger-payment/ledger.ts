@@ -3,6 +3,7 @@ import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { PostingError } from "./errors.ts";
 export { PostingError } from "./errors.ts";
 import { holdForReview, lockLedgerSource } from "../_shared/period-review.ts";
+import { MANUAL_TABLE } from "../_shared/manual-journal.ts";
 
 interface AccountReference { recordId?: string; number?: string }
 interface LedgerSource { tableId: string; recordId: string; recordName?: string }
@@ -41,6 +42,7 @@ export interface LedgerPaymentEvent {
   depreciationRecordId?: string;
   prepayLogRecordId?: string;
   shippingRecordId?: string;
+  manualJournalRecordId?: string;
   source?: LedgerSource;
   eventType: "sent" | "cancelled" | "returned" | "reconciled" | "created" | "entry_requested" | "paid";
   entryDate: string;
@@ -130,11 +132,16 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
   const depreciationId = optionalText(event.depreciationRecordId);
   const prepayLogId = optionalText(event.prepayLogRecordId);
   const shippingId = optionalText(event.shippingRecordId);
+  const manualId = optionalText(event.manualJournalRecordId);
+  if (manualId && !/^rec[A-Za-z0-9]{14}$/.test(manualId)) throw new PostingError("manualJournalRecordId must be a FIN Airtable record ID.");
   if (shippingId && !/^rec[A-Za-z0-9]{14}$/.test(shippingId)) throw new PostingError("shippingRecordId must be a FIN Airtable record ID.");
-  if ([invoiceLineId, depreciationId, prepayLogId, shippingId].filter(Boolean).length > 1) throw new PostingError("A record event must identify only one source record type.");
-  const recordTable = invoiceLineId ? INVOICE_LINE_TABLE : depreciationId ? DEPRECIATION_TABLE : prepayLogId ? PREPAY_TABLE : shippingId ? SHIPPING_TABLE : null;
+  if ([invoiceLineId, depreciationId, prepayLogId, shippingId, manualId].filter(Boolean).length > 1) throw new PostingError("A record event must identify only one source record type.");
+  const recordTable = manualId ? MANUAL_TABLE : invoiceLineId ? INVOICE_LINE_TABLE : depreciationId ? DEPRECIATION_TABLE : prepayLogId ? PREPAY_TABLE : shippingId ? SHIPPING_TABLE : null;
   const invoiceEvent = !recordTable && ["created", "entry_requested", "paid"].includes(event.eventType);
-  if (invoiceLineId) {
+  if (manualId) {
+    if (event.eventType !== "entry_requested" || paymentId || invoiceId) throw new PostingError("A manual journal requires eventType entry_requested and its own source identity.");
+    if (!Array.isArray(event.categories) || event.categories.length !== 1 || event.categories[0]?.ruleCode !== "MAN-01" || event.categories[0]?.entryKey || !Array.isArray(event.categories[0]?.postings) || !event.categories[0].postings.length) throw new PostingError("A manual entry must contain one whole MAN-01 journal with its line pairs.");
+  } else if (invoiceLineId) {
     if (!/^rec[A-Za-z0-9]{14}$/.test(invoiceLineId)) throw new PostingError("invoiceLineRecordId must be a FIN Airtable record ID.");
     if (event.eventType !== "entry_requested" || paymentId || invoiceId) throw new PostingError("An invoice-line event requires eventType entry_requested and must not supply paymentRecordId or invoiceRecordId; put the parent invoice on posting references.");
   } else if (recordTable) {
@@ -150,7 +157,8 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
   if (event.sourceDate) validateDate(event.sourceDate);
   if (!["sent", "cancelled", "returned", "reconciled", "created", "entry_requested", "paid"].includes(event.eventType)) throw new PostingError("Unsupported ledger event type.");
   if (!Array.isArray(event.categories)) throw new PostingError("categories must be an array.");
-  const triggerId = invoiceLineId ?? depreciationId ?? prepayLogId ?? shippingId ?? (invoiceEvent ? invoiceId! : paymentId!);
+  if (!manualId && event.categories.some(category => category?.ruleCode === "MAN-01")) throw new PostingError("MAN-01 requires a manual journal source.");
+  const triggerId = manualId ?? invoiceLineId ?? depreciationId ?? prepayLogId ?? shippingId ?? (invoiceEvent ? invoiceId! : paymentId!);
   const source = resolveSource(event, triggerId, invoiceEvent, recordTable);
   const auditLink = `${FIN_URL}/${recordTable ?? (invoiceEvent ? INVOICE_TABLE : PAYMENT_TABLE)}/${triggerId}`;
 
@@ -317,7 +325,7 @@ function resolveSource(event: LedgerPaymentEvent, triggerId: string, invoiceEven
   if (event.source === undefined) return { tableId: recordTable ?? (invoiceEvent ? INVOICE_TABLE : PAYMENT_TABLE), recordId: triggerId, recordName: invoiceEvent || recordTable ? undefined : event.paymentName };
   if (!event.source || typeof event.source !== "object" || Array.isArray(event.source)) throw new PostingError("source must identify a FIN source table and record.");
   const tableId = optionalText(event.source.tableId), recordId = optionalText(event.source.recordId);
-  if (!tableId || ![PAYMENT_TABLE, INVOICE_TABLE, INVOICE_LINE_TABLE, DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE].includes(tableId) || !recordId) throw new PostingError("source must identify a FIN Payments, Invoices, Invoice Lines, Depreciation Table, Prepay Expenses Log or Shipping Record record.");
+  if (!tableId || ![PAYMENT_TABLE, INVOICE_TABLE, INVOICE_LINE_TABLE, DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE, MANUAL_TABLE].includes(tableId) || !recordId) throw new PostingError("source must identify a supported FIN ledger source record.");
   if (recordTable && (tableId !== recordTable || recordId !== triggerId)) throw new PostingError("The source must match its source record ID and table.");
   if (!recordTable && tableId === INVOICE_LINE_TABLE) throw new PostingError("An invoice-line source requires invoiceLineRecordId and eventType entry_requested.");
   if (!recordTable && [DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE].includes(tableId)) throw new PostingError("A depreciation, prepay-log or shipping-record source requires its record ID and eventType created.");

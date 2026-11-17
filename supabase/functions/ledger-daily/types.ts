@@ -28,6 +28,7 @@ export interface FormulaBuilder {
 }
 export type SyncSource = { tableId: string; recordId: string };
 export type RunState = {
+  createdFrom?: string;
   source?: SyncSource;
   dateRange?: SyncDateRange;
   dryRun: boolean;

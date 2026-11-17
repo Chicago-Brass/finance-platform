@@ -1,5 +1,13 @@
 # FIN ledger webhook contract
 
+Current Payment routing is documented in [the Payment category matrix](ledger-payment-category-matrix.md).
+It uses source-owned `ledger-daily` handlers. The older native Payment posting senders are OFF;
+their descriptions below are historical and must not be used as current category definitions.
+
+The daily, posting and reversal endpoints route authenticated requests to their database's Oregon
+region before processing. Existing URLs and secrets remain valid. Callers can send
+`x-region: us-west-2` to avoid the forwarding hop; request bodies and duplicate protections are unchanged.
+
 ## Responsibilities
 
 Airtable qualifies categories, calculates component amounts and allocations, selects final debit
@@ -25,7 +33,7 @@ event's amount, and there is no reversal, deletion or posted-entry edit.
 | airtable/prepay-created.js | Prepay Expenses Log record created; EXP-04 |
 | airtable/depreciation-created.js | Depreciation Table record created; EXP-10 |
 
-There are three active payment automations, each with one script action: Payment Sent, Payment Cancelled
+The three legacy Payment posting automations are OFF: Payment Sent, Payment Cancelled
 and Payment Reconciled. Invoice Created is ON with only the working partial outbound-freight handler. Invoice Entry Create Entry has an independent checkbox event. The former Invoice Paid and Payment Returned automations were deleted.
 Sent + Return Payment (AP) handles AP returns. The event script rejects a standalone returned input;
 the generic receiver still accepts returned event metadata for otherwise valid supplied pairs.

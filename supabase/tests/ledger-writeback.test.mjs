@@ -14,7 +14,7 @@ const sql = postgres(databaseUrl, { prepare: false, max: 4, onnotice() {} });
 after(() => sql.end());
 const P = "tblR61NG9i0giid28", I = "tbldQXuqNEp8G5pfs", token = "synthetic-airtable-token";
 const id = n => `rec${String(n).padStart(14, "0")}`;
-const category = (code = "PAY-07", key = "") => ({ ruleCode: code, entryKey: key, transactionType: "Link test", postings: [{ debitAccount: { number: "211.100" }, creditAccount: { number: "112.100" }, amount: "10.00" }] });
+const category = (code = "PAY-09", key = "") => ({ ruleCode: code, entryKey: key, transactionType: "Link test", postings: [{ debitAccount: { number: "211.100" }, creditAccount: { number: "112.100" }, amount: "10.00" }] });
 const payment = n => ({ paymentRecordId: id(n), eventType: "sent", entryDate: "2026-11-01", categories: [category()] });
 const count = async recordId => Number((await sql`select count(*) as n from public.journal_entries where source_record_id=${recordId}`)[0].n);
 
@@ -32,7 +32,7 @@ function airtable() {
       return Response.json({ records: body.records });
     }
     const recordId = JSON.parse(parsed.searchParams.get("filterByFormula").slice("RECORD_ID()=".length));
-    return Response.json({ records: [{ id: recordId, fields: records.get(`${tableId}/${recordId}`) }] });
+    return Response.json({ records: [{ id: recordId, fields: records.get(`${tableId}/${recordId}`) ?? {} }] });
   };
   return { records, calls, fetcher };
 }
@@ -47,7 +47,7 @@ test("original payment webhook writes complete structured links and independentl
   assert.deepEqual(JSON.parse(saved[fields.postings]), result.ledgerPostings);
   assert.equal(result.ledgerPostings.length, 2);
   assert(result.ledgerPostings.every(p => /^\d{4}-.*T.*Z$/.test(p.datetime) && p.id));
-  assert.deepEqual(result.ledgerPostings.map(p => [p.rule, p.key]), [["PAY-07", ""], ["PAY-08", "231.100"]]);
+  assert.deepEqual(result.ledgerPostings.map(p => [p.rule, p.key]), [["PAY-08", "231.100"], ["PAY-09", ""]]);
   assert.deepEqual(JSON.parse(saved[fields.reversalIds]), []);
   a.records.clear();
   const retried = await postAndSync(sql, event, token, a.fetcher);
@@ -70,7 +70,7 @@ test("native invoice creation and payment-triggered invoice packets update the i
 test("writeback keeps prior event categories and restores the entire source journal set", async () => {
   const a = airtable(), event = payment(9304);
   await postAndSync(sql, event, token, a.fetcher);
-  const later = { ...event, eventType: "reconciled", categories: [category("PAY-26")] };
+  const later = { ...event, eventType: "reconciled", categories: [category("PAY-13")] };
   const result = await postAndSync(sql, later, token, a.fetcher);
   assert.equal(result.journalEntryIds.length, 1, "existing response still describes the submitted event");
   assert.equal(result.ledgerPostings.length, 2, "Airtable receives all source-owned original journals");
@@ -115,7 +115,7 @@ test("lost PATCH response without a save rolls back every new journal and its li
     return Response.json({ records: [{ id: event.paymentRecordId, fields: {} }] });
   };
   await assert.rejects(() => postAndSync(sql, event, token, fetcher), error => error.outcome === "rolled_back");
-  assert.deepEqual(calls, ["PATCH", "GET"]);
+  assert.deepEqual(calls, ["PATCH", "GET", "PATCH", "GET", "PATCH", "GET"]);
   assert.equal(await count(event.paymentRecordId), 0);
   assert.equal(Number((await sql`select count(*) as n from public.journal_lines where airtable_record_id=${event.paymentRecordId}`)[0].n), 0);
   const retry = await postAndSync(sql, event, token, airtable().fetcher);
@@ -164,7 +164,7 @@ test("lost PATCH and GET responses never authorize deletion", async t => {
   assert.equal(reads, 3); assert.equal(await count(event.paymentRecordId), 1);
 });
 
-test("daily posting uses the same writeback and rollback flow without a second PATCH", async () => {
+test("daily posting uses verified writeback and does not retry a permanent rejection", async () => {
   const event = payment(9324), a = airtable(), daily = new DatabaseLedgerStore(sql, token, a.fetcher);
   const result = await daily.post(event);
   assert.equal(result.postedCount, 1); assert.deepEqual(a.calls.map(c => c.method), ["PATCH", "GET"]);
@@ -185,7 +185,7 @@ test("a failed compensating delete is not reported as a successful rollback", as
   try {
     const fetcher = async (url, options) => options.method === "PATCH" ? new Response("denied", { status: 403 }) :
       Response.json({ records: [{ id: event.paymentRecordId, fields: {} }] });
-    await assert.rejects(() => postAndSync(sql, event, token, fetcher), error => error.outcome === "unconfirmed");
+    await assert.rejects(() => postAndSync(sql, event, token, fetcher), error => error.outcome === "unconfirmed" && error.details.operation === "PATCH" && error.details.status === 403 && error.details.databaseCode === "P0001");
     assert.equal(await count(event.paymentRecordId), 1);
   } finally {
     await sql`drop trigger test_reject_rollback on public.journal_entries`;
@@ -220,6 +220,62 @@ test("reversal refreshes metadata and both ID arrays for all journals, and retri
   }
 });
 
+test("reversal retries a transient rejected metadata PATCH without creating another journal", async t => {
+  t.mock.method(console, "error", () => {});
+  const event = payment(9350), a = airtable();
+  await postAndSync(sql, event, token, a.fetcher);
+  a.calls.length = 0;
+  let patches = 0;
+  const fetcher = async (url, options) => {
+    if (options.method === "PATCH" && ++patches === 1) {
+      a.calls.push({ tableId: P, method: "PATCH" });
+      return new Response("temporary rejection", { status: 503 });
+    }
+    return a.fetcher(url, options);
+  };
+  const request = { source: { tableId: P, recordId: event.paymentRecordId }, reversalDate: "2026-11-09" };
+  const result = await reverseAndSync(sql, request, token, fetcher);
+  assert.equal(result.reversedCount, 1); assert.equal(await count(event.paymentRecordId), 2);
+  assert.deepEqual(a.calls.map(c => c.method), ["PATCH", "GET", "PATCH", "GET"]);
+  assert.deepEqual(JSON.parse(a.records.get(`${P}/${event.paymentRecordId}`)[LINK_FIELDS[P].reversalIds]), result.reversalJournalEntryIds);
+  const replay = await reverseAndSync(sql, request, token, a.fetcher);
+  assert.equal(replay.reversedCount, 0); assert.equal(replay.duplicateCount, 1); assert.equal(await count(event.paymentRecordId), 2);
+});
+
+test("reversal verifies a saved PATCH with a lost response without retrying or duplicating", async t => {
+  t.mock.method(console, "error", () => {});
+  const event = payment(9351), a = airtable();
+  await postAndSync(sql, event, token, a.fetcher);
+  a.calls.length = 0;
+  const result = await reverseAndSync(sql, { source: { tableId: P, recordId: event.paymentRecordId }, reversalDate: "2026-11-09" }, token, async (url, options) => {
+    const saved = await a.fetcher(url, options);
+    if (options.method === "PATCH") throw new Error("response lost after save");
+    return saved;
+  });
+  assert.equal(result.reversedCount, 1); assert.equal(await count(event.paymentRecordId), 2);
+  assert.deepEqual(a.calls.map(c => c.method), ["PATCH", "GET"]);
+  assert.deepEqual(JSON.parse(a.records.get(`${P}/${event.paymentRecordId}`)[LINK_FIELDS[P].reversalIds]), result.reversalJournalEntryIds);
+});
+
+test("posting recovers two transient writeback failures with exactly one balanced journal", async t => {
+  t.mock.method(console, "error", () => {});
+  const event = payment(9352), a = airtable(); let patches = 0;
+  const result = await postAndSync(sql, event, token, async (url, options) => {
+    if (options.method === "PATCH" && ++patches <= 2) {
+      a.calls.push({ tableId: P, method: "PATCH" });
+      return new Response("temporary rejection", { status: 503 });
+    }
+    return a.fetcher(url, options);
+  });
+  assert.equal(result.postedCount, 1); assert.equal(await count(event.paymentRecordId), 1);
+  assert.deepEqual(a.calls.map(call => call.method), ["PATCH", "GET", "PATCH", "GET", "PATCH", "GET"]);
+  assert.deepEqual(JSON.parse(a.records.get(`${P}/${event.paymentRecordId}`)[LINK_FIELDS[P].ids]), result.journalEntryIds);
+  const [totals] = await sql`select sum(l.debit) as debit,sum(l.credit) as credit from public.journal_lines l join public.journal_entries e on e.id=l.entry_id where e.source_record_id=${event.paymentRecordId}`;
+  assert.equal(totals.debit, totals.credit);
+  const replay = await postAndSync(sql, event, token, a.fetcher);
+  assert.equal(replay.postedCount, 0); assert.equal(replay.duplicateCount, 1); assert.equal(await count(event.paymentRecordId), 1);
+});
+
 test("missing writeback credentials prevent payment/invoice posting or reversal before financial changes", async () => {
   const event = payment(9309);
   await assert.rejects(() => postAndSync(sql, event, ""), /could not be confirmed/); assert.equal(await count(event.paymentRecordId), 0);
@@ -239,7 +295,7 @@ test("invalid source ownership cannot write Airtable, and no-journal sources cau
 test("concurrent metadata syncs serialize by source and preserve both event categories", async () => {
   const a = airtable(), event = payment(9312);
   await postPayment(sql, event);
-  await postPayment(sql, { ...event, eventType: "reconciled", categories: [category("PAY-26")] });
+  await postPayment(sql, { ...event, eventType: "reconciled", categories: [category("PAY-13")] });
   await Promise.all([syncLedgerLinks(sql, { tableId: P, recordId: event.paymentRecordId }, token, a.fetcher), syncLedgerLinks(sql, { tableId: P, recordId: event.paymentRecordId }, token, a.fetcher)]);
   assert.deepEqual(a.calls.map(c => c.method), ["PATCH", "GET", "PATCH", "GET"]);
   assert.equal(JSON.parse(a.records.get(`${P}/${event.paymentRecordId}`)[LINK_FIELDS[P].postings]).length, 2);
@@ -248,7 +304,7 @@ test("concurrent metadata syncs serialize by source and preserve both event cate
 test("daily writeback shares the native source lock and complete verified journal lists", async () => {
   const a = airtable(), event = payment(9315);
   await postPayment(sql, event);
-  await postPayment(sql, { ...event, eventType: "reconciled", categories: [category("PAY-26")] });
+  await postPayment(sql, { ...event, eventType: "reconciled", categories: [category("PAY-13")] });
   const daily = new DatabaseLedgerStore(sql, token, a.fetcher);
   const [refs] = await Promise.all([
     daily.syncLinks(P, event.paymentRecordId),

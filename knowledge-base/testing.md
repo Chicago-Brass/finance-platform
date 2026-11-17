@@ -8,6 +8,17 @@ snapshots lack invoice-line records; their incomplete cases are reported separat
 as live API or line-mapping proof. The synthetic fixtures cover current line grouping and signs.
 `sh supabase/tests/check-payment-posting.sh` uses a disposable local database only.
 
+## Environment
+
+Use [Supabase develop](environments.md) for normal development and hosted test work.
+Production resets/tests require the user's task scope; do not use production as a disposable
+development database. Keep all production FIN automation URLs unchanged.
+
+`sh supabase/tests/check-ledger-dispatcher.sh` proves the fixed November 17 start, Chicago/DST
+scheduling, checkpoint resume, leases, daily deduplication and dispatcher permissions in a
+disposable database with captured HTTP calls.
+`node --test lib/supabase/config.test.cjs` checks local fail-closed configuration.
+
 ## Application checks
 
 ```sh
@@ -77,6 +88,11 @@ financial query or schema changes. Never reset a hosted database as routine fron
 service-key schema read does not prove signed-in viewer RLS access; test that context separately.
 
 Current release evidence: [release verification](../docs/release-verification.md).
+
+`node --test supabase/functions/_shared/database-region.test.mjs` verifies regional forwarding
+preserves payloads, credentials and error responses, never follows redirects, and never retries
+an uncertain write. The manual category checks verify one bounded batch loads all unique accounts.
+Benchmark complete posting separately from no-op requests and report cold starts separately.
 
 ## Publication
 

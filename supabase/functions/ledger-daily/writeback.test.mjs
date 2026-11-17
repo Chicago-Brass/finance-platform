@@ -63,8 +63,8 @@ test('the shared transport preserves test-mode write blocking',async()=>{
 test('posting reserves verification requests and time before creating any journal',()=>{
  const short=new AirtableClient('test-token',Date.now()+30000,async()=>Response.json({}));
  assert.throws(()=>short.requireWritebackBudget(),/Reserve time/);
- const limited=new AirtableClient('test-token',Date.now()+60000,async()=>Response.json({}),{maxRequests:3});
+ const limited=new AirtableClient('test-token',Date.now()+60000,async()=>Response.json({}),{maxRequests:11});
  assert.throws(()=>limited.requireWritebackBudget(),/Reserve time/);
- const ready=new AirtableClient('test-token',Date.now()+60000,async()=>Response.json({}),{maxRequests:4});
+ const ready=new AirtableClient('test-token',Date.now()+60000,async()=>Response.json({}),{maxRequests:12});
  assert.doesNotThrow(()=>ready.requireWritebackBudget());
 });

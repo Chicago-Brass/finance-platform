@@ -18,41 +18,41 @@ function setup({records=['a'],offsetPage=false,writeFailures=0,postFailures=0}={
  const deps={client,runs,ledger,evaluate,deadline:Date.now()+120000,log(){}};return{deps,calls,jobs,metadata};
 }
 
-test('registry covers all 27 payment categories; query excludes exact rule and reversed sources',()=>{
- assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,27);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,6);
- const {deps}=setup();const formula=candidateFormula(CATEGORIES.find(c=>c.code==='PAY-07'),deps.client);
- assert(formula.includes('"\\"PAY-07\\""'));assert(formula.includes(F.reverse));assert(formula.includes(PF.sent));
- const invoiceRule=CATEGORIES.find(c=>c.id==='PAY-04:underpaid');assert.equal(invoiceRule.tableId,'tbldQXuqNEp8G5pfs');assert(candidateFormula(invoiceRule,deps.client).includes('fld2K7xKmNnLoi4u6'));
+test('registry covers 18 retained payment categories; query excludes exact rule and reversed sources',()=>{
+ assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,18);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,5);
+ const {deps}=setup();const formula=candidateFormula(CATEGORIES.find(c=>c.code==='PAY-09'),deps.client);
+ assert(formula.includes('"\\"PAY-09\\""'));assert(formula.includes(F.reverse));assert(formula.includes(PF.sent));
+ const invoiceRule=CATEGORIES.find(c=>c.id==='PAY-28');assert.equal(invoiceRule.tableId,'tbldQXuqNEp8G5pfs');assert(candidateFormula(invoiceRule,deps.client).includes('fldtVpTc9y7AtQNx0'));
 });
 
 test('discovers every page before writing markers, and posts distinct sources once',async()=>{
- const t=setup({records:['a','b'],offsetPage:true});const result=await runLedgerSync('test',initialState(['PAY-07'],false),t.deps,25);
+ const t=setup({records:['a','b'],offsetPage:true});const result=await runLedgerSync('test',initialState(['PAY-09'],false),t.deps,25);
  assert.equal(t.calls.posts,2);assert.deepEqual(t.calls.queries.map(q=>q.updates),[0,0]);assert.equal(result.done,true);assert.equal(t.calls.updates.length,2);
  for(const update of t.calls.updates){const refs=JSON.parse(update.fields[F.postings]);assert.deepEqual(Object.keys(refs[0]),['rule','key','datetime','id']);assert.deepEqual(JSON.parse(update.fields[F.ids]),refs.map(r=>r.id));}
 });
 
 test('disabled explicit category stays empty instead of falling back to all categories',async()=>{
  const t=setup();t.deps.enabledRuleCodes=new Set();
- const state=initialState(['PAY-07'],false),ids=[...state.categoryIds];
+ const state=initialState(['PAY-09'],false),ids=[...state.categoryIds];
  const result=await runLedgerSync('disabled',state,t.deps);
  assert.equal(result.done,true);assert.equal(t.calls.posts,0);assert.equal(t.calls.queries.length,0);
- assert.deepEqual(t.jobs.get('disabled').state.categoryIds,ids);assert.deepEqual(result.disabledCategories,['PAY-07']);
+ assert.deepEqual(t.jobs.get('disabled').state.categoryIds,ids);assert.deepEqual(result.disabledCategories,['PAY-09']);
 });
 
 test('daily discovery skips disabled rules and processes enabled rules in the same scope',async()=>{
- const t=setup();t.deps.enabledRuleCodes=new Set(['PAY-08']);
- const result=await runLedgerSync('enabled-subset',initialState(['PAY-07','PAY-08'],true),t.deps);
+ const t=setup();t.deps.enabledRuleCodes=new Set(['PAY-12']);
+ const result=await runLedgerSync('enabled-subset',initialState(['PAY-09','PAY-12'],true),t.deps);
  assert.equal(result.done,true);assert.equal(t.calls.queries.length,1);
- assert.deepEqual(result.preview.map(item=>item.category),['PAY-08']);assert.deepEqual(result.disabledCategories,['PAY-07']);
+ assert.deepEqual(result.preview.map(item=>item.category),['PAY-12']);assert.deepEqual(result.disabledCategories,['PAY-09']);
 });
 
 test('a disabled rule discards its resumed candidate snapshot without changing run identity',async()=>{
- const t=setup({records:['a','b']});t.deps.enabledRuleCodes=new Set(['PAY-07']);
- let result=await runLedgerSync('disable-on-resume',initialState(['PAY-07'],false),t.deps,1);
+ const t=setup({records:['a','b']});t.deps.enabledRuleCodes=new Set(['PAY-09']);
+ let result=await runLedgerSync('disable-on-resume',initialState(['PAY-09'],false),t.deps,1);
  assert.equal(result.done,false);assert.equal(t.calls.posts,1);
  const ids=[...t.jobs.get('disable-on-resume').state.categoryIds],queries=t.calls.queries.length;
  t.deps.enabledRuleCodes=new Set();
- result=await runLedgerSync('disable-on-resume',initialState(['PAY-07'],false),t.deps,25);
+ result=await runLedgerSync('disable-on-resume',initialState(['PAY-09'],false),t.deps,25);
  assert.equal(result.done,true);assert.equal(t.calls.posts,1);assert.equal(t.calls.queries.length,queries);
  assert.deepEqual(t.jobs.get('disable-on-resume').state.categoryIds,ids);assert.equal(result.stats.processed,1);
 });
@@ -62,48 +62,48 @@ test('one rolled-back source does not stop the other 99; a later run can retry i
  const t=setup({records});const post=t.deps.ledger.post;let failed=false;
  t.deps.ledger.post=async function(event){if(event.source.recordId==='10'&&!failed){failed=true;throw Error('Airtable did not save links. New journals were rolled back.')}return post.call(this,event)};
  let result;
- do {result=await runLedgerSync('batch',initialState(['PAY-07'],false),t.deps,25)}while(!result.done);
+ do {result=await runLedgerSync('batch',initialState(['PAY-09'],false),t.deps,25)}while(!result.done);
  assert.equal(result.stats.errors,1);assert.equal(result.stats.posted,99);assert.equal(result.stats.processed,100);
  assert.equal(result.errors[0].recordId,'10');assert(!t.metadata.has('10'));assert(t.metadata.has('90'));
- result=await runLedgerSync('tomorrow',initialState(['PAY-07'],false),t.deps,100);
+ result=await runLedgerSync('tomorrow',initialState(['PAY-09'],false),t.deps,100);
  assert.equal(result.stats.errors,0);assert.equal(result.stats.posted,1);assert.equal(t.metadata.size,100);
 });
 
 test('failed writeback rolls back that source without counting it as posted',async()=>{
  const t=setup({records:['bad','good'],writeFailures:1});
- const result=await runLedgerSync('rollback',initialState(['PAY-07'],false),t.deps);
+ const result=await runLedgerSync('rollback',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.done,true);assert.equal(result.stats.posted,1);assert.equal(result.stats.errors,1);
  assert(!t.metadata.has('bad'));assert(t.metadata.has('good'));
 });
 
 test('exhausted database retries report that source and continue',async()=>{
  const t=setup({records:['bad','good'],postFailures:3});
- const result=await runLedgerSync('database-error',initialState(['PAY-07'],false),t.deps);
+ const result=await runLedgerSync('database-error',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.stats.errors,1);assert.equal(result.stats.posted,1);assert.equal(t.calls.posts,4);assert(t.metadata.has('good'));
 });
 
 test('unconfirmed writeback is reported while later sources still finish',async()=>{
  const t=setup({records:['unknown','good']});const post=t.deps.ledger.post;
  t.deps.ledger.post=async function(event){if(event.source.recordId==='unknown')throw Error('Ledger writeback or rollback could not be confirmed. Check this source before retrying.');return post.call(this,event)};
- const result=await runLedgerSync('unknown',initialState(['PAY-07'],false),t.deps);
+ const result=await runLedgerSync('unknown',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.done,true);assert.equal(result.stats.errors,1);assert.equal(result.stats.posted,1);
  assert.equal(result.errors[0].recordId,'unknown');assert.match(result.errors[0].message,/could not be confirmed/);
  assert(t.metadata.has('good'));
 });
 
 test('dry run calculates but never posts or patches Airtable, and maxRecords resumes',async()=>{
- const t=setup({records:['a','b']});let result=await runLedgerSync('preview',initialState(['PAY-07'],true),t.deps,1);
+ const t=setup({records:['a','b']});let result=await runLedgerSync('preview',initialState(['PAY-09'],true),t.deps,1);
  assert.equal(result.done,false);assert.equal(result.preview.length,1);assert.equal(t.calls.posts,0);assert.equal(t.calls.updates.length,0);
- result=await runLedgerSync('preview',initialState(['PAY-07'],true),t.deps,5);assert.equal(result.done,true);assert.equal(result.stats.processed,2);
+ result=await runLedgerSync('preview',initialState(['PAY-09'],true),t.deps,5);assert.equal(result.done,true);assert.equal(result.stats.processed,2);
 });
 
 test('a failed category does not block other sources and does not acquire a posted marker',async()=>{
  const t=setup({records:['bad','good']});const evaluate=t.deps.evaluate;t.deps.evaluate=(category,source)=>{if(source.id==='bad')throw Error('Not yet implemented: missing split');return evaluate(category,source)};
- const result=await runLedgerSync('blocked',initialState(['PAY-07'],false),t.deps);assert.equal(result.stats.errors,1);assert.equal(t.calls.posts,1);assert.equal(t.calls.updates[0].id,'good');
+ const result=await runLedgerSync('blocked',initialState(['PAY-09'],false),t.deps);assert.equal(result.stats.errors,1);assert.equal(t.calls.posts,1);assert.equal(t.calls.updates[0].id,'good');
 });
 
 test('historically reversed source is not posted; future restore remains deferred',async()=>{
- const t=setup();t.deps.ledger.hasReversals=async()=>true;const result=await runLedgerSync('reversed',initialState(['PAY-07'],false),t.deps);assert.equal(result.stats.errors,1);assert.equal(t.calls.posts,0);
+ const t=setup();t.deps.ledger.hasReversals=async()=>true;const result=await runLedgerSync('reversed',initialState(['PAY-09'],false),t.deps);assert.equal(result.stats.errors,1);assert.equal(t.calls.posts,0);
 });
 
 test('simple retry backs off transient errors only',async()=>{
@@ -117,7 +117,7 @@ test('HTTP authorizes before execution, defaults to dry-run and validates catego
  const req=(body,secret='secret')=>new Request('https://example.test/ledger-daily',{method:'POST',headers:{'x-ledger-secret':secret,'Content-Type':'application/json'},body:JSON.stringify(body)});
  assert.equal((await handleDailyRequest(req({},'wrong'),env,execute)).status,401);assert.equal(called,0);
  assert.equal((await handleDailyRequest(req({categoryCodes:['PAY-99']}),env,execute)).status,400);
- assert.equal((await handleDailyRequest(req({categoryCodes:['PAY-07']}),env,execute)).status,200);assert.equal(called,1);
+ assert.equal((await handleDailyRequest(req({categoryCodes:['PAY-09']}),env,execute)).status,200);assert.equal(called,1);
 });
 
 test('related invoice query narrows the payment IDs before category processing',async()=>{
@@ -132,20 +132,20 @@ test('empty related query avoids reading every AP expense payment',async()=>{
 });
 
 test('default runs list deferred payroll without turning it into a permanent daily error',()=>{
- const state=initialState([],true);assert(!state.categoryIds.includes('PAY-14'));assert(initialState(['PAY-14'],true).categoryIds.includes('PAY-14'));
+ const state=initialState([],true);assert(!state.categoryIds.includes('EXP-22'));assert(initialState(['EXP-22'],true).categoryIds.includes('EXP-22'));
 });
 
 test('finishing exactly at the source limit does not require an empty resume call',async()=>{
- const t=setup();const result=await runLedgerSync('exact-limit',initialState(['PAY-07'],true),t.deps,1);assert.equal(result.done,true);assert.equal(result.resume,null);
+ const t=setup();const result=await runLedgerSync('exact-limit',initialState(['PAY-09'],true),t.deps,1);assert.equal(result.done,true);assert.equal(result.resume,null);
 });
 
 
 test('writeback budget pauses before posting and does not double count the match on resume',async()=>{
  const t=setup();let checks=0;
  t.deps.client.requireWritebackBudget=()=>{if(checks++===0)throw new BudgetExceeded('Reserve verification budget')};
- let result=await runLedgerSync('budget',initialState(['PAY-07'],false),t.deps);
+ let result=await runLedgerSync('budget',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.done,false);assert.equal(result.paused,true);assert.equal(t.calls.posts,0);assert.equal(result.stats.matched,0);
- result=await runLedgerSync('budget',initialState(['PAY-07'],false),t.deps);
+ result=await runLedgerSync('budget',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.done,true);assert.equal(result.stats.matched,1);assert.equal(result.stats.posted,1);
 });
 
@@ -198,4 +198,84 @@ test('date overrides validate calendar dates and survive execution and resume',a
  for(const bad of [{fromDate:'2025-02-30'},{fromDate:'bad'},{fromDate:'2026-02-01',toDate:'2026-01-01'},{fromDate:5}])assert.equal((await handleDailyRequest(request(bad),env,async()=>{throw Error('Invalid dates reached runner');})).status,400);
  const {deps}=setup();deps.client.dateRange=range;
  assert(candidateFormula(CATEGORIES.find(c=>c.code==='INV-12'),deps.client).includes('DATETIME_PARSE("2025-01-01")'));
+});
+
+test('creation cutoff restricts every owning source query without changing manual API defaults',async()=>{
+ const cutoff='2026-11-17T06:00:00.000Z',t=setup();
+ for(const category of CATEGORIES){
+  const normal=candidateFormula(category,t.deps.client),guarded=candidateFormula(category,t.deps.client,cutoff);
+  assert(!normal.includes('CREATED_TIME()'));
+  assert(guarded.includes('CREATED_TIME()>=DATETIME_PARSE("2026-11-17T06:00:00.000Z")'));
+ }
+ const state=initialState(['PAY-09'],true,undefined,undefined,cutoff);
+ await runLedgerSync('guarded',state,t.deps,1);
+ assert(t.calls.queries.every(q=>q.formula.includes(cutoff)));
+ assert.equal(t.jobs.get('guarded').state.createdFrom,cutoff);
+ const env={databaseUrl:'db',airtableToken:'pat',webhookSecret:'secret'};
+ const request=body=>new Request('https://example.test',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(body)});
+ let captured;
+ const exec=async options=>{captured=options;return {done:false}};
+ let response=await handleDailyRequest(request({createdFrom:cutoff,categoryCodes:['PAY-09']}),env,exec);
+ assert.equal(response.status,200);assert.equal(captured.state.createdFrom,cutoff);assert.equal((await response.json()).requestForResume.createdFrom,cutoff);
+ response=await handleDailyRequest(request({fromDate:'2025-01-01',toDate:'2025-12-31',categoryCodes:['PAY-09']}),env,exec);
+ assert.equal(response.status,200);assert.equal(captured.state.createdFrom,undefined);assert.equal(captured.state.dateRange.from,'2025-01-01');
+ for(const createdFrom of ['2026-11-01','2026-02-30T00:00:00Z',false,'invalid'])assert.equal((await handleDailyRequest(request({createdFrom}),env,exec)).status,400);
+});
+
+test('fresh creation-bounded categories discover owners without scanning related tables',async()=>{
+ const cutoff='2026-11-17T06:00:00.000Z';
+ for(const category of CATEGORIES.filter(c=>c.status==='implemented'&&c.related)){
+  const t=setup({records:['eligible','not-linked']}),evaluate=t.deps.evaluate;
+  t.deps.client.queryRecords=async()=>{throw Error('Bounded discovery must not scan related history');};
+  t.deps.evaluate=async(c,source)=>source.id==='eligible'?evaluate(c,source):null;
+  const result=await runLedgerSync('bounded-'+category.code,initialState([category.code],true,undefined,undefined,cutoff),t.deps);
+  assert.equal(result.done,true,category.code);assert.equal(result.stats.errors,0,category.code);
+  assert.equal(t.calls.queries.length,1,category.code);assert.equal(t.calls.queries[0].table,category.tableId,category.code);
+  assert(t.calls.queries[0].formula.includes('CREATED_TIME()>=DATETIME_PARSE("'+cutoff+'")'),category.code);
+  assert.equal(result.stats.matched,1,category.code);assert.equal(result.stats.zero,1,category.code);assert.equal(t.calls.posts,0);
+ }
+});
+
+test('bounded owner-first and manual related-first payment discovery post the same eligible event',async()=>{
+ const executions=[];
+ for(const cutoff of [undefined,'2026-11-17T06:00:00.000Z']){
+  const t=setup({records:['a','b']}),evaluate=t.deps.evaluate,query=t.deps.client.queryIds,post=t.deps.ledger.post,events=[];let relatedCalls=0;
+  t.deps.client.queryRecords=async()=>{relatedCalls++;return{records:[{value(){return[{id:'a'}]}}],offset:null};};
+  t.deps.client.queryIds=async(table,formula,offset)=>{const page=await query(table,formula,offset);return{...page,ids:formula.includes('RECORD_ID()="a"')?['a']:page.ids};};
+  t.deps.evaluate=async(c,source)=>source.id==='a'?evaluate(c,source):null;
+  t.deps.ledger.post=async event=>{events.push(structuredClone(event));return post.call(t.deps.ledger,event);};
+  const result=await runLedgerSync(cutoff?'bounded':'manual',initialState(['EXP-16'],false,undefined,undefined,cutoff),t.deps);
+  assert.equal(result.stats.errors,0);assert.equal(t.calls.posts,1);assert.equal(relatedCalls,cutoff?0:1);
+  executions.push(events);
+ }
+ assert.deepEqual(executions[0],executions[1]);
+});
+
+test('empty bounded owner query never scans historical parents',async()=>{
+ const t=setup({records:[]});t.deps.client.queryRecords=async()=>{throw Error('Unexpected historical query');};
+ const result=await runLedgerSync('bounded-empty',initialState(['EXP-16'],false,undefined,undefined,'2026-11-17T06:00:00.000Z'),t.deps);
+ assert.equal(result.done,true);assert.equal(result.stats.errors,0);assert.equal(t.calls.queries.length,1);assert.equal(t.calls.posts,0);assert.equal(t.calls.prepared.length,0);
+});
+
+test('bounded owner pagination checkpoints the owner offset before any posting',async()=>{
+ const t=setup({records:['a','b'],offsetPage:true}),query=t.deps.client.queryIds,cutoff='2026-11-17T06:00:00.000Z';let interrupted=false;
+ t.deps.client.queryRecords=async()=>{throw Error('Unexpected historical query');};
+ t.deps.client.queryIds=async(...args)=>{if(args[2]==='next'&&!interrupted){interrupted=true;throw new BudgetExceeded('Pause owner pagination');}return query(...args);};
+ let result=await runLedgerSync('bounded-pages',initialState(['EXP-16'],false,undefined,undefined,cutoff),t.deps,1);
+ assert.equal(result.paused,true);assert.equal(t.calls.posts,0);assert.equal(t.jobs.get('bounded-pages').state.phase,'discover');assert.equal(t.jobs.get('bounded-pages').state.offset,'next');
+ result=await runLedgerSync('bounded-pages',initialState(['EXP-16'],false,undefined,undefined,cutoff),t.deps,1);
+ assert.equal(result.done,false);assert.equal(t.calls.posts,1);assert.deepEqual(t.calls.queries.map(q=>q.offset),[null,'next']);assert(t.calls.queries.every(q=>q.table===P&&q.updates===0));
+ result=await runLedgerSync('bounded-pages',initialState(['EXP-16'],false,undefined,undefined,cutoff),t.deps,1);
+ assert.equal(result.done,true);assert.equal(result.stats.errors,0);assert.equal(t.calls.posts,2);assert.equal(t.calls.queries.length,2);
+});
+
+test('existing creation-bounded related snapshots keep their table offsets and IDs on resume',async()=>{
+ for(const phase of ['related','discover']){
+  const t=setup(),state=initialState(['EXP-16'],false,undefined,undefined,'2026-11-17T06:00:00.000Z'),query=t.deps.client.queryIds;let relatedCalls=0;
+  state.phase=phase;state.offset=phase==='related'?'parent-next':null;state.relatedIds=phase==='discover'?['a']:[];
+  t.deps.client.queryRecords=async(table,formula,fields,offset)=>{relatedCalls++;assert.equal(table,'tbldQXuqNEp8G5pfs');assert.equal(offset,'parent-next');return{records:[{value(){return[{id:'a'}]}}],offset:null};};
+  t.deps.client.queryIds=async(table,formula,offset)=>{assert(formula.includes('RECORD_ID()="a"'));return query(table,formula,offset);};
+  const result=await runLedgerSync('old-snapshot-'+phase,state,t.deps);
+  assert.equal(result.done,true);assert.equal(result.stats.errors,0);assert.equal(t.calls.posts,1);assert.equal(relatedCalls,phase==='related'?1:0);
+ }
 });

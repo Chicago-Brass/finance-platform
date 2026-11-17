@@ -19,7 +19,7 @@ allowlist; the FIN checkbox is not queried at runtime.
 | 2 / EXP-01 | Operating expense invoice | Invoices | implemented |
 | 3 / EXP-14 | Operating expense payment | Payments | implemented |
 | 4 / EXP-15 | Product invoice | Invoices | implemented |
-| 5 / EXP-16 | Product payment | Payments | implemented |
+| 5 / EXP-16 | Product payment, excluding credit-card clearing 231.100 | Payments | implemented |
 | 6 / EXP-02 | Company credit-card purchase | Payments | implemented |
 | 7 / EXP-03 | Prepaid expense invoice | Invoices | implemented |
 | 8 / EXP-17 | Prepaid expense payment | Payments | implemented |

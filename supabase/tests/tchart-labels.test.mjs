@@ -20,8 +20,9 @@ test('the T-Chart view preserves all 64 current raw account labels, including ne
  const current=JSON.parse(/from jsonb_to_recordset\('(.+)'::jsonb\)/.exec(currentMigration)[1].replaceAll("''","'"));
  const finalMigration=fs.readFileSync(new URL('../migrations/20261111231329_finalize_expense_invoice_rules.sql',import.meta.url),'utf8');
  const final=JSON.parse(/from jsonb_to_recordset\('(.+)'::jsonb\)/.exec(finalMigration)[1].replaceAll("''","'"));
- for(const oldLabel of labels.filter(r=>!['EXP-08','INV-02','INV-11'].includes(r.rule_code))){
+ for(const oldLabel of labels.filter(r=>!r.rule_code.startsWith('PAY-')&&!['EXP-08','INV-02','INV-11'].includes(r.rule_code))){
   const label=oldLabel.rule_code==='INV-14'?{rule_code:'INV-14',debit_label:'Client Deposits Held (221.100)',credit_label:'Product Revenue (004.001)'}:oldLabel.rule_code==='INV-08'?{rule_code:'INV-08',debit_label:'Accounts Payable (211.100)',credit_label:'Inventory - Pending Return Processing (131.400)'}:final.find(r=>r.rule_code===oldLabel.rule_code)??current.find(r=>r.rule_code===oldLabel.rule_code)??oldLabel;
+  if(label.rule_code==='EXP-16')label.credit_label='Payment account linked\nExamples: Bank - Fifth Third (112.100), Nickel (0747), Fidelity (112.200)';
   const actual=byCode.get(label.rule_code);assert(actual);
   assert.equal(actual.debit_accounts,label.debit_label,label.rule_code+' debit');
   assert.equal(actual.credit_accounts,label.credit_label,label.rule_code+' credit');
@@ -30,7 +31,10 @@ test('the T-Chart view preserves all 64 current raw account labels, including ne
   const rule=byCode.get('INV-'+n);assert(rule.debit_accounts.trim());assert(rule.credit_accounts.trim());
  }
  assert.equal(byCode.get('INV-09').credit_accounts,'COGS (004.010), or the original expense account for expense credits');
- assert(byCode.get('PAY-14').debit_accounts.includes('\n'));
+ const paymentMigration=fs.readFileSync(new URL('../migrations/20261117004333_realign_payment_categories.sql',import.meta.url),'utf8');
+ const paymentLabels=JSON.parse(/\$payment\$(.*?)\$payment\$/s.exec(paymentMigration)[1]);
+ for(const label of paymentLabels){if(label.rule_code==='PAY-08')label.credit_label='Credit Card Clearing (231.100)';if(label.rule_code==='PAY-10')label.credit_label='Purchase Discounts & Rebates (004.011)';if(label.rule_code==='PAY-27')label.debit_label='Credit Card Clearing (231.100)';if(label.rule_code==='PAY-23')label.credit_label='Insurance Claim Recoveries (004.004)';const actual=byCode.get(label.rule_code);assert(actual);assert.equal(actual.debit_accounts,label.debit_label);assert.equal(actual.credit_accounts,label.credit_label);}
+
  const [view]=await sql`select reloptions from pg_catalog.pg_class where oid='public.v_t_chart'::regclass`;
  assert(view.reloptions.includes('security_invoker=true'));
  const legacy=await sql`select rule_code from public.ledger_rules where rule_code='INV-01'`;

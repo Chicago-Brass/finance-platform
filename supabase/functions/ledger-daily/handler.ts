@@ -51,13 +51,21 @@ export async function handleDailyRequest(request: Request, env: DailyEnvironment
             return json({ error: "Use valid YYYY-MM-DD fromDate/toDate values, with fromDate no later than toDate." }, 400);
         dateRange = { from, to };
     }
+    let createdFrom: string | undefined;
+    if (input.createdFrom !== undefined) {
+        const value = input.createdFrom;
+        if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)
+            || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0,19) !== value.slice(0,19))
+            return json({error: "createdFrom must be a valid ISO UTC timestamp."}, 400);
+        createdFrom = new Date(value).toISOString();
+    }
     const sorted = [...new Set(codes as string[])].sort();
     const runKey = input.runKey ?? crypto.randomUUID();
     if (typeof runKey !== "string" || !/^[A-Za-z0-9:,_-]{1,250}$/.test(runKey))
         return json({ error: "Invalid runKey." }, 400);
     let state: RunState;
     try {
-        state = initialState(sorted, test ? true : dryRun, source, dateRange);
+        state = initialState(sorted, test ? true : dryRun, source, dateRange, createdFrom);
     }
     catch (error) {
         return json({ error: (error as Error).message }, 400);
@@ -65,14 +73,14 @@ export async function handleDailyRequest(request: Request, env: DailyEnvironment
     try {
         if (test) {
             if (!preview) return json({error: "Test mode is not configured."}, 503);
-            return json(await preview({categoryCodes: sorted, maxRecords, ...(source ? { source } : {}), ...(dateRange ? { dateRange } : {}), cursor: input.cursor}));
+            return json(await preview({categoryCodes: sorted, maxRecords, ...(createdFrom ? { createdFrom } : {}), ...(source ? { source } : {}), ...(dateRange ? { dateRange } : {}), cursor: input.cursor}));
         }
         if (input.cursor !== undefined) return json({error: "A test cursor requires test:true."}, 400);
         if (!env.databaseUrl) return json({error: "Daily ledger worker database is not configured."}, 503);
         const result = await execute({ runKey, state, maxRecords });
         return json({ ...result as object, requestForResume: (result as {
                 done?: boolean;
-            }).done ? null : { runKey, categoryCodes: sorted, dryRun, maxRecords, ...(source ? { source } : {}), ...(dateRange ? { fromDate: dateRange.from, toDate: dateRange.to } : {}) } }, (result as {
+            }).done ? null : { runKey, categoryCodes: sorted, dryRun, maxRecords, ...(createdFrom ? { createdFrom } : {}), ...(source ? { source } : {}), ...(dateRange ? { fromDate: dateRange.from, toDate: dateRange.to } : {}) } }, (result as {
             busy?: boolean;
         }).busy ? 409 : 200);
     }
