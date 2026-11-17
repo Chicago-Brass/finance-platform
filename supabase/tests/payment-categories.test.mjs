@@ -5,6 +5,7 @@ import postgres from 'postgres';
 import {fixture} from '../functions/ledger-daily/categories/payment-fixture.mjs';
 import {paymentWorkerFields as F} from '../functions/ledger-daily/definitions.ts';
 import {PAYMENT_CATEGORIES} from '../functions/ledger-daily/rules/payments.ts';
+import {CHART} from '../functions/ledger-daily/rules/chart.ts';
 import {postPayment} from '../functions/ledger-payment/ledger.ts';
 import {reverseJournals} from '../functions/ledger-reversal/reversal.ts';
 const url=process.env.LEDGER_TEST_DATABASE_URL;
@@ -47,15 +48,18 @@ for(const [code,change]of Object.entries(changes))test('current category posts o
  const net=await sql`select account_code,sum(l.debit-l.credit) as net from public.journal_lines l join public.journal_entries e on e.id=l.entry_id where e.source_record_id=${id} group by account_code`;
  assert(net.every(r=>Number(r.net)===0),'Original and reversal net to zero by account.');
 });
-test('all 18 retained Payment rules match the current chart',async()=>{
- const rows=await sql`select rule_code,sort_order,enabled,active,reversible from public.ledger_rules where category='payment' and active order by sort_order`;
- assert.equal(rows.length,18);assert.deepEqual(rows.map(r=>r.rule_code),PAYMENT_CATEGORIES.map(c=>c.code));
- assert(rows.every(r=>r.enabled&&r.reversible));assert.deepEqual(rows.map(r=>r.sort_order),Array.from({length:18},(_,i)=>i+2));
+test('all 18 Payment handlers retain their codes after presentation families move sheets',async()=>{
+ const codes=PAYMENT_CATEGORIES.map(c=>c.code).sort();
+ const rows=await sql`select rule_code,category,sort_order,enabled,active,reversible from public.ledger_rules where rule_code in ${sql(codes)} order by rule_code`;
+ assert.equal(rows.length,18);assert.deepEqual(rows.map(r=>r.rule_code),codes);
+ assert(rows.every(r=>r.reversible));
+ for(const row of rows){const chart=CHART[row.rule_code];assert.equal(row.sort_order,chart.row);assert.equal(row.category,chart.sheet==='Category - Expenses'?'expense':chart.sheet==='Category - Invoice Entry'?'invoice_entry':'payment');}
 });
 test('Payment catalog replay preserves current journals and line identities',async()=>{
  const migration=fs.readFileSync(new URL('../migrations/20261117004333_realign_payment_categories.sql',import.meta.url),'utf8');
  const snapshot=async()=>({entries:await sql`select * from public.journal_entries order by id`,lines:await sql`select * from public.journal_lines order by id`,pairs:await sql`select * from public.ledger_rule_lines where rule_code like 'PAY-%' order by id`});
  const before=await snapshot();await sql.unsafe(migration);
  for(const file of ['20261117154803_finalize_client_credit_invoice.sql','20261117161119_split_product_card_payments.sql','20261117163113_gross_product_invoice_and_discount.sql','20261117165116_finalize_vendor_return_repayment.sql','20261117170408_align_cashback_invoice_source.sql','20261117170653_route_cashback_exclusively.sql','20261117171614_route_payments_by_record_type.sql','20261117173507_route_cashback_from_payment.sql','20261117180046_route_owner_contribution_exclusively.sql','20261117181253_align_insurance_claim_account.sql'])await sql.unsafe(fs.readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+ await sql.unsafe(fs.readFileSync(new URL('../migrations/20261117225315_align_grouped_tchart_catalog.sql',import.meta.url),'utf8'));
  assert.deepEqual(await snapshot(),before);
 });

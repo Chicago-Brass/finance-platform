@@ -279,3 +279,22 @@ test('existing creation-bounded related snapshots keep their table offsets and I
   assert.equal(result.done,true);assert.equal(result.stats.errors,0);assert.equal(t.calls.posts,1);assert.equal(relatedCalls,phase==='related'?1:0);
  }
 });
+
+test('sync telemetry queues one final source/category outcome after posting and records safe failures',async()=>{
+ const t=setup({records:['bad','good']}),evaluate=t.deps.evaluate;
+ t.deps.evaluate=(category,source)=>{if(source.id==='bad')throw Error('Database password=private-token@example.test');return evaluate(category,source);};
+ const result=await runLedgerSync('attempts',initialState(['PAY-09'],false),t.deps);
+ assert.equal(result.stats.posted,1);const attempts=t.jobs.get('attempts').attempts;assert.equal(attempts.length,2);assert.deepEqual(attempts.map(a=>[a.sourceRecordId,a.outcome]),[['bad','failed'],['good','succeeded']]);
+ assert(attempts.every(a=>a.ruleCode==='PAY-09'&&a.sourceTable===P&&Number.isFinite(Date.parse(a.occurredAt))));
+ assert(!attempts[0].error.includes('private-token'));assert.equal(attempts[1].error,null);
+});
+test('no-write runs, skipped sources and budget resumptions never create attempt telemetry',async()=>{
+ const dry=setup();await runLedgerSync('dry-attempts',initialState(['PAY-09'],true),dry.deps);assert.equal(dry.jobs.get('dry-attempts').attempts,undefined);
+ const zero=setup();zero.deps.evaluate=async()=>null;await runLedgerSync('zero-attempts',initialState(['PAY-09'],false),zero.deps);assert.equal(zero.jobs.get('zero-attempts').attempts,undefined);
+ const budget=setup();budget.deps.client.requireWritebackBudget=()=>{throw new BudgetExceeded('Wait for next invocation');};await runLedgerSync('budget-attempts',initialState(['PAY-09'],false),budget.deps);assert.equal(budget.jobs.get('budget-attempts').attempts,undefined);
+});
+test('period review outcomes remain pending rather than successful posting attempts',async()=>{
+ const t=setup();t.deps.ledger.post=async()=>({status:'pending_review',requestId:'review',postedCount:0,duplicateCount:0});
+ const result=await runLedgerSync('review-attempts',initialState(['PAY-09'],false),t.deps);
+ assert.equal(result.stats.posted,0);assert.equal(t.jobs.get('review-attempts').attempts[0].outcome,'pending');
+});

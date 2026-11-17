@@ -5,7 +5,7 @@ import { POSTING_FIELDS, paymentSentFields, paymentEventsFields, MANUAL_TABLE, M
 import { createCategoryEvaluator, sourceFields } from "./categories/index.ts";
 import { writeBack } from "./writeback.ts";
 import { BudgetExceeded, retry } from "./retry.ts";
-import type { LedgerStore, RunState, RunStore, CategoryDefinition, SyncSource, SyncDateRange } from "./types.ts";
+import type { LedgerStore, RunState, RunStore, CategoryDefinition, SyncSource, SyncDateRange, RunJob, RuleAttempt } from "./types.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
 
 export function initialState(categoryCodes: string[], dryRun: boolean, source?: SyncSource, dateRange?: SyncDateRange, createdFrom?: string): RunState {
@@ -107,6 +107,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
           if (existing.length) {
             state.stats.existing += existing.length;
             if (!state.dryRun) await writeBack(ledger, category.tableId, recordId);
+            recordAttempt(job, category, recordId, "succeeded");
             log("Existing category", { category: category.code, recordId, journals: existing.length });
           } else {
             // shortcut: one source's linked graph must fit an invocation; persist graph pages if real records exceed the budget.
@@ -122,11 +123,13 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
               } else {
                 const posted = await retry(() => ledger.post(event), { deadline });
                 if (posted.status) {
+                  recordAttempt(job, category, recordId, posted.status === "pending_review" ? "pending" : "failed", posted.status === "pending_review" ? null : "Posting request was rejected.");
                   log("Ledger review required",{category:category.code,recordId,status:posted.status,requestId:posted.requestId});
                   state.recordIndex++; state.stats.processed++; processed++;
                   continue;
                 }
                 state.stats.posted += posted.postedCount; state.stats.existing += posted.duplicateCount;
+                recordAttempt(job, category, recordId, "succeeded");
               }
               log(state.dryRun ? "Preview match" : "Posted category", { category: category.code, recordId, journals: event.categories.length });
             }
@@ -135,6 +138,7 @@ export async function runLedgerSync(runKey: string, requested: RunState, deps: D
       } catch (error) {
         if (error instanceof BudgetExceeded) throw error;
         const message = error instanceof Error ? error.message : "Category processing failed.";
+        recordAttempt(job, category, recordId, "failed", safeAttemptError(error));
         recordError(state, category, recordId, message); log("Category needs review", { category: category.code, recordId, message });
       }
       state.recordIndex++; state.stats.processed++; processed++;
@@ -156,4 +160,14 @@ function advanceCategory(state: RunState) {
 function recordError(state: RunState, category: CategoryDefinition, recordId: string, message: string) {
   state.stats.errors++;
   if (state.errors.length < 20) state.errors.push({ category: category.code, recordId, message });
+}
+function recordAttempt(job: RunJob, category: CategoryDefinition, recordId: string, outcome: RuleAttempt["outcome"], error: string | null = null) {
+  if (!job.state.dryRun) (job.attempts ??= []).push({ ruleCode: category.code, sourceTable: category.tableId, sourceRecordId: recordId, outcome, error, occurredAt: new Date().toISOString() });
+}
+function safeAttemptError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  // Only owned validation messages go into the UI; transport/SQL errors can contain private details.
+  if (/^(Not yet implemented:|Journal Line |Manual journal |Invoice must |Source has historical reversals|Candidate source record|Ledger Postings fields)/.test(message)
+    && !/https?:|Bearer |pat[A-Za-z0-9]+\.|@/.test(message)) return message.slice(0, 400);
+  return "Posting or Airtable writeback failed. Review this source and the worker logs.";
 }

@@ -44,7 +44,15 @@ export type RunState = {
   errors: { category: string; recordId: string; message: string }[];
   done: boolean;
 }
-export interface RunJob { id: string; state: RunState; leaseToken: string }
+export interface RuleAttempt {
+  ruleCode: string;
+  sourceTable: string;
+  sourceRecordId: string;
+  outcome: "succeeded" | "failed" | "pending";
+  error: string | null;
+  occurredAt: string;
+}
+export interface RunJob { id: string; state: RunState; leaseToken: string; attempts?: RuleAttempt[] }
 export interface RunStore {
   claim(runKey: string, initial: RunState): Promise<RunJob | null>;
   save(job: RunJob): Promise<void>;

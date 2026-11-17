@@ -6,7 +6,13 @@ const ts = require('typescript');
 const moduleUnderTest = { exports: {} };
 const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, 'ledger-table-utils.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 new Function('require', 'module', 'exports', code)(() => ({}), moduleUnderTest, moduleUnderTest.exports);
-const { ledgerSearchParam, ledgerSideParam, ledgerHref, ledgerTypeParam, ledgerCategoryParam, ledgerAmountParam } = moduleUnderTest.exports;
+const { ledgerSearchParam, ledgerSideParam, ledgerHref, ledgerTypeParam, ledgerCategoryParam, ledgerAmountParam, ledgerEntryParam } = moduleUnderTest.exports;
+
+test('Journal drill-through accepts only a positive safe integer',()=>{
+  assert.equal(ledgerEntryParam('93'),93);
+  assert.equal(ledgerEntryParam(['42','93']),42);
+  for(const value of [undefined,'','0','-1','1.5','1e3','Infinity','9007199254740992','93 OR true',' 93 '])assert.equal(ledgerEntryParam(value),undefined);
+});
 
 test('Ledger search/side parameters normalize trusted URL inputs and survive filter/page links', () => {
   assert.equal(ledgerSearchParam(['  O\'Brien, 25%_fee\\settlement ', 'ignored']), "O'Brien, 25%_fee\\settlement");

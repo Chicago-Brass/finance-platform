@@ -109,11 +109,24 @@ test("report API failures return sanitized JSON instead of page redirects", asyn
   }
 });
 
-test("authorized report API requests continue through middleware", async () => {
-  const run = setup("/api/reports/data");
-  run.user.resolve({ data: { user: { id: "user" } } });
-  run.role.resolve({ data: "admin", error: null });
-  assert.equal((await run.result).type, "next");
+test("authorized report and progress API requests continue through middleware", async () => {
+  for (const path of ["/api/reports/data", "/api/progress"]) {
+    const run = setup(path);
+    run.user.resolve({ data: { user: { id: "user" } } });
+    run.role.resolve({ data: "admin", error: null });
+    assert.equal((await run.result).type, "next");
+  }
+});
+
+test("progress API requires sign-in and allowlist membership without returning HTML", async () => {
+  for (const [user, role, status] of [[null, "admin", 401], [{id:"user"}, null, 403]]) {
+    const run = setup("/api/progress?rule=EXP-01");
+    run.user.resolve({data:{user}});
+    run.role.resolve({data:role,error:null});
+    const response = await run.result;
+    assert.equal(response.type, "json");
+    assert.equal(response.status, status);
+  }
 });
 
 test("session refresh cookies still reach the forwarded request and response", async () => {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { periodQueryRange } from "@/lib/periods/ranges";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
@@ -11,17 +12,10 @@ export async function GET(request: Request) {
       { status: 401 },
     );
   const params = new URL(request.url).searchParams;
-  const month = params.get("month") ?? "";
-  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month))
-    return NextResponse.json(
-      { error: "Choose a valid month." },
-      { status: 400 },
-    );
-  const year = month.slice(0, 4),
-    next = `${Number(year) + 1}-01-01`;
-  const last = new Date(Date.UTC(Number(year), Number(month.slice(5, 7)), 1))
-    .toISOString()
-    .slice(0, 10);
+  let selection: ReturnType<typeof periodQueryRange>;
+  try { selection = periodQueryRange(params); }
+  catch (error) { return NextResponse.json({error: error instanceof Error ? error.message : "Choose a valid date range."}, {status: 400}); }
+  const {selected, overview} = selection;
   const page = Math.max(1, Math.min(10000, Number(params.get("page")) || 1)),
     from = (Math.floor(page) - 1) * 50;
   const tab = params.get("tab") ?? "posted";
@@ -60,8 +54,8 @@ export async function GET(request: Request) {
               "id,kind,source_table,source_record_id,event_type,accounting_date,status,created_at,reviewed_at,reviewed_by,review_reason,last_error,writeback_pending,journal_ids,payload",
               { count: "exact" },
             )
-            .gte("accounting_date", month)
-            .lt("accounting_date", last)
+            .gte("accounting_date", selected.from)
+            .lte("accounting_date", selected.to)
             .neq("status", "superseded")
             .order("created_at", { ascending: false })
             .range(from, from + 49)
@@ -69,7 +63,8 @@ export async function GET(request: Request) {
           ? client
               .from("ledger_period_history")
               .select("*", { count: "exact" })
-              .eq("period_month", month)
+              .gte("period_month", selected.from)
+              .lte("period_month", selected.to)
               .order("created_at", { ascending: false })
               .range(from, from + 49)
           : client
@@ -78,7 +73,8 @@ export async function GET(request: Request) {
                 "id,entry_number,entry_date,description,rule_code,posted_at,posting_request_id",
                 { count: "exact" },
               )
-              .eq("period_month", month)
+              .gte("period_month", selected.from)
+              .lte("period_month", selected.to)
               .eq("status", "posted")
               .order("entry_number", { ascending: false })
               .range(from, from + 49);
@@ -93,8 +89,8 @@ export async function GET(request: Request) {
       client
         .from("v_period_overview")
         .select("*")
-        .gte("period_month", `${year}-01-01`)
-        .lt("period_month", next)
+        .gte("period_month", overview.from)
+        .lte("period_month", overview.to)
         .order("period_month"),
       detail,
     ]);
