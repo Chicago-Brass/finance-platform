@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { handleRequest } from "./handler.ts";
 import { PostingError } from "./errors.ts";
+import { LedgerWritebackError } from "../_shared/ledger-links.ts";
 
 const environment = {
   databaseUrl: "postgres://test-user:test-password@example.invalid/test-database",
@@ -29,6 +30,18 @@ const request = (body = event, secret = environment.webhookSecret) => new Reques
   body: JSON.stringify(body),
 });
 const mustNotCall = () => { throw new Error("Unexpected database call."); };
+
+test("writeback 503 distinguishes confirmed rollback from unconfirmed metadata with safe upstream details", async () => {
+  const details = { operation: "PATCH", status: 429, attempt: 2, reason: "http" };
+  for (const outcome of ["rolled_back", "unconfirmed"]) {
+    const response = await handleRequest(request(), environment, async () => { throw new LedgerWritebackError(outcome, details); });
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.code, "airtable_writeback_failed"); assert.equal(body.outcome, outcome);
+    assert.deepEqual(body.details, details); assert(body.error.includes("status=429"));
+    assert(!JSON.stringify(body).includes(environment.databaseUrl)); assert(!JSON.stringify(body).includes(environment.webhookSecret));
+  }
+});
 
 test("only accepts POST and fails closed when configuration is missing", async () => {
   const method = await handleRequest(new Request("https://example.test/ledger-payment", {
@@ -84,6 +97,22 @@ test("forwards transaction metadata, final debit/credit pairs and branch unchang
   }
 });
 
+test("forwards depreciation source metadata and identifies it in safe failure logs", async (t) => {
+  const supplied = {
+    depreciationRecordId: "recDepreciation01", eventType: "created", entryDate: "2026-11-30",
+    categories: [{ ruleCode: "EXP-10", transactionType: "Monthly depreciation", notes: "Associated asset: Example equipment", postings: [] }],
+  };
+  const result = { depreciationRecordId: supplied.depreciationRecordId, eventType: "created", results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
+  const response = await handleRequest(request(supplied), environment, async received => {
+    assert.deepEqual(received, supplied); return result;
+  });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), result);
+  const logs = [];
+  t.mock.method(console, "error", (...args) => logs.push(args));
+  assert.equal((await handleRequest(request(supplied), environment, async () => { throw new Error("Private details"); })).status, 503);
+  assert.deepEqual(logs, [["Ledger posting failed.", { code: "UNKNOWN", sourceRecordId: supplied.depreciationRecordId }]]);
+});
+
 test("returns duplicate and no-op outcomes without another write attempt", async () => {
   const result = { results: [{ status: "duplicate" }, { status: "noop" }], postedCount: 0, duplicateCount: 1 };
   let calls = 0;
@@ -94,6 +123,16 @@ test("returns duplicate and no-op outcomes without another write attempt", async
   assert.equal(calls, 1);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), result);
+});
+
+test("invoice-line requests retain their identity and identify safe failure logs", async (t) => {
+  const supplied = { invoiceLineRecordId: "rec00000000000041", eventType: "entry_requested", entryDate: "2026-11-01", categories: [] };
+  const result = { invoiceLineRecordId: supplied.invoiceLineRecordId, eventType: supplied.eventType, results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
+  const response = await handleRequest(request(supplied), environment, async received => { assert.deepEqual(received, supplied); return result; });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), result);
+  const logs = []; t.mock.method(console, "error", (...args) => logs.push(args));
+  assert.equal((await handleRequest(request(supplied), environment, async () => { throw Error("Private details"); })).status, 503);
+  assert.deepEqual(logs, [["Ledger posting failed.", { code: "UNKNOWN", sourceRecordId: supplied.invoiceLineRecordId }]]);
 });
 
 test("returns readable posting validation/conflict errors without internal details", async () => {

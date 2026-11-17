@@ -3,13 +3,17 @@
 ## Data flow
 
 ```text
-FIN native event -> category handlers -> posting pairs + references
-    -> ledger-payment Edge Function -> atomic journal_entries + journal_lines
+External/manual call -> ledger-daily -> filtered FIN reads -> category pairs + references
+    -> shared ledger-payment writer -> atomic journal_entries + journal_lines
+    -> verified Airtable metadata writeback
     -> user-scoped report reads -> report builders -> tables, analytics and drawers
 ```
 
-Airtable owns classification, account pairs and component calculations. The Edge Function is a
-generic authenticated writer. The frontend reads posted data and never repairs source records.
+The T-Chart defines category behavior. The sync worker owns current Expense/Invoice Entry
+classification and calculations; the shared writer validates and records the final pairs. Airtable
+owns source data and native reversal requests. Production runs the private daily dispatcher;
+develop is unscheduled. See [environments](environments.md). The frontend reads
+posted data and never repairs source records.
 
 ## Runtime and source map
 
@@ -18,7 +22,9 @@ The app uses Next.js App Router, React, TypeScript and Supabase SSR clients. Ver
 
 | Source | Responsibility |
 | --- | --- |
-| `airtable/*.js` | Native automation scripts, category handlers, reads and webhook transport |
+| `airtable/ledger-reversal.js` | Current source/date-only native reversal sender |
+| `airtable/*.js` | Retained native posting senders; superseded Expense/Invoice senders are OFF |
+| `supabase/functions/ledger-daily/` | Current filtered discovery, category calculations, batching and writeback |
 | `supabase/functions/ledger-payment/` | HTTP authorization, validation and transactional persistence |
 | `supabase/migrations/`, `supabase/seed.sql` | Schema history and reference catalogs |
 | `middleware.ts`, `lib/supabase/` | Session validation, approved-user access and scoped clients |
@@ -102,7 +108,9 @@ The statement analytics sidebar collapses to a thin rail using its top left-bord
 table takes the freed width; expanding restores the selected Position or Movement tab.
 
 Statement accounts open account activity: summary/lines start in parallel, with independent errors
-and an owning-report cache. Lines are capped at 2,000 and disclose truncation; totals cover the
+and an owning-report cache. The drawer shows compact totals followed by searchable journal lines,
+with Month, Offsetting account and Entry side dropdowns, without account activity charts.
+Lines are capped at 2,000 and disclose truncation; totals cover the
 whole range. Ledger rows instead open the complete journal entry, unaffected by report filters.
 Both drawers inherit the shared responsive 640px width and modal focus/dismissal behavior.
 
@@ -123,3 +131,15 @@ isolated directory or stop the owning dev process first: concurrent builds must 
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
 `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN`, `NEXT_PUBLIC_ENABLE_MICROSOFT_LOGIN`.
 Public configuration does not bypass authentication, the allowlist or RLS.
+
+## Period controls
+
+`/periods` uses the existing report layout with its own paginated user-scoped read API and shared journal/detail drawers. User actions call the `ledger-periods` Edge endpoint using the signed-in JWT; the server checks `can_manage_periods` from the live app-user record. Closing and reopening do not approve pending records. Individual reviewed exceptions can post while a period stays closed. See [Period management](../docs/period-management.md).
+
+## Branch report scope
+
+Income Statement, Balance Sheet, Trial Balance and General Ledger share the Branch dropdown:
+Consolidated, Chicago, Minneapolis, Milwaukee and Overhead. Consolidated has no branch predicate.
+Named branches match `journal_lines.branch` exactly. Totals, comparative analytics, exports, account
+drill-downs and ledger pagination preserve the selected branch. Full journal detail continues to
+show every line in the journal. Branch choices are static and require no metadata request.

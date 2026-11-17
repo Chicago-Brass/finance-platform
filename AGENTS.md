@@ -19,17 +19,39 @@ architecture, data contracts and operating guidance; do not add chat summaries o
 
 ## Architecture
 
-1. Airtable owns the native event, category filters, component calculations and final account pairs.
-2. Each CORE handler checks its category and pushes results; evaluate all eligible handlers.
-   UTILS owns substantive reads/calculation/transport helpers; HELPER owns logging only.
-3. The generic `ledger-payment` Edge Function authenticates, validates, resolves account identity
-   and records supplied pairs atomically. It does not recategorize or infer amount splits.
-4. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
+1. The official T-Chart defines category filters, amounts and account pairs.
+2. `supabase/functions/ledger-daily/` owns current Expense and Invoice Entry discovery,
+   linked-record reads and category calculations. Named handlers supply final posting pairs.
+3. The shared `ledger-payment` writer authenticates, validates, resolves accounts and records
+   supplied pairs atomically. It does not recategorize or infer amount splits. Shipping alone
+   rechecks its linked deposit cap under the funding invoice lock before using that writer.
+4. Airtable owns source data and source-owned Reverse Ledger checkbox events. Native reversal
+   scripts send only source/date to `ledger-reversal`; Supabase writes journal metadata back.
+5. The frontend reads posted data as the signed-in user through RLS. Never expose a server key
    or database credential to browser code.
+
+The sync webhook uses a global run lock, resumable batches and the existing shared secret.
+Production Supabase main (`inzobaubbikyiekcfarj`) runs the daily 11 PM America/Chicago job.
+The production cron selects accounting dates from November 17, 2026 through its Chicago day,
+and only owning records created on/after November 17, 2026 midnight America/Chicago. Existing
+checkpoints retain their original dates. Manual API calls can omit the creation floor and override
+accounting dates to process older records.
+The 46 fully implemented T-Chart rules and MAN-01 manual journal rule are enabled; partial,
+blocked, deferred and unrelated Other rules are off.
+Superseded native posting senders are off; seven source-owned reversal automations remain on and
+point to production. Local development uses persistent Supabase develop (`vaaykmqshkuunewjrxuy`),
+not the production database. Never copy production FIN writeback credentials or schedules there.
+Read [environments](knowledge-base/environments.md) for local configuration, Auth separation,
+production-only scheduling and the current two-month testing period. Check the actual target
+before tests or resets; an explicitly requested production test is different from local development.
 
 Follow the T-Chart's official trigger, debit and credit mappings. A matched unresolved category
 must throw `Not yet implemented` before prepared data is sent. Do not add unstated conditions,
 reverse earlier entries automatically or retrofit source records to make a test pass.
+
+Manual journals use the parent Direct Journal Entry, all linked Journal Lines, Date Approved and
+parent Branch. Its Cancel Entry checkbox reverses the whole journal. Ordinary T-Charts exclude
+manual-linked invoices and skip their whole payments. See [manual journals](docs/manual-journals.md).
 
 The writer uses parameterized direct SQL. Existing database guards, period checks, read RPCs and
 legacy posting/reversal functions remain unless their removal is explicitly authorized.
@@ -42,7 +64,7 @@ legacy posting/reversal functions remain unless their removal is explicitly auth
   financial packets conflict. Do not edit posted journals.
 - Unspecified multi-account splits fail. Account `active` is a label; `is_postable`, valid identity,
   balance, period guards, authentication and approved-user checks remain functional.
-- Branch attribution is deferred; the nullable schema field remains unpopulated by the writer.
+- Supplied branch attribution is nullable; empty stays NULL. All four financial reports filter stored journal-line branches; Consolidated includes every branch and unassigned lines.
 - Keep destination headers/controls independent of data loading. Reuse shared controls, request
   caches, modal behavior and currency/date formatters.
 - Preserve full-viewport reports, internal scrolling, keyboard support and Position/Movement tabs.

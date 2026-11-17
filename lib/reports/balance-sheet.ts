@@ -1,13 +1,14 @@
+import { branchLabel, branchParam } from "./branch";
 import { cleanDate, todayChicago } from "../dates";
 import type { Report } from "./types";
 import { accountCents, accountGroup, amountLine, formatDate, monthEnd, monthStart, one, periodHeading, section, subtractAmounts, sumAmounts } from "./report-utils";
 import type { AccountBalance, Period, Snapshot } from "./report-utils";
 
-export type BalanceSheetOptions = { asOf: string; grain: "single" | "month" | "quarter" | "year"; summary: boolean };
+export type BalanceSheetOptions = { branch?: string; asOf: string; grain: "single" | "month" | "quarter" | "year"; summary: boolean };
 
 export function parseBalanceSheetParams(sp: Record<string, string | string[] | undefined>, today = todayChicago()): BalanceSheetOptions {
   const date = cleanDate(sp.asof, today), grain = one(sp.grain);
-  return { asOf: Number(date.slice(0, 4)) >= 1900 ? date : today, grain: grain === "month" || grain === "quarter" || grain === "year" ? grain : "single", summary: one(sp.layout) === "summary" };
+  return { branch: branchParam(one(sp.branch)), asOf: Number(date.slice(0, 4)) >= 1900 ? date : today, grain: grain === "month" || grain === "quarter" || grain === "year" ? grain : "single", summary: one(sp.layout) === "summary" };
 }
 
 export function balanceSheetPeriods(options: BalanceSheetOptions): Period[] {
@@ -87,7 +88,7 @@ export function getBalanceSheet(options: BalanceSheetOptions, snapshots: Snapsho
   const equityTotals = sumAmounts(keys, equity.total, priorEarnings, currentEarnings), totalLE = sumAmounts(keys, liabilityTotals, equityTotals);
   const differences = subtractAmounts(keys, assetTotals, totalLE), balanced = Object.values(differences).every(value => value === 0);
   return {
-    title: options.summary ? "Balance Sheet (summary)" : "Balance Sheet", entity: "Chicago Brass Inc. - Consolidated",
+    title: options.summary ? "Balance Sheet (summary)" : "Balance Sheet", entity: `Chicago Brass Inc. - ${branchLabel(options.branch)}`,
     periodLabel: `As of ${formatDate(options.asOf)} - all posted activity to date`, basis: "Accrual basis - Posted ledger actuals",
     columns: snapshots.map(({ period }) => {
       let sublabel: string | undefined;

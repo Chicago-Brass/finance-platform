@@ -45,7 +45,7 @@ test("global ledger search finds late records before paging, preserves literal t
       const rows = await search(tx, term);
       assert.equal(rows.length, term === "' or 1=1 --" ? 0 : 2, `literal search for ${term}`);
     }
-    assert.ok((await search(tx, String(late.entry_number))).some(row => row.entry_id === late.id), 'entry numbers are searchable');
+    assert.ok((await search(tx, String(late.entry_number), { take: 501 })).some(row => row.entry_id === late.id), 'entry numbers are searchable even when the same text also matches account codes');
     assert.equal((await search(tx, '2031-01-01', { take: 501 })).length, 260, 'dates are searchable');
     const all = await tx`select line_id from public.v_ledger where date='2031-01-01' and notes like 'Search filler %' order by date,entry_number,line_no`;
     const paged = [];

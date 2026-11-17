@@ -20,6 +20,7 @@ function load(file) {
 const view = load(path.join(__dirname, 'ReportView.tsx'));
 const analytics = load(path.join(__dirname, 'ReportAnalytics.tsx'));
 const drawer = load(path.join(__dirname, 'AccountDrawer.tsx'));
+load(path.join(__dirname, 'ReportNavigation.tsx')).useReportNavigate = () => () => {};
 const workspace = load(path.join(__dirname, 'StatementWorkspace.tsx'));
 const display = patch => ({ query: '', hideZero: false, collapsed: new Set(), setQuery() {}, setHideZero() {}, setCollapsed() {}, ...patch });
 const format = load(path.join(root, 'lib/format.ts'));
@@ -169,7 +170,7 @@ test('Display rows and exported rows use the same account filters and collapse s
   assert.equal(collapsed.at(-1).values.a, -37.34);
 });
 
-test('Capped account charts disclose their scope separately from complete summary amounts and visible footer totals', () => {
+test('Capped account lines disclose their scope separately from complete summary amounts and visible footer totals', () => {
   const source = fs.readFileSync(path.join(__dirname, 'AccountDrawer.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const texts = node => !React.isValidElement(node) ? typeof node === 'string' || typeof node === 'number' ? String(node) : '' : React.Children.toArray(node.props.children).map(texts).join('');
@@ -184,13 +185,13 @@ test('Capped account charts disclose their scope separately from complete summar
     const tree = module.exports.AccountDrawer({ target: { code: '112.100', label: 'Bank' }, range, cache, onClose() {}, onSelect() {} });
     const text = texts(tree);
     if (truncated) {
-      assert.match(text, /Charts and line counts use the first 1 lines. Summary amounts include all posted lines./);
+      assert.match(text, /Line counts use the first 1 lines. Summary amounts include all posted lines./);
       const children = React.Children.toArray(tree.props.children);
-      assert.match(texts(children.find(child => child.props?.className === 'drill-analytics')), /Charts and line counts/);
+      assert.match(texts(children.find(child => child.props?.className === 'drill-analytics')), /Line counts use/);
       assert.match(text, /Footer totals cover the visible lines only/);
       assert.doesNotMatch(text, /Totals above include every line|Lines tie to the trial balance/);
     } else {
-      assert.doesNotMatch(text, /Charts and line counts use|Footer totals cover/);
+      assert.doesNotMatch(text, /Line counts use|Footer totals cover/);
     }
   }
 });

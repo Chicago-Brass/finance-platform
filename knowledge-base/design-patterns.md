@@ -20,8 +20,9 @@ a generic predicate engine or wrapping every one-line expression in a helper.
 ## Accounting contracts
 
 - Keep `Report` and `ReportLine` in `lib/reports/types.ts` stable.
-- Calculate in integer cents. Store database money as `numeric(18,2)` and send positive posting
-  amounts as decimal strings. Account direction determines debit versus credit.
+- Sum invoice lines in four-decimal integer units per invoice/account, then round each total to
+  integer cents. Store database money as `numeric(18,2)` and send signed decimal strings.
+  Negative amounts retain the supplied debit and credit accounts.
 - Display USD with two decimals, explicit `$0.00`, and parentheses for negative values. Missing
   data is distinct from zero; display rounding never changes financial totals.
 - Allocation without explicit per-invoice amounts is proportional to Invoice Amount To Pay,
@@ -43,7 +44,9 @@ another journal for the same source/rule.
 
 Invoice-owned postings retain invoice identity even when a payment triggers them. Audit links for
 payment-triggered packets point to the triggering payment; invoice events point to the invoice.
-Singular references populate the defined line columns; plural references remain structured context.
+Business reference columns store arrays, including single links as one-item arrays. Vendor,
+client, staff, transaction, PO, invoice and state record IDs all persist. State codes remain a
+separate optional two-letter value. Missing or mixed/unknown branch attribution remains NULL.
 Airtable does not generate notes, while the receiver retains optional notes support.
 
 Cancellation/return handlers post their supplied actual pairs. They do not automatically locate,

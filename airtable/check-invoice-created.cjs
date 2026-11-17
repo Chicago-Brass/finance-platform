@@ -33,7 +33,7 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
             getCellValue,
             getCellValueAsString(field) {
                 const value = getCellValue(field);
-                return value == null ? "" : typeof value === "object" ? value.name : String(value);
+                return value == null ? "" : Array.isArray(value) ? value.map(item => typeof item === "object" ? item.name : item).join(", ") : typeof value === "object" ? value.name : String(value);
             },
         };
     }
@@ -63,7 +63,7 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
     };
     const invoice = (type = "AP", vendor = "AP - Product", fields = {}) => add(T.invoices, "invoice", {
         [I.type]: select(type), [I.vendorTypeAP]: select(vendor), [I.vendorTypeAR]: select(vendor),
-        [I.amount]: 125.555, [I.date]: "2026-10-31", ...(I.createEntry ? { [I.createEntry]: true } : {}), ...fields,
+        [I.amount]: 125.555, ...(I.freight ? { [I.freight]: 12.34 } : {}), [I.date]: "2026-10-31", ...(I.createEntry ? { [I.createEntry]: true } : {}), ...fields,
     }, "INV - Native primary name");
     return { ...api, T, I, A, calls, reads, logs, stores, add, invoice,
         native: () => new AsyncFunction("base", "input", "console", "fetch", source)(base, input, console, fetch) };
@@ -77,11 +77,13 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
         ["AP", "AP - Expenses (Sales Tax)", 7, "212.100", "211.100"],
         ["AP", "AP - Assets", 8, "143.300", "211.100"],
         ["AP", "AP - Credit", 9, "211.100", "131.400"],
+        ["AP", "AP - Credit", 10, "211.100", "004.010"],
         ["AR", "AR - Non-Product", 11, "121.100", "010.001"],
     ]) await check(`Row ${row} matches its exact filter and posting`, async () => {
         const h = await harness();
         h.invoice(type, vendor, {
-            [h.I.amount]: row === 9 ? -125.555 : 125.555,
+            [h.I.amount]: 125.555,
+            [h.I.freight]: 125.555,
             [h.I.purchaseOrders]: row === 9 ? [link("po")] : [],
             [h.I.accounts]: row === 11 ? [link("misc")] : [],
         });
@@ -109,28 +111,38 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
             h.add(h.T.accounts, "other", { [h.A.number]: number }); await h.main("invoice"); assert.equal(h.calls.length, 0);
         }
     });
-    await check("Rows 6 and 10 stay explicitly blocked before any webhook", async () => {
-        for (const [vendor, row] of [["AP - Expenses (Non-Sales Tax)", 6], ["AP - Credit", 10]]) {
-            const h = await harness({}, {}, row === 6 ? "invoice-created.js" : "invoice-entry.js"); h.invoice("AP", vendor);
-            await assert.rejects(h.main("invoice"), new RegExp(`Not yet implemented: Invoice Entry row ${row}`)); assert.equal(h.calls.length, 0);
+    await check("Row 6 posts with only AP expense type and freight account 004.013", async () => {
+        for (const amount of [125.555,-1.005,0]) {
+            const h = await harness({}, {}, "invoice-created.js");
+            h.invoice("AP","AP - Expenses (Non-Sales Tax)",{[h.I.accounts]:[link("freight")],[h.I.amount]:amount,[h.I.date]:"2026-11-04T02:30:00.000Z"});
+            h.add(h.T.accounts,"freight",{[h.A.number]:"004.013"});
+            await h.native();
+            const category=h.calls[0].categories[0];assert.equal(category.ruleCode,"INV-05");
+            assert.equal(h.calls[0].entryDate,"2026-11-03");
+            if(amount) { const p=category.postings[0];assert.equal(p.debitAccount.number,"004.013");assert.equal(p.creditAccount.number,"211.100");assert.equal(p.amount,amount>0?"125.56":"-1.01"); }
+            else assert.deepEqual(category.postings,[]);
         }
+        const other=await harness({}, {}, "invoice-created.js");
+        other.invoice("AP","AP - Expenses (Non-Sales Tax)",{[other.I.accounts]:[link("other")]});
+        other.add(other.T.accounts,"other",{[other.A.number]:"004.003"});
+        assert.deepEqual(await other.main("invoice"),[]);assert.equal(other.calls.length,0);
     });
     await check("Zero amount produces an explicit no-op; it is not missing", async () => {
         const h = await harness(); h.invoice("AP", "AP - Assets", { [h.I.amount]: 0 }); await h.main("invoice");
         assert.deepEqual(h.calls[0].categories[0].postings, []);
     });
     await check("Money rounds correctly and invalid/missing amounts never post", async () => {
-        for (const amount of [null, NaN, Infinity, -1, Number.MAX_SAFE_INTEGER]) {
-            const h = await harness(); h.invoice("AP", "AP - Product", { [h.I.amount]: amount });
+        for (const amount of [null, NaN, Infinity, Number.MAX_SAFE_INTEGER]) {
+            const h = await harness(); h.invoice("AP", "AP - Assets", { [h.I.amount]: amount });
             await assert.rejects(h.main("invoice")); assert.equal(h.calls.length, 0);
         }
-        const h = await harness(); h.invoice("AP", "AP - Product", { [h.I.amount]: 1.005 }); await h.main("invoice");
+        const h = await harness(); h.invoice("AP", "AP - Assets", { [h.I.amount]: 1.005 }); await h.main("invoice");
         assert.equal(h.calls[0].categories[0].postings[0].amount, "1.01");
     });
     await check("Required identity, date and HTTP failures remain errors", async () => {
         let h = await harness(); await assert.rejects(h.main(""), /Map invoiceRecordId/); await assert.rejects(h.main("missing"), /Invoice not found/);
         h = await harness(); h.invoice("AP", "AP - Assets", { [h.I.date]: null }); await assert.rejects(h.main("invoice"), /Invoice Date/); assert.equal(h.calls.length, 0);
-        h = await harness({}, { ok: false }); h.invoice(); await assert.rejects(h.main("invoice"), /Ledger webhook failed \(400\): test failure/); assert.equal(h.calls.length, 1);
+        h = await harness({}, { ok: false }); h.invoice("AP","AP - Assets"); await assert.rejects(h.main("invoice"), /Ledger webhook failed \(400\): test failure/); assert.equal(h.calls.length, 1);
     });
     await check("Plural refs, state and branch travel without generated notes", async () => {
         const h = await harness(); h.invoice("AP", "AP - Expenses (Sales Tax)", {
@@ -147,19 +159,14 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
         const h = await harness(); h.invoice("AR", "AR - Non-Product", { [h.I.accounts]: [link("missing")] });
         await assert.rejects(h.main("invoice"), /Linked accounts not found/); assert.equal(h.calls.length, 0);
     });
-    await check("Received value routes row 2 or 4 using Invoice Amount, alongside the official row 5 filter", async () => {
-        for (const [received, row, debit] of [[75, 2, "211.200"], [0, 4, "132.100"]]) {
-            const h = await harness(); h.invoice("AP", "AP - Product", { [h.I.receivedNotInvoiced]: received });
+    await check("Row 2 uses the received rollup; row 4 uses confirmed PO status and an empty latest receipt date", async () => {
+        for (const [received,status,date,expected] of [[75,"",null,["INV-01","INV-04"]],[0,"Confirmed",null,["INV-03","INV-04"]],[75,"Confirmed",null,["INV-01","INV-03","INV-04"]],[0,"Confirmed","2026-10-01",["INV-04"]],[0,"Sent, Not Confirmed",null,["INV-04"]],[0,"",null,["INV-04"]],[null,"Confirmed",null,["INV-03","INV-04"]]]) {
+            const h = await harness();
+            h.invoice("AP","AP - Product",{[h.I.receivedNotInvoiced]:received,[h.I.poStatus]:status?[status]:[],[h.I.poReceivedDate]:date});
             await h.main("invoice");
-            assert.deepEqual(h.calls[0].categories.map(c => c.ruleCode), [`INV-${String(row - 1).padStart(2, "0")}`, "INV-04"]);
-            const p = h.calls[0].categories[0].postings[0];
-            assert.equal(p.amount, "125.56"); assert.equal(p.debitAccount.number, debit); assert.equal(p.creditAccount.number, "211.100");
-        }
-    });
-    await check("Blank or negative received rollup does not become a zero-receipt deposit", async () => {
-        for (const value of [null, -1]) {
-            const h = await harness(); h.invoice("AP", "AP - Product", { [h.I.receivedNotInvoiced]: value });
-            await h.main("invoice"); assert.deepEqual(h.calls[0].categories.map(c => c.ruleCode), ["INV-04"]);
+            assert.deepEqual(h.calls[0].categories.map(c=>c.ruleCode),expected);
+            const deposit = h.calls[0].categories.find(c=>c.ruleCode==="INV-03");
+            if (deposit) assert.equal(deposit.postings[0].amount,"125.56");
         }
     });
     await check("Unchecked Create Entry never posts", async () => {
@@ -175,6 +182,18 @@ async function harness(config = {}, response = {}, file = "invoice-entry.js") {
     await check("Outbound shipping remains on creation only", async () => {
         const h = await harness(); h.invoice("AP", "AP - Expenses (Non-Sales Tax)");
         assert.deepEqual(await h.main("invoice"), []); assert.equal(h.calls.length, 0);
+    });
+    await check("Invoice amounts retain their sign without ABS, including credit invoices", async () => {
+        for (const [vendor,po] of [["AP - Assets",false],["AP - Credit",true],["AP - Credit",false]]) {
+            const h = await harness();
+            h.invoice("AP",vendor,{[h.I.amount]:-1.005,[h.I.purchaseOrders]:po?[link("po")]:[]});
+            await h.main("invoice");
+            assert.equal(h.calls[0].categories[0].postings[0].amount,"-1.01");
+        }
+    });
+    await check("Row 5 uses Freight instead of the total invoice amount", async () => {
+        const h = await harness();h.invoice("AP","AP - Product",{[h.I.amount]:999,[h.I.freight]:-12.34});
+        await h.main("invoice");assert.equal(h.calls[0].categories[0].postings[0].amount,"-12.34");
     });
     await check("Timestamp Invoice Date becomes the invoice calendar date", async () => {
         const h = await harness(); h.invoice("AP", "AP - Assets", { [h.I.date]: "2026-11-04T02:30:00.000Z" });

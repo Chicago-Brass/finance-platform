@@ -104,7 +104,7 @@ async function checkBehavior() {
         assert.equal(h.calls.length, 1); assert.equal(body.paymentRecordId, "payment");
         assert.deepEqual(body.source, { tableId: h.T.invoices, recordId: "invoice", recordName: "Invoice invoice" });
         assert.equal(body.eventType, "sent"); assert.equal(body.entryDate, "2026-10-30");
-        assert.equal(category.ruleCode, "PAY-11"); assert.equal(category.postings[0].amount, "20.00");
+        assert.equal(category.ruleCode, "PAY-11"); assert.equal(category.postings[0].amount, "-20.00");
         assert.equal(category.postings[0].debitAccount.number, "211.100"); assert.equal(category.postings[0].creditAccount.number, "211.100");
         assert.equal(h.reads.length, 3, "The credit packet reads only payment, bill and source credit");
         assert.equal(h.calls[0].options.headers["x-ledger-secret"], "test-secret");
@@ -129,7 +129,7 @@ async function checkBehavior() {
         assert.equal(h.calls[0].body.categories[0].postings[0].amount, "100.00");
         assert.equal(h.calls[1].body.source.recordId, "invoice");
         assert.equal(h.calls[1].body.categories[0].ruleCode, "PAY-11");
-        assert.equal(h.calls[1].body.categories[0].postings[0].amount, "20.00");
+        assert.equal(h.calls[1].body.categories[0].postings[0].amount, "-20.00");
         assert.equal(h.reads.filter(read => read.table === h.T.invoices && read.ids.includes("invoice")).length, 1);
     });
     await check("Sent remains the only primary event guard", async () => {
@@ -159,7 +159,7 @@ async function checkBehavior() {
         const h = await harness(); h.ready(); h.credit();
         h.payment({ fldhP2S68pT3XkZmX: 0 });
         h.invoice({ [h.I.discountTotal]: 0, [h.I.creditsApplied]: -30, [h.I.sourceCredits]: [link("credit")] });
-        await h.main("payment"); assert.equal(h.calls[0].body.categories[0].postings[0].amount, "30.00");
+        await h.main("payment"); assert.equal(h.calls[0].body.categories[0].postings[0].amount, "-30.00");
     });
     await check("One source credit can apply to several fully paid bills", async () => {
         const h = await harness(); h.ready();
@@ -168,7 +168,7 @@ async function checkBehavior() {
         h.invoice({ [h.I.discountTotal]: 0, [h.I.creditsApplied]: -18, [h.I.sourceCredits]: [link("credit")] }, "invoice2");
         h.credit({ [h.C.recipientInvoices]: [link("invoice"), link("invoice2")] });
         await h.main("payment"); assert.equal(h.calls.length, 2);
-        assert.deepEqual(h.calls.map(call => call.body.categories[0].postings[0].amount), ["12.00", "18.00"]);
+        assert.deepEqual(h.calls.map(call => call.body.categories[0].postings[0].amount), ["-12.00", "-18.00"]);
         assert.deepEqual(h.calls.map(call => call.body.source.recordId), ["invoice", "invoice2"]);
     });
     await check("Missing source credit link fails", async () => {
@@ -182,7 +182,7 @@ async function checkBehavior() {
         h.credit({ [h.C.available]: -10 }, "credit1"); h.credit({ [h.C.available]: -20 }, "credit2");
         await h.main("payment");
         const postings = h.calls[0].body.categories[0].postings;
-        assert.deepEqual(postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["credit1", "5.00"], ["credit2", "10.00"]]);
+        assert.deepEqual(postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["credit1", "-5.00"], ["credit2", "-10.00"]]);
         assert.ok(postings.every(posting => posting.debitInvoiceRecordId === "invoice"));
         assert.match(h.logs[0], /Source credit ID: credit1/); assert.match(h.logs[0], /Source credit ID: credit2/);
     });
@@ -191,21 +191,21 @@ async function checkBehavior() {
         h.invoice({ [h.I.discountTotal]: 0, [h.I.creditsApplied]: -0.02, [h.I.sourceCredits]: [link("creditC"), link("creditA"), link("creditB")] });
         for (const id of ["creditA", "creditB", "creditC"]) h.credit({ [h.C.available]: -0.01 }, id);
         await h.main("payment");
-        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["creditA", "0.01"], ["creditB", "0.01"]]);
+        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["creditA", "-0.01"], ["creditB", "-0.01"]]);
     });
     await check("Allocation retains four-decimal source proportions before cent rounding", async () => {
         const h = await harness(); h.ready();
         h.invoice({ [h.I.discountTotal]: 0, [h.I.creditsApplied]: -1.01, [h.I.sourceCredits]: [link("creditA"), link("creditZ")] });
         h.credit({ [h.C.available]: -1.0001 }, "creditA"); h.credit({ [h.C.available]: -1.0049 }, "creditZ");
         await h.main("payment");
-        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["creditA", "0.50"], ["creditZ", "0.51"]]);
+        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["creditA", "-0.50"], ["creditZ", "-0.51"]]);
     });
     await check("Zero source credit has zero allocation", async () => {
         const h = await harness(); h.ready();
         h.invoice({ [h.I.discountTotal]: 0, [h.I.creditsApplied]: -10, [h.I.sourceCredits]: [link("credit"), link("zero")] });
         h.credit(); h.credit({ [h.C.available]: 0 }, "zero");
         await h.main("payment");
-        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["credit", "10.00"]]);
+        assert.deepEqual(h.calls[0].body.categories[0].postings.map(posting => [posting.creditInvoiceRecordId, posting.amount]), [["credit", "-10.00"]]);
     });
     for (const available of [null, NaN, Infinity, "-30", 30]) await check(`Invalid source credit weight ${available}`, async () => {
         const h = await harness(); h.ready();
@@ -229,7 +229,8 @@ async function checkBehavior() {
     await check("Full card rebate is independent of final payment fraction", async () => {
         const h = await harness(); h.ready();
         h.payment({ [h.P.type]: select("AR"), [h.P.vendorType]: select("AR - Non-Product"), [h.P.vendorTypesAP]: [], [h.P.vendorTypesAR]: ["AR - Non-Product"], fldhP2S68pT3XkZmX: 100 });
-        h.invoice({ [h.I.discountTotal]: 0, [h.I.rebateTotal]: 20, fldNqZMZsZfRPiRFp: 200 });
+        h.add(h.T.accounts, "rebateAccount", { fldTjgAITNrJVCCWq: "004.011" });
+        h.invoice({ [h.I.accounts]: [link("rebateAccount")], [h.I.discountTotal]: 0, [h.I.rebateTotal]: 20, fldNqZMZsZfRPiRFp: 200 });
         await h.main("payment"); const category = h.calls[0].body.categories[0];
         assert.equal(category.ruleCode, "PAY-27"); assert.equal(category.postings[0].amount, "20.00");
         assert.equal(category.postings[0].debitAccount.number, "231.100"); assert.equal(category.postings[0].creditAccount.number, "004.011");
@@ -300,7 +301,7 @@ async function replayFixtures() {
     const root = path.resolve(__dirname, "../../scripts/outputs");
     const schema = JSON.parse(fs.readFileSync(path.join(root, "ledger-tchart-refresh-2026-10-30/schema-current.json"), "utf8"));
     const tableMap = new Map(schema.tables.map(table => [table.id, table]));
-    let paymentsChecked = 0, mockRequests = 0, creditApplications = 0, blockedPayments = 0;
+    let paymentsChecked = 0, mockRequests = 0, creditApplications = 0, blockedPayments = 0, incompleteFixtures = 0;
     for (const fixture of [
         { folder: "ledger-payment-discount-2026-10-30", payments: ["sample-payments.json"], invoices: ["sample-invoices.json"] },
         { folder: "ledger-invoice-settlement-local-check-2026-10-30", payments: ["payments.json"], invoices: ["invoices.json"] },
@@ -322,13 +323,13 @@ async function replayFixtures() {
             const accountFixture = JSON.parse(fs.readFileSync(path.join(root, "ledger-fixes-2026-10-30/accounts-readonly.json"), "utf8"));
             for (const account of accountFixture.records) h.add(h.T.accounts, account.id, account.fields, account.id);
             try { await h.main(payment.id); }
-            catch (error) { assert.match(error.message, /Not yet implemented/); assert.equal(h.calls.length, 0); blockedPayments++; }
+            catch (error) { if (/Missing linked records in tblV26TC0f6CKDneL/.test(error.message)) incompleteFixtures++; else { assert.match(error.message, /Not yet implemented/); blockedPayments++; } assert.equal(h.calls.length, 0); }
             paymentsChecked++; mockRequests += h.calls.length;
             for (const call of h.calls) for (const category of call.body.categories) {
                 if (!call.body.source) continue; // Payment-owned packets are covered by check.cjs.
                 const bill = invoices.find(row => row.id === call.body.source.recordId);
                 const amountField = category.ruleCode === "PAY-10" ? h.I.discountTotal : category.ruleCode === "PAY-11" ? h.I.creditsApplied : h.I.rebateTotal;
-                const expected = h.moneyUnits(Math.abs(bill.fields[amountField]), 2, "expected");
+                const expected = h.moneyUnits(bill.fields[amountField], 2, "expected");
                 assert.equal(category.postings.reduce((total, posting) => total + h.moneyUnits(Number(posting.amount), 2, "posted"), 0), expected);
                 if (category.ruleCode === "PAY-11") {
                     creditApplications++;
@@ -338,7 +339,7 @@ async function replayFixtures() {
             }
         }
     }
-    return { paymentsChecked, mockRequests, creditApplications, blockedPayments, network: "mock only" };
+    return { paymentsChecked, mockRequests, creditApplications, blockedPayments, incompleteFixtures, network: "mock only" };
 }
 
 (async () => console.log(JSON.stringify({ checksPassed: await checkBehavior(), fixtureReplay: await replayFixtures() }, null, 2)))().catch(error => { console.error(error); process.exitCode = 1; });

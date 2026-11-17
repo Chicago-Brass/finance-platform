@@ -18,13 +18,14 @@ function CustomPeriod({ options }: { options: IncomeStatementOptions }) {
     <FilterField label="Year" htmlFor="f-year"><input id="f-year" name="year" type="number" min="1900" max="9999" defaultValue={options.year} required /></FilterField>
     <div className="period-months"><SearchableSelect label="Start month" name="from" value={from} options={MONTHS} onChange={setFrom} /><SearchableSelect label="End month" name="to" value={to} options={MONTHS} onChange={setTo} /></div>
     <input type="hidden" name="grain" value={options.grain} /><input type="hidden" name="layout" value={options.summary ? "summary" : "detail"} />
+    {options.branch && <input type="hidden" name="branch" value={options.branch} />}
     <p className="filter-help">Includes the full selected months.</p>
     <button className="btn btn-primary" type="submit">Apply period</button>
   </ReportForm>;
 }
 
 export function ReportFilters({ options }: { options: IncomeStatementOptions }) {
-  const params = { year: String(options.year), from: String(options.from), to: String(options.to), grain: options.grain, layout: options.summary ? "summary" : "detail" };
+  const params = { ...(options.branch ? { branch: options.branch } : {}), year: String(options.year), from: String(options.from), to: String(options.to), grain: options.grain, layout: options.summary ? "summary" : "detail" };
   const presets = incomeDatePresets();
   const period = `${options.year}:${options.from}:${options.to}`;
   return <FilterField label="Period" className="statement-period-controls">

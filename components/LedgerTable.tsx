@@ -12,11 +12,11 @@ import { ACCOUNT_TYPES, accountLedgerHref, filterTrialAccounts, ledgerHref, mone
 import "./ledger-tables.css";
 
 /** An account pill that opens the General Ledger for that account. */
-export function AccountLedgerLink({ code, name, asOf }: { code: string; name: string | null; asOf: string }) {
-  return <ReportLink className="account-pill-link" href={accountLedgerHref(code, asOf)} title={`Open ${code} in the General Ledger`}><AccountPill code={code} name={name} /></ReportLink>;
+export function AccountLedgerLink({ code, name, asOf, branch }: { code: string; name: string | null; asOf: string; branch?: string }) {
+  return <ReportLink className="account-pill-link" href={accountLedgerHref(code, asOf, branch)} title={`Open ${code} in the General Ledger`}><AccountPill code={code} name={name} /></ReportLink>;
 }
 
-export function TrialBalanceTable({ rows, asOf, query = "", type = "all" }: { rows: TbRow[]; asOf?: string; query?: string; type?: string }) {
+export function TrialBalanceTable({ rows, asOf, branch, query = "", type = "all" }: { rows: TbRow[]; asOf?: string; branch?: string; query?: string; type?: string }) {
   const visible = useMemo(() => filterTrialAccounts(rows, query, type), [rows, query, type]);
   const debit = moneyTotal(rows.map(row => row.total_debit));
   const credit = moneyTotal(rows.map(row => row.total_credit));
@@ -28,7 +28,7 @@ export function TrialBalanceTable({ rows, asOf, query = "", type = "all" }: { ro
         <table className="fin-table ledger-data-table trial-balance-table">
           <colgroup><col className="ledger-account-col" /><col className="ledger-type-col" /><col className="ledger-money-col" /><col className="ledger-money-col" /><col className="ledger-money-col" /></colgroup>
           <thead><tr><th scope="col" className="label-cell">Account</th><th scope="col" className="label-cell">Type</th><th scope="col" className="num-cell">Debits</th><th scope="col" className="num-cell">Credits</th><th scope="col" className="num-cell">Balance</th></tr></thead>
-          <tbody>{visible.length === 0 ? <tr><td colSpan={5} className="ledger-empty">No accounts match these display filters.</td></tr> : visible.map(row => <tr key={row.account_number} className="row-account"><th scope="row" className="label-cell">{asOf ? <AccountLedgerLink code={row.account_number} name={row.account_name} asOf={asOf} /> : <AccountPill code={row.account_number} name={row.account_name} />}</th><td className="label-cell"><span className="ledger-type-label">{ACCOUNT_TYPES[row.account_type] ?? row.account_type}</span>{row.account_subtype && <small className="ledger-subtype">{row.account_subtype.replaceAll("_", " ")}</small>}</td><td className="num-cell">{formatReportAmount(Number(row.total_debit))}</td><td className="num-cell">{formatReportAmount(Number(row.total_credit))}</td><td className="num-cell">{formatReportAmount(Number(row.balance))}</td></tr>)}</tbody>
+          <tbody>{visible.length === 0 ? <tr><td colSpan={5} className="ledger-empty">No accounts match these display filters.</td></tr> : visible.map(row => <tr key={row.account_number} className="row-account"><th scope="row" className="label-cell">{asOf ? <AccountLedgerLink code={row.account_number} name={row.account_name} asOf={asOf} branch={branch} /> : <AccountPill code={row.account_number} name={row.account_name} />}</th><td className="label-cell"><span className="ledger-type-label">{ACCOUNT_TYPES[row.account_type] ?? row.account_type}</span>{row.account_subtype && <small className="ledger-subtype">{row.account_subtype.replaceAll("_", " ")}</small>}</td><td className="num-cell">{formatReportAmount(Number(row.total_debit))}</td><td className="num-cell">{formatReportAmount(Number(row.total_credit))}</td><td className="num-cell">{formatReportAmount(Number(row.balance))}</td></tr>)}</tbody>
           <tfoot><tr><th scope="row" className="label-cell">All-account totals</th><td /><td className="num-cell">{formatReportAmount(debit)}</td><td className="num-cell">{formatReportAmount(credit)}</td><td /></tr></tfoot>
         </table>
       </div>

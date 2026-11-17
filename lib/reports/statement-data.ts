@@ -14,10 +14,10 @@ import type { AccountBalance, Period, Snapshot } from "./report-utils";
 
 export type IncomeGrain = IncomeStatementOptions["grain"];
 export type BalanceGrain = BalanceSheetOptions["grain"];
-export type IncomeRange = Pick<IncomeStatementOptions, "year" | "from" | "to">;
+export type IncomeRange = Pick<IncomeStatementOptions, "year" | "from" | "to" | "branch">;
 
 export type IncomeStatementData = IncomeRange & { months: Snapshot[]; previous: AccountBalance[]; posted: number };
-export type BalanceSheetData = { asOf: string; balances: Record<string, AccountBalance[]>; posted: number };
+export type BalanceSheetData = { branch?: string; asOf: string; balances: Record<string, AccountBalance[]>; posted: number };
 
 /** One period per calendar month in the range. Quarters and years are sums of these. */
 export function incomeStatementMonths({ year, from, to }: IncomeRange): Period[] {
@@ -55,7 +55,7 @@ export function combineMonths(months: Snapshot[], periods: Period[]): Snapshot[]
 }
 
 export function buildIncomeStatementView(data: IncomeStatementData, grain: IncomeGrain, summary: boolean) {
-  const options: IncomeStatementOptions = { year: data.year, from: data.from, to: data.to, grain, summary };
+  const options: IncomeStatementOptions = { year: data.year, from: data.from, to: data.to, branch: data.branch, grain, summary };
   const report = getIncomeStatement(options, combineMonths(data.months, incomeStatementPeriods(options)), data.posted);
   const previousOptions: IncomeStatementOptions = { ...options, year: data.year - 1, grain: "year" };
   const previousReport = getIncomeStatement(previousOptions, [{ period: previousIncomePeriod(data), accounts: data.previous }], 0);
@@ -86,7 +86,7 @@ export function balanceSheetDates(asOf: string): string[] {
 }
 
 export function buildBalanceSheetView(data: BalanceSheetData, grain: BalanceGrain, summary: boolean) {
-  const options: BalanceSheetOptions = { asOf: data.asOf, grain, summary };
+  const options: BalanceSheetOptions = { asOf: data.asOf, branch: data.branch, grain, summary };
   const { periods, columnYears, comparisonDate, trendDates } = balanceDatesFor(options);
   const at = (date: string) => {
     const rows = data.balances[date];

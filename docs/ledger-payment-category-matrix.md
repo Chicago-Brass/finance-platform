@@ -1,67 +1,79 @@
-# Payment category posting matrix
+# Payment category implementation
 
-Current source contract for the revised T-Chart Actual Triggers and Amount sections. This matrix
-describes the local implementation, not proof of saved Airtable source or a deployed function.
-See the [webhook contract](ledger-webhook-contract.md) for persistence and duplicate rules.
+The reordered live Category - Payment sheet is the accounting source of truth. `ledger-daily`
+uses one named handler per retained category in `categories/payments.js`; `rules/payments.ts`
+owns filtered discovery. The shared writer, verified source writeback and dedicated reversal
+endpoint are unchanged. Production runs the private daily dispatcher; develop stays unscheduled.
 
-Every implemented category supplies actual account pairs. Cancelled/Returned event names do not
-request an automatic reversal. Payment-owned components use current Payments.Amount unless a
-different amount is listed. bank means the payment-linked account; card means 231.100.
+Sixteen fully implemented Payment rules are enabled in production. The two remaining loan rules
+are disabled and throw `Not yet implemented` before preparing journals. See
+[environments](../knowledge-base/environments.md) for the operational enablement selection. Black rows 20-33 are retired from
+discovery; unreferenced catalog records are removed and referenced history remains disabled.
 
-| Code | Primary / sender | Category | Debit | Credit | Amount and qualification |
-| --- | --- | --- | --- | --- | --- |
-| PAY-01 | Sent / payment | Customer deposit | bank | 221.100 | Payment.Amount share; AR Product, first shipment blank or payment on/before shipment. |
-| PAY-02 | Sent / payment | Customer payment after shipment | bank | 121.100 | Payment.Amount share; AR Product, payment after first shipment. |
-| PAY-03 | Sent / payment | Client overpayment moved to credit | bank | 221.300 | New AR Refund/Credit payment Amount; linked Method of Application Credit to Another Order. No Overpaid Amount gate. |
-| PAY-04 | Sent | Small excess / rounding | 007.002 | 121.100 | Raw Overpaid Amount > 0 and < 5; posted amount rounded to cents. Literal chart pair. |
-| PAY-05 | Sent / payment | Client cash refund | 221.100 | bank | Payment.Amount share; AR Refund/Credit, Cash Refund. |
-| PAY-06 | Cancel / events | Client payment cancelled | 221.100 or 121.100 | bank | Current Amount share; AR Product. Blank payment/ship date or payment on/before shipment selects deposit, otherwise AR. No Sent requirement. |
-| PAY-07 | Sent / payment | Vendor bank payment | 211.100 | bank | Payment.Amount share; AP Product, Regular Payment, approved bank method and linked PO or vendor. |
-| PAY-08 | Sent / payment | Vendor card payment | 211.100 | card | Payment.Amount share; AP Product, Regular Payment, Amex/Visa and linked PO or vendor. |
-| PAY-09 | Sent / payment | Card statement payment | card | bank | Parent Payment.Amount; CC Batch Payment and linked mini-payments. Mini amounts weight the card split. |
-| PAY-10 | Sent / blocked | Early vendor discount | 211.100 | bank / 004.011 unresolved | Not yet implemented: Discount Lines Total is known, but the multi-credit split/scope is undefined. |
-| PAY-11 | Sent / invoice | Bill paid using vendor credits | 211.100 on bill | 211.100 on credit memo | Full Credits Applied; AP, computed Fully Paid, nonzero, reciprocal source credits. |
-| PAY-12 | Cancel or Sent + Return Payment (AP) | Vendor cancelled/returned payment | 112.100 | 211.100 | Current Payment.Amount magnitude; AP. Actual entry, no original-journal lookup. |
-| PAY-13 | Sent | Vendor cash refund | 112.100 | 211.100 | Payment.Amount share; AP Credit and allowed payment bank. Debit remains Fifth Third as charted. |
-| PAY-14 | Undefined | Payroll/remittances | - | - | Actual Triggers and Amount remain blank; no routed handler. |
-| PAY-15 | Sent / blocked | Offshore/1099/owner staff | 241.100; 007.002 | bank | Not yet implemented: salary/fee amounts are undefined in Actual Triggers. |
-| PAY-16 | Sent / payment | Auto-loan payment | invoice-selected 232.100 or 007.003 | bank | Requires a linked 232.100 principal invoice. Separate single-account principal/interest invoices receive Payment.Amount shares weighted by Amount To Pay. |
-| PAY-17 | Sent / payment | LOC draw | bank | 231.200 | Payment.Amount purpose share; AR Non-Product and account 231.200. |
-| PAY-18 | Sent / payment | LOC repayment | invoice-selected 231.200 or 007.003 | bank | Requires a linked 231.200 principal invoice. Separate single-account principal/interest invoices receive Payment.Amount shares weighted by Amount To Pay. |
-| PAY-19 | Sent / payment | Bank transfer | payment-linked bank | invoice-linked bank | Payment.Amount purpose share; AP expense, both sides bank accounts. |
-| PAY-20 | Sent / payment | Owner distribution | 316.100 | bank | Payment.Amount purpose share; AP expense and account 316.100. |
-| PAY-21 | Sent / payment | Owner contribution | bank | 311.200 | Payment.Amount purpose share; AR Non-Product and account 311.200. |
-| PAY-22 | Sent / payment | Income tax | 242.100; 242.200 | bank | Payment.Amount for one mapped tax account; multiple account splits are blocked. |
-| PAY-23 | Sent / blocked | Insurance payout | bank; 004.004 | 122.100 | Not yet implemented: bank/recovery split undefined; account is marked unresolved in the chart. |
-| PAY-24 | Sent / payment | Security deposit | 143.200 | bank | Payment.Amount purpose share; AP expense and account 143.200. |
-| PAY-25 | Undefined | Fidelity interest/dividends | - | - | Actual Triggers and Amount remain blank; no routed handler. |
-| PAY-26 | Reconciled | Bank discrepancy | 007.002 | bank | Discrepancy magnitude; no AP/AR flip or uncharted suspense threshold. |
-| PAY-27 | Sent / invoice | Card rebate | card | 004.011 | Full Purchased Discounts & Rebate Total; AR Non-Product, computed Fully Paid, nonzero. No payment proration. |
+| Row | Rule | Source | Status | Mapping or blocker |
+| --- | --- | --- | --- | --- |
+| 2 | PAY-03 | Invoice | Fully | Negated credit Invoice Amount; debit the single account from Linked Payments, credit 221.300. No Sent filter. |
+| 3 | PAY-28 | Invoice | Fully | Negated Credits Applied; debit 221.300, credit 121.100. Source credit Method of Application qualifies. |
+| 4 | PAY-29 | Payment | Fully | Cash Refund invoice; negated Payment Amount, debit 221.300, credit selected account. |
+| 5 | PAY-08 | Payment | Fully | AP Product paid by 231.100; debit AP, credit 231.100. Expense row 5 excludes this clearing account. |
+| 6 | PAY-09 | Payment | Fully | CC Batch Payment; debit 231.100, credit selected account. Mini-payment invoices supply references and branch only. |
+| 7 | PAY-10 | Invoice Line | Fully | Negated Discount Line Amount; debit AP 211.100, credit 004.011. Expense row 4 accrues Invoice Amount minus Discount Lines Total. |
+| 8 | PAY-11 | Payment | Fully | Negated bill Credits Applied; debit bill AP, credit source-credit AP. Zero-cash payments qualify without a bank. |
+| 9 | PAY-12 | Payment | Fully | Sent AP Payment Record Type = Return Payment; negate Payment Amount, debit 112.100, credit AP, blank branch. |
+| 10 | PAY-30 | Payment | Fully | Sent AP Payment Record Type = Repayment; retain Payment Amount, debit AP, credit Fifth Third. |
+| 11 | PAY-13 | Payment | Fully | AP Refund invoice; negated Payment Amount, debit selected account, credit AP. |
+| 12 | PAY-31 | Invoice | Blocked partial | Loan accounts, cash timing and overlap ownership unresolved. |
+| 13 | PAY-16 | Payment | Blocked partial | Monthly invoice link and principal/interest source unresolved. |
+| 14 | PAY-20 | Payment | Fully | AP expense invoice account 316.100; debit 316.100, credit selected account. |
+| 15 | PAY-21 | Payment | Fully | AR Non-Product account 311.200; debit selected account, credit 311.200. Invoice Entry rows 11/12 exclude 311.200. |
+| 16 | PAY-23 | Payment | Fully | AR Non-Product invoice account 004.004; Payment Amount, debit Fifth Third 112.100, credit 004.004. Invoice Entry rows 11/12 exclude 004.004. |
+| 17 | PAY-32 | Invoice | Fully | AP Asset account 143.200; debit 143.200, credit AP. |
+| 18 | PAY-24 | Payment | Fully | Pay the AP Asset 143.200 invoice; debit AP, credit selected account. |
+| 19 | PAY-27 | Payment | Fully | Sent Regular Payment through 231.100, linked to a Fully Paid AR Non-Product invoice account 004.011; use full Payment Amount and Payment Date once. Debit 231.100, credit 004.011. Invoice Entry rows 11/12 exclude 004.011. |
 
-## Source ownership and totals
+## Amounts, references and reversal
 
-payment-sent.js owns all Sent categories, including PAY-10/PAY-11/PAY-27. It prepares payment-owned
-and invoice-owned packets in one script. payment-events.js owns Cancel and Reconciled categories.
-The separate Invoice Paid and Payment Returned automations were deleted after consolidation.
+The explicit approved negations apply only to rows 3, 4, 8 and 11. Other functioning rows preserve
+signed source amounts. Each line-owned category uses that line's amount and the latest eligible
+linked Sent payment's date. Linked-payment discovery uses Payment Date, so an older invoice paid
+in the current window is not missed.
 
-Payment shares preserve one current payment total. Multi-invoice shares use Invoice Amount To Pay;
-multi-account purpose shares are blocked until defined in the chart. Mixed-sign or missing allocations fail.
-Card-statement parent and child values are not combined into another bank movement.
+Invoice-owned rules use Invoice Date and Branch. Payment-owned rules use Payment Date and
+matching invoice references/branches. The CC batch reads its mini-payments' invoice contexts.
+Vendor, client, staff, transaction, PO and state references remain arrays. No notes are pushed.
+Vendor-credit settlement retains separate debit bill and credit memo invoice references; source
+credit amounts determine allocation, summed before rounding, with deterministic cent remainders.
 
-Vendor-credit and rebate totals are final snapshots. Invoice identity, not triggering payment identity, prevents the
-same cumulative discount/credit/rebate from posting again. Credits retain separate debit bill and
-credit memo references. Their source-credit weights allocate the authoritative Credits Applied total
-in cents using the verified common bill proportion.
+The source owns Ledger Postings, Ledger Journal IDs and Reversal Journal IDs. Invoice, Invoice
+Line and Payment Reverse Ledger automations call the existing dedicated endpoint. Reversal uses
+stored journals and amounts, including negative amounts; it does not rerun category calculations.
+Exact retries reuse journals and reversals. Unchecking Reverse Ledger does not restore them.
 
-## Boundaries
+Native Payment Sent/Cancelled/Reconciled posting automations remain OFF. Their local files are
+historical deployment copies, not an alternative posting engine; do not re-enable them.
 
-All same-base data reads are native and ID-based. Multiple distinct source Vendor Types fail before
-routing. Required dates, money, links and accounts must be available; no old-data compatibility
-fallback is invented. Zero components are no-ops.
+## Row 2 finalization
 
-Unclear discount, staff, insurance and multi-account components throw Not yet implemented.
-Loan/LOC invoices must each identify one account. Shared interest with both principal types throws;
-interest alone does not select a category. Unmapped 232.200/232.300 loan types remain outside these filters.
-Blank payroll and Fidelity categories remain unresolved. No automatic deletion, reversal, correction
-or incremental-credit workflow is implemented. An identical retry deduplicates; changed financial
-data conflicts and requires review. No live posting or deployment is asserted by this document.
+PAY-03 is fully implemented and enabled. It owns the AR Refund/Credit invoice, uses its Invoice
+Date and Branch, negates Invoice Amount, debits the single account identified by Linked Payments
+and credits 221.300. It does not require Sent. Missing or conflicting payment-account links fail
+that source rather than infer a bank. Zero credit amounts are a no-op. The existing invoice-owned
+writeback, exact-replay protection and stored-journal reversal apply unchanged.
+
+## Verification
+
+`node --test supabase/functions/ledger-daily/*.test.mjs supabase/functions/ledger-daily/categories/*.test.mjs`
+checks the current handlers, discovery and worker boundaries. `sh supabase/tests/check-payment-posting.sh`
+uses a disposable database to verify the catalog, actual category packets, replay, writeback,
+rollback, period review and reversal. Bounded live Airtable previews are read-only; no source
+amount, status or account is adjusted to manufacture a sample.
+
+Verified publication on 17 November 2026: all 28 downloaded `ledger-daily` runtime files matched
+local source. The hosted catalog contains the 18 retained enabled/reversible rules and 36 current
+mapping lines; all category metadata matched the live chart. Migration history contains the exact
+local `20261117004333_realign_payment_categories.sql` text. Checks passed: 137 worker cases,
+116 disposable database cases, and six deployed no-write previews with matching account/amount
+pairs. Twelve functioning category packets were posted, replayed and reversed in the disposable
+database. No hosted journals were posted or reversed during this task. The approved stale-marker
+cleanup changed and verified only the three ledger metadata fields on 81 Payments and three
+Invoices with no hosted journals.

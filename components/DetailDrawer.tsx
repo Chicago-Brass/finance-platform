@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import "./account-drawer.css";
 
-const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
+const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 /** Shared modal behavior for account activity and full journal entries. */
 export function DetailDrawer({ titleId, descriptionId, className = "", onClose, children }: {

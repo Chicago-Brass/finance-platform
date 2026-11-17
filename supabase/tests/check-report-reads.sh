@@ -32,6 +32,7 @@ docker exec "$container_name" createdb -U postgres report_check
 for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
   docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d report_check < "$file"
 done
+docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d report_check < "$test_dir/fixtures/open-periods.sql"
 port=$(docker port "$container_name" 5432/tcp | sed 's/.*://')
 REPORT_TEST_DATABASE_URL="postgres://postgres:local-only-report-check@127.0.0.1:$port/report_check" \
   node --test "$test_dir/report-reads.test.mjs" "$test_dir/ledger-search.test.mjs" "$test_dir/ledger-filters.test.mjs"

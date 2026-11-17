@@ -27,3 +27,5 @@
 @media(prefers-reduced-motion:reduce){.filter-control-field>input:is([type=number],[type=date]){transition:none}}
 
 .filter-control-bar>.control-reset{flex:none;align-self:center;margin-left:auto}
+
+.filter-control-bar .branch-filter{flex:0 1 148px;min-width:130px}

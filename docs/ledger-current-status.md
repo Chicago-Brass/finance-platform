@@ -1,8 +1,183 @@
-# Ledger status - 4 November 2026
+# Ledger status
 
 This page summarizes the latest verified state. The [webhook contract](ledger-webhook-contract.md),
 [category matrix](ledger-payment-category-matrix.md) and actual source describe behavior.
 The [initial rollout](ledger-rollout-2026-10-30.md) is historical evidence, not current deployment state.
+
+## Commit cleanup and migration alignment
+
+The eight unrecorded increments from the current changes are consolidated into
+`20261112195115_finalize_expense_invoice_catalog.sql`. All 22 earlier hosted migration versions
+are preserved. The final migration replaces superseded settlement metadata with the approved
+current-payment allocation, preserves the reviewed accounts/selector and deposit index, and
+contains no journal deletion or source-data update.
+
+The hosted state was independently checked against all 37 operating account rows, 37 selector
+members, the rule selector, 16 affected catalog rows and the deposit index. Because those changes
+were already applied, only their migration-history record was added. The stored full SQL hash
+matches the repository file. The consolidated migration and seed passed all 102 disposable
+checks; 70 focused category/report checks and frontend/Edge TypeScript also passed.
+
+The hosted hygiene audit found no public base tables without RLS, temporary helper functions or
+retired Expense/Invoice catalog rules. Only the four expected Edge functions are deployed.
+AGENTS.md and knowledge-base guides now describe the current webhook and six reversal senders.
+No financial or Airtable source values were cleared during cleanup. The dashboard Health and
+Security Advisors report zero errors. The existing Auth warning remains: leaked-password
+protection is disabled; authentication settings were not changed by ledger cleanup.
+
+A separate policy-only migration, `20261112200004_optimize_app_user_policy.sql`, caches the
+complete JWT email expression in one statement-scoped subquery. It preserves the authenticated
+own-email predicate and all grants. Twelve disposable report/security checks passed, including
+own-row isolation, an InitPlan proof, denied anonymous access and unchanged member report reads.
+The cleanup also corrects two stale test-only privilege signatures to include the Branch argument.
+
+## Final Expense and Invoice Entry review
+
+The latest review checks all 37 registered rules: 30 fully implemented/enabled, two functioning
+asset partials disabled, and five deferred rules disabled. All referenced FIN source fields and
+six source metadata/reversal field sets exist. Vendor/client/staff/transaction/PO/state mappings,
+signed amounts, accounting dates, branch attribution, journal grouping and source ownership
+were traced through the shared writer and reversal code.
+
+Corrected dynamic FIN 525300 / 922000 account translation in card purchases, prepaid use-up and
+non-product invoices. The existing Operating Expense mapping already translated these identities;
+all affected category outputs now use the same approved mapping. New regression cases failed
+before the fix and passed afterward. No category filter or amount formula changed.
+
+The live review removes stale extra Expense notes, records the confirmed separate Product /
+Non-Product payment policy, and aligns manual webhook trigger documentation and account maps.
+Deferred/red and excluded/black rows remain unchanged. Current checks passed: 109 focused
+worker/category/source tests, 102 disposable database checks, 11 native reversal mocks, frontend
+TypeScript and all four Edge entrypoint TypeScript checks. `ledger-daily` v24 is ACTIVE and all
+29 downloaded worker modules match local source. Only seven rule metadata rows changed;
+operational switches and all 235 journal headers / 470 lines were preserved. No hosted financial
+test was run. A fresh workbook export verified 57 Expense cells and seven Invoice Entry cells,
+including bold tags. Every unrelated value and formatting property, including deferred and
+excluded rows and all other worksheets, was unchanged. Native configuration readback confirmed
+all six source reversal automations ON and all replaced ledger posting automations OFF.
+
+## Shipping deposit cap
+
+INV-14 / Invoice Entry row 4 is fully implemented and enabled for the new FIN Shipping Records
+source. It follows Transaction.Invoices to one AR Product Deposit Invoice and totals linked
+MTAs.Extended Sell Price. Positive recognition is capped by that invoice's remaining posted
+221.100 liability, including reversals. The database rechecks that cap under the same source
+lock as deposit funding, so concurrent shipments cannot consume the same available balance.
+Ambiguous transaction/deposit links stop before posting; a source without an available deposit
+skips and can be retried later. Negative source amounts remain signed.
+
+The new five source metadata/reversal fields and sixth native reversal automation are live.
+The partial GIN invoice-reference index is applied. The catalog enables 22 Expense and eight
+Invoice Entry rules; the two working asset partials remain disabled. `ledger-daily` v23,
+`ledger-payment` v22, `ledger-reversal` v10 and `ledger-periods` v5 are ACTIVE; periods retains
+JWT verification. No external scheduler was enabled.
+
+The disposable database suite passed 102 checks, including concurrent caps, replay, reversal,
+period approval and failed-writeback compensation. Another 57 focused checks, 11 native sender
+checks, frontend TypeScript and all four Edge entrypoint TypeScript checks passed. A deployed
+no-write preview read the new table graph successfully and skipped a shipment whose linked
+deposit has no available posted balance. No hosted financial posting or checkbox reversal was
+performed in this cutover. All 36 downloaded runtime files match local code; hosted journal
+counts remain 235 headers and 470 lines. A fresh live workbook download verifies only Invoice
+Entry row 4 content changed, with bold section tags/account labels and a white background.
+
+## Vendor return credits
+
+Invoice Entry row 9 (INV-08) is fully implemented and enabled. It requires Invoice Type AP,
+Vendor Type AP - Credit and a nonempty Related Purchase Order. It debits Accounts Payable
+211.100 and credits Inventory - Pending Return Processing 131.400. Amount is the negated
+Invoice Amount, not ABS; Invoice Date, branch and reference arrays come from the source invoice.
+The existing invoice-owned journal links, deduplication and dedicated reversal apply unchanged.
+Price-only credits without a PO (INV-09, row 10) remain deferred and disabled.
+
+`ledger-daily` v22 is ACTIVE, with all 28 downloaded runtime files matching local source. The
+catalog enables 22 Expense and seven Invoice Entry rules. Focused category/query checks passed
+34 cases; the disposable database suite passed 97 cases, including invoice-owned credit posting,
+exact retry and opposite-entry reversal; TypeScript passed. No currently qualifying PO-linked
+AP Credit exists in FIN, so no hosted positive posting was attempted. Three deployed GET-only
+previews excluded non-PO credits and left all 235 journal headers and 470 lines unchanged.
+The live row's account labels, source, sync triggers, field mapping, notes and Fully status were
+read back from a fresh workbook download; bold tags and the white background were verified.
+No external schedule was enabled.
+
+## Operating expense allowlist
+
+Expense rows 2/3 now share 37 reviewed FIN account numbers, hardcoded in
+`rules/expense-accounts.ts`. Dedicated payroll, bank-fee, depreciation, income-tax and deferred
+bad-debt accounts are excluded; COGS was already excluded. The 14 approved FIN checkboxes were
+unchecked and read back, leaving exactly 37 checked accounts. The checkbox is not queried by sync.
+
+EXP-01 is fully implemented and enabled. Twenty-eight missing Supabase expense accounts were
+added with source identities and reporting classifications. FIN 525300 maps to 525.300 and FIN
+922000 maps to 922.000 to satisfy the existing dotted account-code contract. No global writer
+normalization or source amount/filter behavior changed.
+
+The operating-expense release v21 was verified against all 28 downloaded runtime files. The focused
+category/query/runner checks passed 102 cases, the disposable database suite passed 96 cases,
+and TypeScript passed. Five deployed GET-only previews (three invoices and two payments) matched source accounts,
+amounts and dates. The two catalog mappings and live Expense worksheet were updated. No live
+journal posting or reversal test was performed for this allowlist change; existing journals and
+lines were unchanged. No external scheduler was enabled.
+
+## Current customer payment allocation
+
+Invoice Entry rows 3/6 use current Payments.Amount multiplied by the matching invoice batch
+proportions, with deterministic cent remainders across category groups. Company policy requires
+repeated payments to link the same invoices with unchanged amounts. Cumulative Total Paid Amount
+is no longer read by these handlers. AP and non-product payment mappings are unchanged.
+
+The allocation release v20 was verified against all 27 downloaded worker runtime files.
+Twenty-one Invoice Entry category checks, 95 disposable database checks and TypeScript passed.
+Six deployed read-only previews matched independent integer allocation calculations. Existing
+235 journal headers, 470 lines and the six sources' metadata remained unchanged by those previews.
+The catalog, repository chart mappings and live workbook amount cells reflect the new formula.
+No external schedule was enabled.
+
+## Expense and Invoice Entry validation - 12 November 2026
+
+The live catalog enables 21 fully implemented Expense rules and six fully implemented Invoice
+Entry rules. All 44 other catalog rows remain disabled. Partial/deferred rules and Payment-sheet
+rules were not part of this posting test; no external scheduler was activated.
+
+Targeted webhook calls posted 187 actual sources across 20 rules, creating 206 original journals
+and 412 lines. All 109 invoice, invoice-line and depreciation sources posted before any payment.
+Twenty-six complete AP component groups cleared exactly; 21 AR pairs cleared exactly and two
+retained source-supported unpaid/overpaid balances. All source journal links were read back.
+
+Twenty-five actual Airtable Reverse Ledger checkboxes created 29 matching reversal journals.
+The final test dataset contains 235 journals and 470 lines, with all originals retained. Raw
+journal aggregation, trial-balance RPCs, both report builders and the production browser reports
+agreed after each posting batch and each five-source reversal group. All 67 accounts appear
+once in their appropriate financial report. This test dataset is not a complete Airtable ledger.
+
+Fresh targeted replays added no journals; an exact two-journal writer replay returned duplicates,
+and a changed financial packet returned HTTP 409. One actual posting writeback failure left no
+orphan journal after compensation and succeeded once on retry. The JSONB request-scope comparison
+was corrected to compare source/date values rather than object serialization order.
+
+`ledger-daily` v19, `ledger-payment` v21, `ledger-reversal` v9 and `ledger-periods` v4 are ACTIVE.
+All 34 unique downloaded runtime source files match local source. The existing shared secret is
+reused. Final focused checks and TypeScript passed; the disposable database suite passed before
+the final cache-only change. Targeted calls now retain linked-record reads within the invocation
+while refreshing the owning source between category evaluations.
+
+Live gaps remain: six full rules have no qualifying source, EXP-23's available samples lack an
+open accounting period, and no eligible 401K line was found. Negative Product invoices remain
+preview-only pending classification. Invoice Entry settlement rows now use current Payment Amount
+times matching invoice batch proportions. Repeated payments must link the same invoices with
+unchanged amounts; this replaces the cumulative Total Paid Amount calculation. Corporate remains
+a stored branch, is not mapped to Overhead, and
+is not offered in the report dropdown. Consolidated includes every stored branch.
+
+Earlier dated sections below describe their own historical implementation and datasets.
+
+## Payment mapping refresh - 7 November 2026
+
+The current Payment changes preserve signed source amounts, use invoice-line account groups for
+staff and debt payments, implement invoice-owned interest and inclusive small-balance write-offs,
+and retain the three native event triggers. The workbook's daily 11 PM schedule remains a draft.
+See [Payment category audit](payment-category-audit.md) for current filters, mappings, tests and
+remaining scope; older sample totals below describe the earlier mapping version.
 
 ## Local financial reports - 4 November
 
@@ -204,10 +379,10 @@ probe and mock regression coverage; it did not retrigger payments or rewrite the
 | Categories | Current boundary |
 | --- | --- |
 | PAY-10 | Discount Lines Total is known; bank/discount credit scope and split remain undefined. |
-| PAY-15 | Salary/fee split remains undefined. |
+| PAY-15 | Salary, W2 tax and 401k liability groups work; benefits and wire/FX fees remain excluded. |
 | PAY-23 | Bank/recovery account selection remains undefined; FIN account 122.100 was missing when checked. |
-| PAY-14 / PAY-25 | Payroll/Fidelity primary trigger and amount mappings remain undefined; handlers are not routed. |
-| PAY-16 / PAY-18 | Implemented for separate single-account principal/interest invoices. Multiple accounts or shared interest between both principal types fail explicitly. |
+| PAY-14 | Payroll category deferred. PAY-25 interest is implemented with signed Invoice Amount and invoice-owned identity. |
+| PAY-16 / PAY-18 | Implemented with invoice-line principal/interest account groups. Ambiguous shared interest fails; partial payments use the chart's full line totals. |
 
 No qualifying sample was found in the bounded date/category searches for PAY-03, PAY-04, PAY-12,
 PAY-17, PAY-18, PAY-19, PAY-20, PAY-21, PAY-22, PAY-24 or PAY-27. This is a coverage limit, not proof
@@ -267,3 +442,28 @@ payments, cents/no-op behavior, missing/ambiguous bank failures and existing cat
 Chart row 12 retains its primary filters, mapping is updated, resolved clarification is cleared,
 and Done? is Fully. The final downloaded workbook is on Desktop. Evidence is in
 scripts/outputs/expense-bank-fees-implementation-2026-11-05/. No live financial test was triggered.
+
+## Shared automation audit - 7 November 2026
+
+All nine Company Ledger automations were inspected live and remain ON with their current native
+events, input bindings, URL and shared secret. All nine published script copies were reopened and
+copied back for exact comparison with local source. Migrated categories are absent from retired
+senders. The daily 11 PM Central schedule remains deferred.
+
+The rounding/sign/account-grouping/branch fixes and explicit partial-handler comments are
+published. DUAL ENTRY migrations 20261107022920 and 20261107023520 are applied and recorded;
+ledger-payment's updated ledger.ts was independently read back. Existing journal/line counts,
+debit/credit totals and scalar references were preserved. All business references now persist as
+arrays, including state_ref; active is an account label only. No historical references were inferred.
+
+Current checks pass: 35 disposable database posting tests, 12 report-read/security tests, 16 HTTP/
+journal-detail checks, targeted native script checks, TypeScript and whitespace validation.
+No historical payment/invoice checkbox was retriggered and no hosted financial posting test was run.
+The temporary read-only probe found no eligible Create Entry test record and did not execute; its
+source was replaced with the proper Expense script before publication.
+
+See the [infrastructure audit](automation-infrastructure-audit.md) for the complete ownership and
+implementation-state tables, possible Expense row 3 overlap, and remaining chart blockers.
+
+Invoice Entry I5 was restored from the approved freight mapping. A fresh workbook download
+confirmed I5 was the only changed cell value and J5 remained unchanged; section headings are bold.

@@ -7,7 +7,7 @@ const LINKS = [
   { href: "/balance-sheet", label: "Balance Sheet" },
   { href: "/trial-balance", label: "Trial Balance" },
   { href: "/general-ledger", label: "General Ledger" },
-  { href: "/t-chart", label: "T-Chart" },
+  { href: "/periods", label: "Periods" },
 ];
 
 export function NavLinks() {

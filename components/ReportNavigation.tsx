@@ -30,7 +30,7 @@ export function ReportNavigationProvider({ children }: { children: ReactNode }) 
       startTransition(() => router.push(href, { scroll: false }));
     },
     refresh: () => {
-      if (isReportPath(window.location.pathname)) { refreshData(); return; }
+      if (isReportPath(window.location.pathname) || window.location.pathname === "/periods") { refreshData(); return; }
       setDestination(window.location.pathname);
       startTransition(() => router.refresh());
     },

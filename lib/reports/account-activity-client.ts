@@ -6,7 +6,8 @@ export type AccountActivityCache = Map<string, AccountActivityParts[keyof Accoun
 export async function readAccountActivity<K extends keyof AccountActivityParts>(
   cache: AccountActivityCache, input: DrillRange & { account: string }, section: K, signal: AbortSignal,
 ): Promise<AccountActivityParts[K]> {
-  const params = new URLSearchParams({ ...input, section });
+  const { branch, ...range } = input;
+  const params = new URLSearchParams({ ...range, ...(branch ? { branch } : {}), section });
   const key = params.toString();
   if (cache.has(key)) return cache.get(key) as AccountActivityParts[K];
   const response = await fetch(`/api/reports/account-activity?${params}`, { signal, cache: "no-store" });
