@@ -59,6 +59,53 @@ export function RefreshDataButton() {
   return <button type="button" className="btn btn-quiet refresh-data" onClick={() => navigation?.refresh()} disabled={pending} title="Load the latest posted ledger data"><ReportIcon name="refresh" className={pending ? "is-spinning" : ""} /><span className="refresh-data-label">Refresh data</span></button>;
 }
 
+export function UpdateLedgerButton() {
+  const navigation = useContext(Navigation);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  async function updateLedger() {
+    setPending(true);
+    setMessage("Updating the ledger…");
+    setFailed(false);
+    let runKey: string | undefined;
+    try {
+      for (;;) {
+        const response = await fetch("/api/ledger-update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runKey }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "The ledger update could not be confirmed.");
+        runKey = result.runKey;
+        if (result.done) {
+          const posted = result.posted === 1 ? "1 journal posted" : `${result.posted} journals posted`;
+          setMessage(result.errors ? `${posted}. ${result.errors} failed. See Progress.` : posted + ".");
+          setFailed(result.errors > 0);
+          break;
+        }
+        setMessage("Ledger update in progress…");
+        if (result.busy) await new Promise(resolve => setTimeout(resolve, 5_000));
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The ledger update could not be confirmed.");
+      setFailed(true);
+    } finally {
+      setPending(false);
+      navigation?.refresh();
+    }
+  }
+
+  return <div className="ledger-update">
+    <button type="button" className="btn btn-quiet refresh-data" disabled={pending} onClick={updateLedger}>
+      <ReportIcon name="refresh" className={pending ? "is-spinning" : ""} />Update Ledger
+    </button>
+    <span role={failed ? "alert" : "status"} className={message ? "ledger-update-status" : "sr-only"}>{message}</span>
+  </div>;
+}
+
 export function ReportLink({ href, children, onClick, prefetch = false, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; prefetch?: boolean | null }) {
   const navigation = useContext(Navigation);
   return <Link {...props} href={href} prefetch={prefetch} scroll={false} onClick={event => {

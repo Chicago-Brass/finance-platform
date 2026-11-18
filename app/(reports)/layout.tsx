@@ -1,10 +1,11 @@
 import { reportUser } from "@/lib/reports/report-session";
 import { DismissibleMenu } from "@/components/DismissibleMenu";
 import { NavLinks } from "@/components/NavLinks";
-import { RefreshDataButton, ReportContent, ReportNavigationProvider } from "@/components/ReportNavigation";
+import { RefreshDataButton, ReportContent, ReportNavigationProvider, UpdateLedgerButton } from "@/components/ReportNavigation";
 import { LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 import { ReportDataProvider } from "@/components/ReportData";
 import { ReportApplication } from "@/components/ReportApplication";
+import { supabaseConfig } from "@/lib/supabase/config";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,10 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             <img className="brand-logo" src="/images/chicago-brass-white.png" width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass Architectural Hardware" />
           </div>
           <NavLinks />
-          <RefreshDataButton />
+          <div className="ledger-actions">
+            <RefreshDataButton />
+            {user && process.env.LEDGER_WEBHOOK_SECRET && new URL(supabaseConfig().url).hostname === "inzobaubbikyiekcfarj.supabase.co" && <UpdateLedgerButton />}
+          </div>
           <DismissibleMenu className="account-menu">
             <summary className="account-trigger" aria-label="Account menu"><span className="account-avatar" aria-hidden="true">{initials}</span><span aria-hidden="true">▾</span></summary>
             <div className="account-menu-panel">
