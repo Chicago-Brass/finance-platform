@@ -43,13 +43,6 @@ export async function reverseJournals(sql: Sql, request: ReversalRequest, option
   const execute = async (tx: TransactionSql): Promise<ReversalResult> => {
     await tx`set local role service_role`;
     await lockLedgerSource(tx,source);
-    if (source.tableId === MANUAL_TABLE) {
-      // Cancelling an unposted manual entry must also withdraw its closed-period review.
-      const pending = await tx`update public.ledger_posting_requests set status='rejected',review_reason='Manual entry cancelled in Airtable',reviewed_at=now(),updated_at=now()
-        where source_table=${source.tableId} and source_record_id=${source.recordId} and kind='posting' and status='pending'
-        returning id::text,accounting_date::text`;
-      for (const row of pending) await history(tx,row.accounting_date,"request_rejected","airtable","Manual entry cancelled in Airtable",row.id);
-    }
     const originals = await tx<OriginalJournal[]>`select e.id::text, e.status, e.rule_code, r.reversible,
       rev.id::text as reversal_id, rev.status as reversal_status, rev.entry_date::text as reversal_date
       from public.journal_entries e
@@ -62,6 +55,13 @@ export async function reverseJournals(sql: Sql, request: ReversalRequest, option
     if (journalEntryIds.some(id => !ownedIds.has(id.toLowerCase()))) {
       throw new PostingError("A supplied journal does not belong to this source record.");
     }
+    // Keep cancellation intent even when no journal exists yet or the reversal awaits review.
+    await tx`insert into ledger_private.ledger_source_cancellations(source_table,source_record_id,reversal_date)
+      values (${source.tableId},${source.recordId},${reversalDate}::date) on conflict(source_table,source_record_id) do nothing`;
+    const pending = await tx`update public.ledger_posting_requests set status='rejected',review_reason='Source cancelled in Airtable',reviewed_at=now(),updated_at=now()
+      where source_table=${source.tableId} and source_record_id=${source.recordId} and kind='posting' and status='pending'
+      returning id::text,accounting_date::text`;
+    for (const row of pending) await history(tx,row.accounting_date,"request_rejected","airtable","Source cancelled in Airtable",row.id);
     const result: ReversalResult = {
       source: { tableId: source.tableId, recordId: source.recordId },
       journalEntryIds: originals.map(entry => entry.id), reversalJournalEntryIds: [],

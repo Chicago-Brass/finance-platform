@@ -5,8 +5,9 @@ Dedicated source-record reversal, separate from `ledger-payment`. `index.ts` aut
 transaction. It copies stored lines, swaps debit/credit and preserves signed amounts and
 original records. No stored posting/reversal function is called or created.
 
-Supported FIN owners: Payments, Invoices, Invoice Lines, Prepay Expenses Log and Depreciation
-Table. Linked records are not reversed merely because the source references them.
+Supported FIN owners: Payments, Invoices, Invoice Lines, Prepay Expenses Log, Depreciation,
+Shipping Records and Direct Journal Entries. Linked records are not reversed merely because
+the source references them.
 
 ```json
 {
@@ -30,7 +31,13 @@ the same retry restores links without reposting. Native scripts do not rewrite t
 
 Closed-period reversals await explicit exception approval through the JWT-authenticated
 `ledger-periods` endpoint. Pending/rejected requests do not create reversal journals or new
-posting markers. Approval uses the same five-source ownership, lock and writeback code.
+Airtable posting markers. Approval uses the same source ownership, lock and writeback code.
+
+Reversal also stores private, source-level cancellation intent under that source lock, even
+when there are no originals or the reversal needs period review. It withdraws pending posting
+requests for every source type. The shared writer cannot add new category journals for a
+cancelled source; an existing exact replay may still verify its links. Writeback failure and
+retries keep this intent. Unchecking/restoration remains deferred.
 
 Published on 12 November 2026: `ledger-payment` v20, `ledger-reversal` v8,
 `ledger-periods` v3 (JWT verification enabled) and `ledger-daily` v12. All 42 downloaded runtime

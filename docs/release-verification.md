@@ -1,4 +1,30 @@
-# Report cleanup and release verification
+# Release verification
+
+## 18 November 2026
+
+The Progress and Period Management release was merged through
+[PR 6](https://github.com/Chicago-Brass/finance-platform/pull/6). Vercel confirmed main commit
+`149704c` Ready in Production and assigned it to the live finance URL. Signed-in browser reads
+loaded both Progress and Periods with their current catalog and journal data.
+
+Production and develop Auth both read back a seven-day session timebox (168 hours), with the
+existing one-hour access-token lifetime. Auth health checks returned 200 on both projects.
+
+Independent security reviews covered Auth/API authorization, database grants/RLS, posting and
+reversal endpoints, browser data handling, exports and dependencies. Confirmed signout and
+cancellation defects received separate reproductions, minimal fixes and a second review. The
+cancellation migration was applied to both databases; financial rows, period states and rule
+activation remained unchanged. Private cancellation metadata is not accessible to browser roles.
+
+The follow-up checks passed: 197 app/report/auth tests, 142 disposable financial database tests,
+11 native reversal checks, TypeScript, whitespace checks and an isolated production build.
+Independent database reproductions also confirmed that cancellation prevents stale first posts
+and later approval of withdrawn pending postings. No live financial entries, period changes or
+Airtable writes were used for this security verification. Credential changes are a separate
+operation; a source review does not rotate credentials.
+
+## Historical report cleanup - 6 November 2026
+
 
 Date: 2026-11-06. Scope: current local `develop` report/UI changes.
 

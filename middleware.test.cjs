@@ -95,6 +95,31 @@ test("public paths still validate sessions without requesting an allowlist role"
   }
 });
 
+test("signout remains available without app membership and preserves session cookies", async () => {
+  for (const user of [null, { id: "unapproved-or-revoked-user" }]) {
+    const run = setup("/auth/signout");
+    assert.deepEqual(run.calls, ["user"]);
+    run.refresh([{ name: "session", value: "refreshed", options: { httpOnly: true } }]);
+    run.user.resolve({ data: { user } });
+    const result = await run.result;
+    assert.equal(result.type, "next");
+    assert.equal(run.requestCookies.get("session"), "refreshed");
+    assert.equal(result.cookies.get("session"), "refreshed");
+  }
+});
+
+test("signout exemption does not allow adjacent protected routes", async () => {
+  for (const path of ["/auth/signout/other", "/auth/signout-other", "/income-statement"]) {
+    const run = setup(path);
+    assert.deepEqual(run.calls, ["user", "current_app_role"]);
+    run.user.resolve({ data: { user: { id: "unapproved-user" } } });
+    run.role.resolve({ data: null, error: null });
+    const result = await run.result;
+    assert.equal(result.type, "redirect");
+    assert.equal(result.url.pathname, "/not-authorized");
+  }
+});
+
 test("report API failures return sanitized JSON instead of page redirects", async () => {
   for (const [user, role, status, error] of [
     [null, { data: "admin", error: null }, 401, "Sign in to load reports."],

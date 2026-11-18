@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
   });
 
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  const isPublic = path === "/auth/signout" || PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
   const isReportApi = path.startsWith("/api/reports/") || path.startsWith("/api/periods") || path === "/api/progress";
 
   // Protected routes require both live session validation and the current allowlist role.

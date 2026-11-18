@@ -6,6 +6,11 @@ preserved metadata, concurrent retries, payment/invoice ownership, incomplete ca
 dates, closed periods, nonreversible rules and rollback after a later failure. The legacy
 reversal database function is removed before these tests run. No hosted journals are touched.
 
+`source-cancellation.test.mjs` verifies that empty reversals and pending reversal reviews block
+stale/new source postings, reject queued postings for all seven owner tables, preserve exact
+replay and reversal approval, survive failed metadata writeback, and remain inaccessible to
+browser roles. It tests both source-lock orderings and the historical cancellation backfill.
+
 Reversal setup and native mock checks: [reversal guide](../../docs/ledger-reversal.md).
 
 The runner also executes `daily-payment-worker.test.mjs`: new categories on an existing source,
