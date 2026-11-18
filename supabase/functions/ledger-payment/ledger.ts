@@ -241,6 +241,9 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
       throw new PostingError("Source event already exists with different categories; review the changed event.", "23505");
     }
     if (plans.length) {
+      const [cancelled] = await tx`select 1 from ledger_private.ledger_source_cancellations
+        where source_table=${source.tableId} and source_record_id=${source.recordId}`;
+      if (cancelled) throw new PostingError("Source was cancelled or historically reversed; restoring it is not implemented.", "23505");
       const held = await holdForReview(tx,{kind:"posting",source,eventType:event.eventType,date:event.entryDate,payload:event,allowAdditionalCategories:options.allowAdditionalCategories},options.approvalRequestId);
       if (held) return {...result,...held};
     }

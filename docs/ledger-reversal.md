@@ -79,11 +79,18 @@ The transaction creates all required opposite entries together. It copies stored
 metadata, swaps debit and credit, preserves signed amounts and original records, and records
 `reverses_entry_id`. Account, balance, reversible-rule and accounting-period guards remain.
 The same source/date retry returns existing reversals; a changed reversal date conflicts.
-A source with no journals returns a successful empty result.
+A source with no journals returns a successful empty result and retains its cancellation intent.
 
 A closed or missing accounting period can return `pending_review` instead of posting. An
 authorized user approves that captured target set through `ledger-periods`; reopening alone
-does not approve it. Pending/rejected responses do not write new posting markers.
+does not approve it. Pending/rejected responses do not write new Airtable posting markers.
+
+Every successful reversal request stores source-level cancellation intent in the private
+`ledger_source_cancellations` table, including an empty reversal or one awaiting period review.
+Under the same source lock, it rejects all pending posting requests for that owner. The shared
+writer checks this intent before creating any new category journal or review request, so a stale
+in-flight source read cannot post after cancellation. Existing exact replays can still restore
+links without creating journals. Browser roles cannot read or edit this private metadata.
 
 After financial commit, Supabase verifies Airtable metadata writeback before returning success.
 If writeback fails, the reversal remains committed and the call fails. Retrying the same
@@ -100,6 +107,9 @@ decision. This reversal change does not change those triggers or mappings.
 
 Unchecking Reverse Ledger does not delete a reversal, clear dates/IDs, or repost the source.
 The proposed uncheck-and-repost behavior and reversing a reversal remain deferred.
+Unchecking alone does not remove the source cancellation guard. Reversal/writeback retries retain
+the guard, and writeback compensation cannot delete it. Existing posted reversals and pending or
+posted reversal reviews are backfilled when the cancellation migration is applied.
 
 ## Deployment and checks
 

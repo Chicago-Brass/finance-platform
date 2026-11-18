@@ -8,6 +8,7 @@ pipeline. These guides describe the repository, data contracts and operating pro
 | Guide | Scope |
 | --- | --- |
 | [Environments](environments.md) | Production/develop database targets, local configuration and cron |
+| [Security](security.md) | Approved-user access, credentials, session limits and cancellation guards |
 | [Implementation](implementation.md) | Runtime architecture, source map, routes, data loading and UI |
 | [Design patterns](design-patterns.md) | Accounting invariants, layer responsibilities and coding conventions |
 | [Database](database.md) | Tables, read interfaces, writer, security and migrations |

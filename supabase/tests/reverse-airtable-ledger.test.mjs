@@ -76,14 +76,14 @@ test("invoice reversal stays invoice-owned and does not touch linked payment jou
   assert.ok((await journals(invoiceId)).every(j => j.source_table === INVOICES));
 });
 
-test("mixed completed and pending reversals return the complete ID set", async () => {
+test("cancelled sources reject new categories while reversal retries retain the complete ID set", async () => {
   const recordId = id(9005); await postPayment(sql, event(recordId));
   await reverseJournals(sql, request(recordId));
   const anotherEvent = event(recordId, ["2.00"]); anotherEvent.eventType = "reconciled"; anotherEvent.categories[0].ruleCode = "PAY-13";
-  await postPayment(sql, anotherEvent);
+  await assert.rejects(postPayment(sql, anotherEvent), /cancelled or historically reversed/);
   const result = await reverseJournals(sql, request(recordId));
-  assert.equal(result.reversedCount, 1); assert.equal(result.duplicateCount, 1);
-  assert.equal(result.reversalJournalEntryIds.length, 2); assert.equal((await journals(recordId)).length, 4);
+  assert.equal(result.reversedCount, 0); assert.equal(result.duplicateCount, 1);
+  assert.equal(result.reversalJournalEntryIds.length, 1); assert.equal((await journals(recordId)).length, 2);
 });
 
 test("wrong ownership, unsupported sources and invalid requests cannot create reversals", async () => {
