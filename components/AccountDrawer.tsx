@@ -4,13 +4,12 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { readAccountActivity } from "@/lib/reports/account-activity-client";
 import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { formatReportAmount } from "@/lib/format";
-import { activityFiltered, dayBefore, filterActivityLines, lineTotals, naturalNet, NO_ACTIVITY_FILTERS, offsetKey, offsetLabel, rangeMonths, summarizeActivity } from "@/lib/reports/account-activity";
+import { activityFiltered, dayBefore, filterActivityLines, NO_ACTIVITY_FILTERS, offsetKey, offsetLabel, rangeMonths, summarizeActivity } from "@/lib/reports/account-activity";
 import type { AccountActivityParts, ActivityFilters, DrillRange } from "@/lib/reports/account-activity";
 import { formatDate } from "@/lib/reports/report-utils";
-import { ReportLink } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, SearchField } from "./FilterControls";
-import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
+import { safeAuditLink } from "./ledger-table-utils";
 import { DetailDrawer } from "./DetailDrawer";
 
 /** The row a drill-down opens from. `lineId` highlights one ledger line in the list. */
@@ -62,7 +61,6 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   const data = useMemo(() => current?.summary ? { ...current.summary, lines, truncated: listed?.truncated ?? true } : null, [current?.summary, listed]);
   const summary = useMemo(() => data ? summarizeActivity(data) : null, [data]);
   const visible = useMemo(() => filterActivityLines(lines, filters), [listed, filters]);
-  const totals = lineTotals(visible);
   const filtered = activityFiltered(filters);
   const index = accounts.findIndex(account => account.code === target.code);
   const previousAccount = index > 0 ? accounts[index - 1] : null;
@@ -87,74 +85,67 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
           <button data-drawer-close type="button" className="drill-icon-button drill-close" aria-label="Close account details" onClick={onClose}><Icon path="M6 6l12 12M18 6L6 18" /></button>
         </header>
 
-        <section className="drill-analytics" aria-label="Account summary" tabIndex={0} aria-busy={!data && !current?.summaryError}>
-          {current?.summaryError ? <LoadError label="Account totals" onRetry={() => setAttempt(value => value + 1)} /> : data && summary ? <>
-            <div className="drill-tiles">
-              {data.mode === "balance" ? <>
-                <div className="drill-tile"><span>Opening · {formatDate(dayBefore(data.from))}</span><strong>{money(data.opening ?? 0)}</strong></div>
-                <div className="drill-tile"><span>Debits</span><strong>{money(data.debit)}</strong><small>{listed ? `${summary.debitLines} lines` : "Loading lines..."}</small></div>
-                <div className="drill-tile"><span>Credits</span><strong>{money(data.credit)}</strong><small>{listed ? `${summary.creditLines} lines` : "Loading lines..."}</small></div>
-                <div className="drill-tile is-result"><span>Closing · {formatDate(data.to)}</span><strong>{money(summary.closing ?? 0)}</strong></div>
-              </> : <>
-                <div className="drill-tile"><span>Net activity</span><strong>{money(summary.net)}</strong><small>{data.account.normalBalance === "credit" ? "Credit" : "Debit"}-normal account</small></div>
-                <div className="drill-tile"><span>vs same dates {data.previous?.from.slice(0, 4)}</span><strong>{summary.change ? percent(summary.change.percent) : "N/A"}</strong><small>Prior {money(data.previous?.net ?? 0)}</small></div>
-                <div className="drill-tile"><span>Posted lines</span><strong>{listed ? `${lines.length}${listed.truncated ? "+" : ""}` : "Loading..."}</strong><small>{listed ? `${summary.debitLines} debits / ${summary.creditLines} credits` : ""}</small></div>
-                <div className="drill-tile"><span>Avg per month</span><strong>{money(summary.averagePerMonth)}</strong><small>{summary.months.length} months</small></div>
-              </>}
+        <div key={target.code} className="drill-activity-scroll" tabIndex={0} role="region" aria-label="Account activity">
+          <section className="drill-analytics" aria-label="Account summary" tabIndex={0} aria-busy={!data && !current?.summaryError}>
+            {current?.summaryError ? <LoadError label="Account totals" onRetry={() => setAttempt(value => value + 1)} /> : data && summary ? <>
+              <div className="drill-tiles">
+                {data.mode === "balance" ? <>
+                  <div className="drill-tile"><span>Opening · {formatDate(dayBefore(data.from))}</span><strong>{money(data.opening ?? 0)}</strong></div>
+                  <div className="drill-tile"><span>Debits</span><strong>{money(data.debit)}</strong><small>{listed ? `${summary.debitLines} lines` : "Loading lines..."}</small></div>
+                  <div className="drill-tile"><span>Credits</span><strong>{money(data.credit)}</strong><small>{listed ? `${summary.creditLines} lines` : "Loading lines..."}</small></div>
+                  <div className="drill-tile is-result"><span>Closing · {formatDate(data.to)}</span><strong>{money(summary.closing ?? 0)}</strong></div>
+                </> : <>
+                  <div className="drill-tile"><span>Net activity</span><strong>{money(summary.net)}</strong><small>{data.account.normalBalance === "credit" ? "Credit" : "Debit"}-normal account</small></div>
+                  <div className="drill-tile"><span>vs same dates {data.previous?.from.slice(0, 4)}</span><strong>{summary.change ? percent(summary.change.percent) : "N/A"}</strong><small>Prior {money(data.previous?.net ?? 0)}</small></div>
+                  <div className="drill-tile"><span>Posted lines</span><strong>{listed ? `${lines.length}${listed.truncated ? "+" : ""}` : "Loading..."}</strong><small>{listed ? `${summary.debitLines} debits / ${summary.creditLines} credits` : ""}</small></div>
+                  <div className="drill-tile"><span>Avg per month</span><strong>{money(summary.averagePerMonth)}</strong><small>{summary.months.length} months</small></div>
+                </>}
+              </div>
+              {listed?.truncated && <p className="drill-warning" role="note">Line counts use the first {lines.length} lines. Summary amounts include all posted lines.</p>}
+            </> : <div className="drill-summary-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading account totals...</span></div>}
+          </section>
+
+            <FilterBar className="drill-filters" role="search" label="Filter ledger lines">
+              <SearchField label="Search lines" placeholder="Entry, name or reference" value={filters.query} onChange={query => set({ query })} />
+              <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
+              <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
+              <SearchableSelect label="Entry side" value={filters.side} options={[{ value: "all", label: "All entries" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => set({ side: side as ActivityFilters["side"] })} className="drill-filter-field" />
+            </FilterBar>
+
+          {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-lines-loading" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="report-spinner" aria-hidden="true" /><span>Loading ledger lines...</span></section> : <>
+            <div className="drill-status" role="status">
+              <span><strong>{visible.length} of {lines.length}{listed.truncated ? "+" : ""} lines</strong>{filtered ? " match the filters" : ""}</span>
+              {filtered && <button type="button" className="drill-link-button" onClick={() => setFilters(NO_ACTIVITY_FILTERS)}>Clear filters</button>}
             </div>
-            {listed?.truncated && <p className="drill-warning" role="note">Line counts use the first {lines.length} lines. Summary amounts include all posted lines.</p>}
-          </> : <div className="drill-summary-loading" role="status"><span className="report-spinner" aria-hidden="true" /><span>Loading account totals...</span></div>}
-        </section>
 
-          <FilterBar className="drill-filters" role="search" label="Filter ledger lines">
-            <SearchField label="Search lines" placeholder="Entry, name or reference" value={filters.query} onChange={query => set({ query })} />
-            <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
-            <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
-            <SearchableSelect label="Entry side" value={filters.side} options={[{ value: "all", label: "All entries" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => set({ side: side as ActivityFilters["side"] })} className="drill-filter-field" />
-          </FilterBar>
-
-        {current?.linesError ? <LoadError label="Ledger lines" onRetry={() => setAttempt(value => value + 1)} /> : !listed ? <section className="drill-lines drill-lines-loading" role="status" aria-label="Loading ledger lines" aria-busy="true"><span className="report-spinner" aria-hidden="true" /><span>Loading ledger lines...</span></section> : <>
-          <div className="drill-status" role="status">
-            <span><strong>{visible.length} of {lines.length} lines</strong>{filtered ? " match the filters" : ""}</span>
-            {filtered && <button type="button" className="drill-link-button" onClick={() => setFilters(NO_ACTIVITY_FILTERS)}>Clear filters</button>}
-          </div>
-
-          <div className="drill-lines" tabIndex={0} role="region" aria-label="Account ledger lines">
-            <table className="drill-table">
-              <thead><tr>
-                <th scope="col">Date</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
-                <th scope="col">Client</th><th scope="col">Vendor</th><th scope="col">Reference number</th>
-              </tr></thead>
-              <tbody>
-                {visible.length === 0 ? <tr><td colSpan={6} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
-                  const audit = safeAuditLink(line.auditLink);
-                  const clients = line.clientNames?.join(", ");
-                  const vendors = line.vendorNames?.join(", ");
-                  return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
-                    <td><time dateTime={line.date}>{formatDate(line.date)}</time></td>
-                    <td className="num">{line.debit ? money(line.debit) : ""}</td>
-                    <td className="num">{line.credit ? money(line.credit) : ""}</td>
-                    <td className="drill-party" title={clients}>{clients}</td>
-                    <td className="drill-party" title={vendors}>{vendors}</td>
-                    <td className="drill-reference"><div>
-                      <span title={line.referenceNumber ?? undefined}>{line.referenceNumber}</span>
-                      {audit && <a className="drill-source" href={audit} target="_blank" rel="noopener noreferrer" aria-label={`Open the source record for entry ${line.entry}`}><Icon path="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></a>}
-                    </div></td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <footer className="drill-footer">
-            <span>Debits <strong>{money(totals.debit)}</strong></span>
-            <span>Credits <strong>{money(totals.credit)}</strong></span>
-            {data && <span>Net <strong>{money(naturalNet(totals.debit, totals.credit, data.account.normalBalance))}</strong></span>}
-            {!filtered && summary?.tiesToTotals && <span className="drill-ties">✓ Lines tie to the trial balance</span>}
-            {listed.truncated && <span className="drill-warning">Showing the first {lines.length} lines. Footer totals cover the visible lines only.</span>}
-            <ReportLink className="btn btn-quiet drill-ledger-link" href={`/general-ledger${ledgerHref({ from, to, account: target.code, branch })}`} onClick={onClose}>Open in General Ledger</ReportLink>
-          </footer>
-        </>}
+            <div className="drill-lines" role="region" aria-label="Account ledger lines">
+              <table className="drill-table">
+                <thead><tr>
+                  <th scope="col">Date</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
+                  <th scope="col">Client</th><th scope="col">Vendor</th><th scope="col">Reference number</th>
+                </tr></thead>
+                <tbody>
+                  {visible.length === 0 ? <tr><td colSpan={6} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
+                    const audit = safeAuditLink(line.auditLink);
+                    const clients = line.clientNames?.join(", ");
+                    const vendors = line.vendorNames?.join(", ");
+                    return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
+                      <td><time dateTime={line.date}>{formatDate(line.date)}</time></td>
+                      <td className="num">{line.debit ? money(line.debit) : <span className="drill-muted">-</span>}</td>
+                      <td className="num">{line.credit ? money(line.credit) : <span className="drill-muted">-</span>}</td>
+                      <td className="drill-party" title={clients}>{clients}</td>
+                      <td className="drill-party" title={vendors}>{vendors}</td>
+                      <td className="drill-reference"><div>
+                        <span title={line.referenceNumber ?? undefined}>{line.referenceNumber}</span>
+                        {audit && <a className="drill-source" href={audit} target="_blank" rel="noopener noreferrer" aria-label={`Open the source record for entry ${line.entry}`}><Icon path="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></a>}
+                      </div></td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>}
+        </div>
     </DetailDrawer>
   );
 }

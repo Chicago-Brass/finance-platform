@@ -41,7 +41,7 @@ test('Journal entry displays every split line, cents totals and organized source
   const table=html.match(/<table[\s\S]*?<\/table>/)[0];
   assert.equal((table.match(/scope="col"/g)||[]).length,4,'only account, debit, credit and source columns');
   assert.equal((html.match(/\$1,000\.00/g)||[]).length,3,'one cash line and equal debit/credit totals');
-  assert.match(html,/\$0\.00/); assert.doesNotMatch(html,/role="alert"/);
+  assert.equal((table.match(/class="drill-muted">-<\/span>/g)||[]).length,3); assert.doesNotMatch(html,/role="alert"/);
   assert.match(html,/Full &lt;entry&gt; notes/); assert.doesNotMatch(html,/href="javascript:/);
   const unbalanced=renderToStaticMarkup(React.createElement(JournalEntryDetails,{entry:{...entry,lines:entry.lines.slice(0,2)}}));
   assert.match(unbalanced,/Debit and credit totals differ by \$300\.00/);

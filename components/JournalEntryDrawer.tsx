@@ -43,7 +43,7 @@ export function JournalEntryDetails({ entry, selectedLineId }: { entry: JournalE
           <thead><tr><th scope="col">Account</th><th scope="col" className="journal-money">Debit</th><th scope="col" className="journal-money">Credit</th><th scope="col"><span className="sr-only">Source</span></th></tr></thead>
           <tbody>{entry.lines.map(line => <tr key={line.id} aria-selected={String(line.id) === selectedLineId} className={String(line.id) === selectedLineId ? "journal-selected-line" : undefined}>
             <th scope="row" className="journal-account" title={`${line.account_code} ${line.account?.name ?? ""}`}><AccountPill code={line.account_code} name={line.account?.name ?? null} /></th>
-            <td className="journal-money">{formatReportAmount(Number(line.debit))}</td><td className="journal-money">{formatReportAmount(Number(line.credit))}</td>
+            <td className="journal-money">{Number(line.debit) ? formatReportAmount(Number(line.debit)) : <span className="drill-muted">-</span>}</td><td className="journal-money">{Number(line.credit) ? formatReportAmount(Number(line.credit)) : <span className="drill-muted">-</span>}</td>
             <td className="journal-source-cell"><SourceLink url={line.audit_link} label={`Open source for ${line.account_code}`} /></td>
           </tr>)}</tbody>
           <tfoot><tr><th scope="row">Entry totals</th><td className="journal-money">{formatReportAmount(debit)}</td><td className="journal-money">{formatReportAmount(credit)}</td><td /></tr></tfoot>

@@ -170,7 +170,7 @@ test('Display rows and exported rows use the same account filters and collapse s
   assert.equal(collapsed.at(-1).values.a, -37.34);
 });
 
-test('Capped account lines disclose their scope separately from complete summary amounts and visible footer totals', () => {
+test('Account cards scroll with the table and capped counts are disclosed', () => {
   const source = fs.readFileSync(path.join(__dirname, 'AccountDrawer.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const texts = node => !React.isValidElement(node) ? typeof node === 'string' || typeof node === 'number' ? String(node) : '' : React.Children.toArray(node.props.children).map(texts).join('');
@@ -186,16 +186,23 @@ test('Capped account lines disclose their scope separately from complete summary
     const text = texts(tree);
     assert.match(text, /DateDebitCreditClientVendorReference number/);
     assert.match(text, /Example ClientExample VendorINV\.42/);
+    assert.doesNotMatch(text, /Open in General Ledger|Footer totals/);
+    const scroll = React.Children.toArray(tree.props.children).find(child => child.props?.className === 'drill-activity-scroll');
+    const scrollChildren = React.Children.toArray(scroll.props.children);
+    assert.ok(scrollChildren.some(child => child.props?.className === 'drill-filters'));
+    assert.match(text, /\$1\.00-/);
     if (truncated) {
       assert.match(text, /Line counts use the first 1 lines. Summary amounts include all posted lines./);
-      const children = React.Children.toArray(tree.props.children);
-      assert.match(texts(children.find(child => child.props?.className === 'drill-analytics')), /Line counts use/);
-      assert.match(text, /Footer totals cover the visible lines only/);
+      assert.match(texts(scrollChildren.find(child => child.props?.className === 'drill-analytics')), /Line counts use/);
       assert.doesNotMatch(text, /Totals above include every line|Lines tie to the trial balance/);
     } else {
       assert.doesNotMatch(text, /Line counts use|Footer totals cover/);
     }
   }
+  const css = fs.readFileSync(path.join(__dirname, 'account-drawer.css'), 'utf8');
+  assert.match(css, /\.drill-activity-scroll\s*\{[^}]*overflow:\s*auto/);
+  assert.match(css, /\.filter-control-bar\.drill-filters\s*\{[^}]*position:\s*sticky/);
+  assert.match(css, /\.drill-table th\s*\{[^}]*top:\s*var\(--drill-filter-height\)/);
 });
 
 test('PDF printing hides the fixed skip link and compacts wide financial tables', () => {
