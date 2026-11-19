@@ -121,24 +121,26 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <div className="drill-lines" role="region" aria-label="Account ledger lines">
               <table className="drill-table">
                 <thead><tr>
-                  <th scope="col">Date</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
+                  <th scope="col">Entry number</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
                   <th scope="col">Client</th><th scope="col">Vendor</th><th scope="col">Reference number</th>
+                  <th scope="col">Date</th><th scope="col" className="drill-audit">Audit link</th>
                 </tr></thead>
                 <tbody>
-                  {visible.length === 0 ? <tr><td colSpan={6} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
+                  {visible.length === 0 ? <tr><td colSpan={8} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
                     const audit = safeAuditLink(line.auditLink);
                     const clients = line.clientNames?.join(", ");
                     const vendors = line.vendorNames?.join(", ");
                     return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
-                      <td><time dateTime={line.date}>{formatDate(line.date)}</time></td>
+                      <td>{line.entry}</td>
                       <td className="num">{line.debit ? money(line.debit) : <span className="drill-muted">-</span>}</td>
                       <td className="num">{line.credit ? money(line.credit) : <span className="drill-muted">-</span>}</td>
                       <td className="drill-party" title={clients}>{clients}</td>
                       <td className="drill-party" title={vendors}>{vendors}</td>
-                      <td className="drill-reference"><div>
-                        <span title={line.referenceNumber ?? undefined}>{line.referenceNumber}</span>
+                      <td className="drill-reference" title={line.referenceNumber ?? undefined}>{line.referenceNumber}</td>
+                      <td><time dateTime={line.date}>{formatDate(line.date)}</time></td>
+                      <td className="drill-audit">
                         {audit && <a className="drill-source" href={audit} target="_blank" rel="noopener noreferrer" aria-label={`Open the source record for entry ${line.entry}`}><Icon path="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></a>}
-                      </div></td>
+                      </td>
                     </tr>;
                   })}
                 </tbody>

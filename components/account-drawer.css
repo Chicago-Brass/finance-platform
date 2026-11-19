@@ -13,7 +13,7 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
   background: var(--surface); color: var(--ink); box-shadow: -12px 0 32px #1f2a3733;
   font-variant-numeric: tabular-nums; animation: drill-slide 200ms ease-out;
 }
-.drill-drawer.account-drawer, .drill-drawer.journal-drawer { width: min(704px, 100vw); }
+.drill-drawer.account-drawer, .drill-drawer.journal-drawer { width: min(768px, 100vw); }
 .drill-drawer.account-drawer { --drill-filter-height: 66px; overflow: hidden; }
 .drill-activity-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .drill-activity-scroll::-webkit-scrollbar { display: none; }
@@ -52,16 +52,14 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-link-button { border: 0; padding: 0; background: transparent; color: var(--steel); font: inherit; font-size: 12px; cursor: pointer; }
 
 .drill-lines { border-top: 1px solid var(--rule); }
-.drill-table { width: 100%; min-width: 590px; border-collapse: collapse; font-size: var(--report-text-size); }
-.drill-table th { position: sticky; top: var(--drill-filter-height); z-index: 1; padding: 7px 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
-.drill-table td { padding: 7px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top; white-space: nowrap; }
+.drill-table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: var(--report-text-size); }
+.drill-table th { position: sticky; top: var(--drill-filter-height); z-index: 1; padding: 7px 8px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+.drill-table td { padding: 7px 8px; border-bottom: 1px solid #eef2f6; vertical-align: top; white-space: nowrap; }
 .drill-table .num { text-align: right; }
 .drill-table tbody tr:hover td { background: var(--surface-2); }
 .drill-table tr.is-target td { background: #dbe7f4; font-weight: 600; color: var(--navy); }
-.drill-party { max-width: 135px; overflow: hidden; text-overflow: ellipsis; }
-.drill-reference > div { display: flex; align-items: center; gap: 6px; max-width: 140px; }
-.drill-reference span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.drill-reference .drill-source { flex-shrink: 0; margin-left: auto; }
+.drill-party, .drill-reference { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.drill-table .drill-audit { text-align: center; }
 .drill-source { display: inline-grid; place-items: center; color: var(--steel); }
 .drill-muted { color: var(--ink-3); }
 .drill-empty { padding: 20px 10px !important; color: var(--ink-2); text-align: center; white-space: normal !important; }
