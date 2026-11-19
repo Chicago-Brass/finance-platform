@@ -18,6 +18,7 @@ export interface ReviewInput {
 export interface ReviewHold {
   status: "pending_review" | "rejected";
   requestId: string;
+  journalIds: string[];
 }
 
 export async function lockLedgerSource(
@@ -86,15 +87,26 @@ export async function holdForReview(
   approvalId?: string,
 ): Promise<ReviewHold | null> {
   await lockPeriod(tx, input.date);
-  const hash = await fingerprint({
-    payload: input.payload,
+  const event = input.kind === "posting" ? input.payload as { categories?: Record<string, unknown>[] } : null;
+  // Replays and existing approvals use the financial payload without the optional display labels.
+  const payload = event?.categories ? {
+    ...event,
+    categories: event.categories.map(({ display: _display, ...category }) => category),
+  } : input.payload;
+  const identity = {
+    payload,
     targetIds: input.targetIds ?? [],
     allowAdditionalCategories: input.allowAdditionalCategories === true,
-  });
+  };
+  const hash = await fingerprint(identity);
+  const fingerprints = [hash];
+  // Requests captured before display metadata was excluded retain their original fingerprint.
+  if (event?.categories?.some(category => Object.hasOwn(category, "display")))
+    fingerprints.push(await fingerprint({...identity, payload: input.payload}));
   if (approvalId) {
     const [approved] =
       await tx`select id from public.ledger_posting_requests where id=${approvalId}::uuid
-      and status='approved' and approval_txid=txid_current() and fingerprint=${hash}
+      and status='approved' and approval_txid=txid_current() and fingerprint=any(${fingerprints}::text[])
       and source_table=${input.source.tableId} and source_record_id=${input.source.recordId} and kind=${input.kind}`;
     if (!approved)
       throw new PostingError(
@@ -104,9 +116,9 @@ export async function holdForReview(
     return null;
   }
   const [same] =
-    await tx`select id,status from public.ledger_posting_requests where kind=${input.kind}
+    await tx`select id,status,journal_ids from public.ledger_posting_requests where kind=${input.kind}
     and source_table=${input.source.tableId} and source_record_id=${input.source.recordId}
-    and event_type=${input.eventType} and fingerprint=${hash}`;
+    and event_type=${input.eventType} and fingerprint=any(${fingerprints}::text[]) order by (fingerprint=${hash}) desc limit 1`;
   if (same) {
     if (same.status === "posted")
       throw new PostingError(
@@ -116,17 +128,24 @@ export async function holdForReview(
     return {
       status: same.status === "pending" ? "pending_review" : "rejected",
       requestId: same.id,
+      journalIds: same.journal_ids,
     };
   }
-  const [prior] =
-    await tx`select id from public.ledger_posting_requests where kind=${input.kind}
+  const candidates =
+    await tx`select id,payload from public.ledger_posting_requests where kind=${input.kind}
     and source_table=${input.source.tableId} and source_record_id=${input.source.recordId}
-    and event_type=${input.eventType} and status in ('pending','rejected') limit 1`;
+    and event_type=${input.eventType} and status in ('pending','rejected')`;
+  const rules = (payload: object) => [...new Set((payload as {categories?: {ruleCode: string}[]}).categories?.map(category => category.ruleCode) ?? [])].sort();
+  const scope = rules(input.payload);
+  const affected = candidates.filter(row => input.kind === "reversal" || rules(row.payload).some(rule => scope.includes(rule)));
+  if (input.kind === "posting" && affected.some(row => JSON.stringify(rules(row.payload)) !== JSON.stringify(scope)))
+    throw new PostingError("An overlapping set of rules is awaiting review. Resolve that request first.", "23505");
   const [period] =
     await tx`select status from public.accounting_periods where period_month=${input.date.slice(0, 7) + "-01"}::date`;
-  if (period?.status === "open" && !prior) return null;
-  if (prior) {
+  if (period?.status === "open" && !affected.length) return null;
+  for (const prior of affected) {
     await tx`update public.ledger_posting_requests set status='superseded',updated_at=now() where id=${prior.id}`;
+    await rejectPendingJournals(tx, prior.id);
     await history(
       tx,
       input.date,
@@ -149,5 +168,14 @@ export async function holdForReview(
       : "Period requires explicit review.",
     saved.id,
   );
-  return { status: "pending_review", requestId: saved.id };
+  return { status: "pending_review", requestId: saved.id, journalIds: [] };
+}
+
+export async function rejectPendingJournals(tx: TransactionSql, requestId: string) {
+  return tx`update public.journal_entries set status='rejected'
+    where posting_request_id=${requestId}::uuid and status='pending' returning id`;
+}
+
+export async function recordPendingJournals(tx: TransactionSql, requestId: string, ids: string[]) {
+  await tx`update public.ledger_posting_requests set journal_ids=${ids}::uuid[] where id=${requestId}::uuid`;
 }

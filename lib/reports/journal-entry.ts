@@ -28,7 +28,7 @@ export async function getJournalEntry(entryNumber: number): Promise<JournalEntry
   return ledgerRead(async supabase => {
     const { data: entry, error } = await supabase.from("journal_entries")
       .select("id,entry_number,entry_date,source_date,status,description,rule_code,transaction_type,notes,audit_link,source_system,source_event_type,source_table,source_record_id,external_ref,created_at,created_by,posted_at,posted_by,reverses_entry_id,reversal_reason")
-      .eq("entry_number", entryNumber).eq("status", "posted").maybeSingle();
+      .eq("entry_number", entryNumber).in("status", ["posted", "pending"]).maybeSingle();
     if (error) throw new Error(`Journal entry query failed: ${error.message}`);
     if (!entry) return null;
     const lines: JournalLine[] = [];

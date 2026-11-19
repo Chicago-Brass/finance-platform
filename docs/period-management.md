@@ -2,16 +2,16 @@
 
 ## Ownership
 
-Airtable supplies category/account calculations. The shared Edge writer validates them and either posts or captures a durable review request. Period actions use the signed-in user's JWT and the live `app_users.can_manage_periods` boolean. The webhook secret cannot approve requests. New app users default to disabled; the initial deployment enables existing users only at Jeric's explicit instruction.
+Airtable supplies category/account calculations. The shared Edge writer validates them and writes each journal as posted or pending review. Period actions use the signed-in user's JWT and the live `app_users.can_manage_periods` boolean. The webhook secret cannot approve requests. New app users default to disabled; the initial deployment enables existing users only at Jeric's explicit instruction.
 
 ## Behavior
 
 - Open periods accept new, valid requests. Missing periods require explicit opening/review.
-- Closed periods retain valid requests without creating financial journals or Airtable posting markers.
+- Closed or missing periods save valid journals and lines as pending and write their IDs to Airtable. General Ledger and Periods show pending journals. Financial statements, trial balance, their drilldowns and exports count posted journals only.
 - Pending and rejected requests stay blocked on webhook/worker retries, including after reopening.
-- A changed captured packet supersedes the earlier unposted request and requires fresh review.
-- Approving a request posts only its captured packet. The period can remain closed.
-- Approval, journal creation and the audit event commit together. A request-scoped, transaction-bound database guard prevents reuse of an approval as a general bypass.
+- A changed packet supersedes the earlier request for the same rule scope and retains its old journal as rejected. Independent rules on the same source keep separate review decisions.
+- Approval promotes the saved journals with their existing IDs. The period can remain closed. Legacy requests without saved journals materialize their captured packet on approval.
+- The approval, status change and audit event commit together. A request-scoped, transaction-bound database guard prevents reuse of an approval as a general bypass.
 - The same source lock coordinates native posting, review approval and reversal. Period shared/exclusive transaction locks coordinate posting and closing.
 - A reversal review captures its original journal target set. Additional source journals require a new review.
 - Successful journals retain existing immutable-replay and reversal protections. Airtable links are written after commit and can be repaired without reposting.
@@ -27,12 +27,11 @@ Mixed groups keep a neutral Mixed pill. Posted journals, review requests and app
 aggregate over the selected group. Yellow badges show pending-review counts on both the group and tab.
 Close period and Reopen period appear only in month grouping for authorized users. Grouped views
 do not change several months at once. Posted entries reuse the journal drawer.
-Review details show the exact account pairs and signed amounts, source links and relevant dates.
-The review list defaults to pending and link-repair requests, with an All requests filter inside
-that panel. Its Actions column provides View and an authorized Allow entry button. Allow entry
-opens the existing reason/confirmation flow for that request's own accounting month; it does not
-reopen the period or approve unrelated requests. Posted requests awaiting Airtable links offer
-Retry links instead, without posting another journal.
+Selecting a review row opens its saved journal lines in a sidebar. Authorized reviewers can keep
+the original accounting date as an exception or choose a new date in a different open month. Both
+decisions require a reason. The review preserves the original request date, journal IDs and source
+date, and records the original and final posting dates in history. Requests awaiting Airtable
+writeback still offer Retry links without posting another journal.
 Closing with unresolved pending requests requires explicit deferral and a reason.
 
 History records actors, reasons, decisions, resulting journal IDs and a compact account-balance snapshot on close. The overview labels adjustments posted after the last close. Existing statement/ledger links and Excel/PDF exports are reused; there is no separate report-versioning engine.
@@ -48,10 +47,10 @@ History records actors, reasons, decisions, resulting journal IDs and a compact 
 - `app/api/periods/route.ts`: user-scoped, paginated overview/details reads.
 - `components/PeriodManagement.tsx`: page, review and action drawers.
 - `supabase/migrations/20261109155126_period_management.sql`: capability, queue, history, reporting view and financial guards.
-- `supabase/migrations/20261109162203_enforce_pending_period_review.sql`: prevents direct/manual posting from bypassing a queued review after reopening.
+- The pending-journal migrations add review statuses, preserve posted-only financial reads and enforce review decisions in the journal guards.
 
 The production daily worker runs at 11 PM America/Chicago; develop remains unscheduled. It
-recognizes held requests and does not mark them posted. Invalid requests still fail validation
+records pending attempts separately from reportable postings. Invalid requests still fail validation
 instead of becoming trusted approvals. This queue covers received events; it does not discover
 Airtable records that have never reached the pipeline.
 

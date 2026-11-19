@@ -58,6 +58,7 @@ Deno.serve(async (request) => {
         body.requestId,
         body.action,
         body.reason,
+        body.postingDate,
       );
       return json(
         await completeWriteback(

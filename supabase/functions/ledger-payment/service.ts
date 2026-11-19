@@ -2,11 +2,13 @@ import { postCappedShipment } from "../_shared/shipping-deposit.ts";
 import type { Sql } from "npm:postgres@3.4.9";
 import { postPayment, type LedgerPaymentEvent } from "./ledger.ts";
 import { LINK_FIELDS, syncLedgerLinks, validateLinkSource, LedgerWritebackError, type LedgerSource } from "../_shared/ledger-links.ts";
+import { LOAN_TABLE } from "../_shared/loan-record.ts";
 import { MANUAL_TABLE } from "../_shared/manual-journal.ts";
 
 // Every supported source writes its journals back to its owning Airtable record.
-export async function postAndSync(sql: Sql, event: LedgerPaymentEvent, token: string, fetcher: typeof fetch = fetch, options: { allowAdditionalCategories?: boolean; deadline?: number } = {}) {
+export async function postAndSync(sql: Sql, event: LedgerPaymentEvent, token: string, fetcher: typeof fetch = fetch, options: { allowAdditionalCategories?: boolean; deadline?: number; writeback?: boolean } = {}) {
   const source: LedgerSource | undefined = event.source ?? (
+    event.loanRecordId ? { tableId: LOAN_TABLE, recordId: event.loanRecordId } :
     event.manualJournalRecordId ? { tableId: MANUAL_TABLE, recordId: event.manualJournalRecordId } :
     event.invoiceLineRecordId ? { tableId: "tblV26TC0f6CKDneL", recordId: event.invoiceLineRecordId } :
     event.depreciationRecordId ? { tableId: "tblC0dbO5UMXzHma9", recordId: event.depreciationRecordId } :
@@ -16,11 +18,11 @@ export async function postAndSync(sql: Sql, event: LedgerPaymentEvent, token: st
     event.paymentRecordId ? { tableId: "tblR61NG9i0giid28", recordId: event.paymentRecordId } : undefined);
   const sync = source && Object.hasOwn(LINK_FIELDS, source.tableId);
   if (sync) validateLinkSource(source);
-  if (sync && !token) throw new LedgerWritebackError();
+  if (sync && options.writeback !== false && !token) throw new LedgerWritebackError();
   const result = await (event.shippingRecordId ? postCappedShipment : postPayment)(sql, event.shippingRecordId ? {...event,source:source!} : event, { allowAdditionalCategories: options.allowAdditionalCategories });
-  if (!sync || result.status) return result;
+  if (!sync || result.status === "rejected" || options.writeback === false) return result;
   const newJournalIds = result.results.flatMap(row => row.status === "posted" && row.journalEntryId ? [row.journalEntryId] : []);
-  const links = await syncLedgerLinks(sql, source, token, fetcher, options.deadline, newJournalIds);
+  const links = await syncLedgerLinks(sql, source, token, fetcher, options.deadline, newJournalIds, result.status === "pending_review" ? undefined : event.repostId);
   if (result.journalEntryIds.some(id => !links.journalEntryIds.includes(id))) throw new LedgerWritebackError();
   return { ...result, ledgerPostings: links.postings };
 }
