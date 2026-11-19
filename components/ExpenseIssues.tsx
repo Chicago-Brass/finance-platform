@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { EXPENSE_ISSUES_URL, ISSUE_NOTE_LIMIT, type ExpenseIssue } from "@/lib/progress/expense-issues";
 import { MaintenanceTabs } from "./MaintenanceTabs";
 import { ReportPageHeader } from "./ReportPageHeader";
@@ -77,15 +77,18 @@ function ExpenseIssueCard({ issue }: { issue: ExpenseIssue }) {
 
 export function ExpenseIssues() {
   const query = useReportQuery<ExpenseIssue[]>(EXPENSE_ISSUES_URL);
+  const retained = useRef<ExpenseIssue[] | undefined>(undefined);
+  if (query.data) retained.current = query.data;
+  const issues = query.data ?? retained.current;
   return <article className="report-page maintenance-page">
     <ReportPageHeader title="Maintenance" description="Chicago Brass Inc. / Ledger rules and review" />
     <MaintenanceTabs active="issues" />
     <section className="maintenance-issues" aria-labelledby="expense-issues-title">
       <header className="maintenance-issues-heading"><h2 id="expense-issues-title">Expense issues</h2><p>Staging review for January 1 through November 16, 2026</p></header>
-      {query.pending && !query.data ? <p role="status">Loading expense issues...</p>
-        : query.error ? <div role="alert"><p>Expense issues could not be loaded.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>
-        : query.data?.length ? query.data.map(issue => <ExpenseIssueCard key={issue.id} issue={issue} />)
-        : <p>No expense issues are available.</p>}
+      {query.error && <div role="alert"><p>Expense issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
+      {issues?.length ? issues.map(issue => <ExpenseIssueCard key={issue.id} issue={issue} />)
+        : query.pending ? <p role="status">Loading expense issues...</p>
+        : !query.error && <p>No expense issues are available.</p>}
     </section>
   </article>;
 }
