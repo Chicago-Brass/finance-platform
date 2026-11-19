@@ -19,7 +19,7 @@ function loader(mocks={}) {
   }return file=>load(path.resolve(__dirname,file));
 }
 const line = (id,account_code,debit,credit,extra={})=>({id,line_no:id,account_code,account:{name:account_code==='112.100'?'Operating bank':'Loan component'},debit,credit,notes:null,audit_link:null,offset_account_code:null,vendor_ref:[],customer_ref:[],order_ref:[],po_ref:[],invoice_ref:[],employee_ref:[],state_code:null,airtable_record_id:null,branch:null,...extra});
-const entry={id:'journal-id',entry_number:42,entry_date:'2026-01-09',source_date:'2026-01-08',status:'posted',description:'Loan principal + interest',rule_code:'PAY-16',transaction_type:'Loan payment',notes:'Full <entry> notes',audit_link:'https://airtable.com/source',source_system:'airtable',source_event_type:'sent',source_table:'Payments',source_record_id:'source-id',external_ref:'REF-42',created_at:'2026-01-09T14:00:00Z',created_by:'Operator',posted_at:'2026-01-09T14:01:00Z',posted_by:'Ledger',reverses_entry_id:null,reversal_reason:null,lines:[line(1,'112.100','0.00','1000.00'),line(2,'232.100','700.00','0.00',{invoice_ref:['invoice-id'],po_ref:['po-id'],vendor_ref:['vendor-id'],airtable_record_id:'airtable-id',audit_link:'https://airtable.com/line'}),line(3,'007.003','300.00','0.00',{audit_link:'javascript:alert(1)'})]};
+const entry={id:'journal-id',entry_number:42,entry_date:'2026-01-09',source_date:'2026-01-08',status:'posted',description:'Loan principal + interest',rule_code:'PAY-16',transaction_type:'Loan payment',notes:'Full <entry> notes',audit_link:'https://airtable.com/source',source_system:'airtable',source_event_type:'sent',source_table:'Payments',source_record_id:'source-id',external_ref:'legacy-record-id',client_names:['Example Client'],vendor_names:['Example Vendor'],reference_number:'REF-42',created_at:'2026-01-09T14:00:00Z',created_by:'Operator',posted_at:'2026-01-09T14:01:00Z',posted_by:'Ledger',reverses_entry_id:null,reversal_reason:null,lines:[line(1,'112.100','0.00','1000.00'),line(2,'232.100','700.00','0.00',{invoice_ref:['invoice-id'],po_ref:['po-id'],vendor_ref:['vendor-id'],airtable_record_id:'airtable-id',audit_link:'https://airtable.com/line'}),line(3,'007.003','300.00','0.00',{audit_link:'javascript:alert(1)'})]};
 
 test('Journal entry displays every split line, cents totals and organized source/posting details',()=>{
   const {JournalEntryDetails}=loader()('JournalEntryDrawer.tsx');
@@ -28,8 +28,9 @@ test('Journal entry displays every split line, cents totals and organized source
   for(const value of ['112.100','232.100','007.003','source-id','PAY-16','Jan 9, 2026'])assert.ok(html.includes(value),value);
   const details=html.match(/<section[^>]*aria-label="Entry details"[\s\S]*?<\/section>/)[0];
   const posting=html.match(/<section[^>]*aria-label="Posting information"[\s\S]*?<\/section>/)[0];
-  for(const label of ['Source','Table','Record','Accounting date','Source date','Transaction type']) assert.ok(details.includes(`<dt>${label}</dt>`));
-  assert.doesNotMatch(details,/<dt>Rule<\/dt>/);
+  for(const label of ['Source','Table','Record','Accounting date','Source date','Transaction type','Client','Vendor','Reference number']) assert.ok(details.includes(`<dt>${label}</dt>`));
+  assert.doesNotMatch(details,/<dt>Rule<\/dt>|legacy-record-id/);
+  assert.match(details,/Example Client[\s\S]*Example Vendor[\s\S]*REF-42/);
   for(const label of ['Rule','Created','Posted','Journal ID']) assert.ok(posting.includes(`<dt>${label}</dt>`));
   assert.doesNotMatch(html,/<dt>(Event|Posted by|Created by|Status)<\/dt>|<h3>References<\/h3>/);
   assert.match(html,/>3 lines</); assert.match(html,/aria-selected="true"/);

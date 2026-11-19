@@ -1,3 +1,4 @@
+import type { JournalPartyDetails } from "./journal-entry";
 import type { LedgerRow } from "./ledger";
 import { cents } from "./report-utils";
 
@@ -20,6 +21,9 @@ export type AccountActivityLine = {
   offsetSplit: boolean;
   notes: string | null;
   auditLink: string | null;
+  clientNames: string[];
+  vendorNames: string[];
+  referenceNumber: string | null;
   debit: number;
   credit: number;
 };
@@ -41,7 +45,7 @@ export type AccountActivitySummary = Omit<AccountActivity, "lines" | "truncated"
 export type AccountActivityLines = Pick<AccountActivity, "lines" | "truncated">;
 export type AccountActivityParts = { summary: AccountActivitySummary; lines: AccountActivityLines };
 
-export function toActivityLine(row: LedgerRow): AccountActivityLine {
+export function toActivityLine(row: LedgerRow, details?: JournalPartyDetails): AccountActivityLine {
   return {
     id: row.line_id,
     date: row.date,
@@ -52,6 +56,9 @@ export function toActivityLine(row: LedgerRow): AccountActivityLine {
     offsetSplit: !!row.offset_is_split,
     notes: row.notes,
     auditLink: row.audit_link,
+    clientNames: details?.client_names ?? [],
+    vendorNames: details?.vendor_names ?? [],
+    referenceNumber: details?.reference_number ?? null,
     debit: cents(row.debit ?? 0),
     credit: cents(row.credit ?? 0),
   };
@@ -155,7 +162,7 @@ export function filterActivityLines(lines: AccountActivityLine[], filters: Activ
     if (filters.side === "debit" && !line.debit) return false;
     if (filters.side === "credit" && !line.credit) return false;
     if (!search) return true;
-    return `${line.entry} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date}`.toLocaleLowerCase().includes(search);
+    return `${line.entry} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date} ${line.clientNames?.join(" ") ?? ""} ${line.vendorNames?.join(" ") ?? ""} ${line.referenceNumber ?? ""}`.toLocaleLowerCase().includes(search);
   });
 }
 

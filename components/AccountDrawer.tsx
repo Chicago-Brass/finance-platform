@@ -73,7 +73,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
   const set = (patch: Partial<ActivityFilters>) => setFilters(previous => ({ ...previous, ...patch }));
 
   return (
-    <DetailDrawer titleId={`${id}-title`} descriptionId={`${id}-range`} onClose={onClose}>
+    <DetailDrawer titleId={`${id}-title`} descriptionId={`${id}-range`} className="account-drawer" onClose={onClose}>
         <header className="drill-header">
           <div className="drill-heading">
             {target.context && <p className="drill-eyebrow">{target.context}</p>}
@@ -107,7 +107,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
         </section>
 
           <FilterBar className="drill-filters" role="search" label="Filter ledger lines">
-            <SearchField label="Search lines" placeholder="Entry, offset or notes" value={filters.query} onChange={query => set({ query })} />
+            <SearchField label="Search lines" placeholder="Entry, name or reference" value={filters.query} onChange={query => set({ query })} />
             <SearchableSelect label="Month" value={filters.month} onChange={value => set({ month: value })} options={[{ value: "", label: "All months" }, ...lineMonths.map(month => ({ value: month.key, label: month.name }))]} className="drill-filter-field" />
             <SearchableSelect label="Offsetting account" value={filters.offset} onChange={value => set({ offset: value })} options={[{ value: "", label: "All offsetting accounts" }, ...offsetOptions.map(([value, label]) => ({ value, label }))]} disabled={!listed} className="drill-filter-field" />
             <SearchableSelect label="Entry side" value={filters.side} options={[{ value: "all", label: "All entries" }, { value: "debit", label: "Debits" }, { value: "credit", label: "Credits" }]} onChange={side => set({ side: side as ActivityFilters["side"] })} className="drill-filter-field" />
@@ -121,18 +121,25 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
 
           <div className="drill-lines" tabIndex={0} role="region" aria-label="Account ledger lines">
             <table className="drill-table">
-              <thead><tr><th scope="col">Date</th><th scope="col">Entry</th><th scope="col">Offsetting account</th><th scope="col">Notes</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th><th scope="col"><span className="sr-only">Source record</span></th></tr></thead>
+              <thead><tr>
+                <th scope="col">Date</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
+                <th scope="col">Client</th><th scope="col">Vendor</th><th scope="col">Reference number</th>
+              </tr></thead>
               <tbody>
-                {visible.length === 0 ? <tr><td colSpan={7} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
+                {visible.length === 0 ? <tr><td colSpan={6} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
                   const audit = safeAuditLink(line.auditLink);
+                  const clients = line.clientNames?.join(", ");
+                  const vendors = line.vendorNames?.join(", ");
                   return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
                     <td><time dateTime={line.date}>{formatDate(line.date)}</time></td>
-                    <td>{line.entry}</td>
-                    <td className="drill-offset">{offsetLabel(line)}</td>
-                    <td className="drill-notes">{line.notes || <span className="drill-muted">-</span>}</td>
                     <td className="num">{line.debit ? money(line.debit) : ""}</td>
                     <td className="num">{line.credit ? money(line.credit) : ""}</td>
-                    <td>{audit && <a className="drill-source" href={audit} target="_blank" rel="noopener noreferrer" aria-label={`Open the source record for entry ${line.entry}`}><Icon path="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></a>}</td>
+                    <td className="drill-party" title={clients}>{clients}</td>
+                    <td className="drill-party" title={vendors}>{vendors}</td>
+                    <td className="drill-reference"><div>
+                      <span title={line.referenceNumber ?? undefined}>{line.referenceNumber}</span>
+                      {audit && <a className="drill-source" href={audit} target="_blank" rel="noopener noreferrer" aria-label={`Open the source record for entry ${line.entry}`}><Icon path="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></a>}
+                    </div></td>
                   </tr>;
                 })}
               </tbody>
