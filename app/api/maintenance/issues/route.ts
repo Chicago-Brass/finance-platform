@@ -13,7 +13,7 @@ export async function GET() {
     const data = await ledgerRead(async client => {
       const [issues, catalog] = await Promise.all([
         client.from("expense_maintenance_issues")
-          .select("id,rule_codes,title,context,finding,recommendation,examples,notes").order("sort_order"),
+          .select("id,rule_codes,title,context,finding,recommendation,examples,notes,resolved").order("sort_order"),
         client.from("ledger_rules").select("display_code,trigger_name,source_label")
           .eq("category", "expense").is("retired_at", null),
       ]);
@@ -33,24 +33,46 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+async function issueWrite(request: Request) {
   if (!expenseMaintenanceEnabled()) return error("Expense issues are unavailable.", 404);
-  if (request.headers.get("origin") !== new URL(request.url).origin) return error("Save notes from the Maintenance page.", 403);
+  if (request.headers.get("origin") !== new URL(request.url).origin) return error("Save changes from the Maintenance page.", 403);
   try { await reportUser(); }
-  catch { return error("Sign in to save notes.", 401); }
+  catch { return error("Sign in to update this issue.", 401); }
   const input = await request.json().catch(() => null);
-  if (!input || typeof input.id !== "string" || !/^[a-z0-9-]{1,80}$/.test(input.id)
-      || typeof input.notes !== "string" || input.notes.length > ISSUE_NOTE_LIMIT
-      || typeof input.previous !== "string" || input.previous.length > ISSUE_NOTE_LIMIT) {
-    return error("Provide an issue and valid review notes.", 400);
+  if (!input || typeof input.id !== "string" || !/^[a-z0-9-]{1,80}$/.test(input.id)) {
+    return error("Provide a valid issue.", 400);
   }
+  return input as { id: string; note?: unknown; resolved?: unknown };
+}
+
+export async function POST(request: Request) {
+  const input = await issueWrite(request);
+  if (input instanceof Response) return input;
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  if (!note || note.length > ISSUE_NOTE_LIMIT) return error("Provide a valid note.", 400);
   try {
-    const { data, error: queryError } = await ledgerRead(async client => client.from("expense_maintenance_issues")
-      .update({ notes: input.notes }).eq("id", input.id).eq("notes", input.previous).select("notes").maybeSingle());
+    const { data: notes, error: queryError } = await ledgerRead(async client => client.rpc(
+      "append_expense_issue_note", { issue_id: input.id, note_text: note }));
     if (queryError) throw queryError;
-    if (!data) return error("The saved note changed. Reload the Issues tab before saving again.", 409);
-    return Response.json(data, { headers });
+    if (notes === null) return error("This issue is unavailable.", 404);
+    return Response.json({ notes }, { headers });
   } catch {
     return error("The note could not be saved. Try again.", 503);
+  }
+}
+
+export async function PATCH(request: Request) {
+  const input = await issueWrite(request);
+  if (input instanceof Response) return input;
+  if (typeof input.resolved !== "boolean") return error("Provide a valid resolution status.", 400);
+  const resolved = input.resolved;
+  try {
+    const { data, error: queryError } = await ledgerRead(async client => client.from("expense_maintenance_issues")
+      .update({ resolved }).eq("id", input.id).select("resolved").maybeSingle());
+    if (queryError) throw queryError;
+    if (!data) return error("This issue is unavailable.", 404);
+    return Response.json(data, { headers });
+  } catch {
+    return error("The issue status could not be saved. Try again.", 503);
   }
 }

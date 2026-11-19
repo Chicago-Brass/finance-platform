@@ -12,6 +12,7 @@ export type ExpenseIssue = {
   recommendation: string;
   examples: { label: string; detail: string; url: string }[];
   notes: string;
+  resolved: boolean;
 };
 
 export function expenseMaintenanceEnabled() {
