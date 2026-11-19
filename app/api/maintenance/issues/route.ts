@@ -1,4 +1,4 @@
-import { expenseMaintenanceEnabled, ISSUE_NOTE_LIMIT } from "@/lib/progress/expense-issues";
+import { expenseMaintenanceEnabled, ISSUE_CATEGORY_LABELS, ISSUE_NOTE_LIMIT } from "@/lib/progress/expense-issues";
 import { ledgerRead, reportUser } from "@/lib/reports/report-session";
 
 export const dynamic = "force-dynamic";
@@ -6,35 +6,35 @@ const headers = { "Cache-Control": "private, no-store" };
 const error = (message: string, status: number) => Response.json({ error: message }, { status, headers });
 
 export async function GET() {
-  if (!expenseMaintenanceEnabled()) return error("Expense issues are unavailable.", 404);
+  if (!expenseMaintenanceEnabled()) return error("Issues are unavailable.", 404);
   try { await reportUser(); }
-  catch { return error("Sign in to view expense issues.", 401); }
+  catch { return error("Sign in to view issues.", 401); }
   try {
     const data = await ledgerRead(async client => {
       const [issues, catalog] = await Promise.all([
         client.from("expense_maintenance_issues")
-          .select("id,rule_codes,title,context,finding,recommendation,examples,notes,resolved").order("sort_order"),
-        client.from("ledger_rules").select("display_code,trigger_name,source_label")
-          .eq("category", "expense").is("retired_at", null),
+          .select("id,category,rule_codes,title,context,finding,recommendation,examples,notes,resolved").order("sort_order"),
+        client.from("ledger_rules").select("category,display_code,trigger_name,source_label")
+          .in("category", Object.keys(ISSUE_CATEGORY_LABELS)).is("retired_at", null),
       ]);
-      if (issues.error || catalog.error) throw new Error("Expense review lookup failed.");
-      const rules = new Map(catalog.data.map(rule => [rule.display_code, rule]));
+      if (issues.error || catalog.error) throw new Error("Issue lookup failed.");
+      const rules = new Map(catalog.data.map(rule => [`${rule.category}:${rule.display_code}`, rule]));
       return issues.data.map(({ rule_codes, ...issue }) => ({
         ...issue,
         rules: rule_codes.map((code: string) => {
-          const rule = rules.get(code);
+          const rule = rules.get(`${issue.category}:${code}`);
           return { code, trigger: rule?.trigger_name ?? null, source: rule?.source_label ?? null };
         }),
       }));
     });
     return Response.json(data, { headers });
   } catch {
-    return error("Expense issues could not be loaded.", 503);
+    return error("Issues could not be loaded.", 503);
   }
 }
 
 async function issueWrite(request: Request) {
-  if (!expenseMaintenanceEnabled()) return error("Expense issues are unavailable.", 404);
+  if (!expenseMaintenanceEnabled()) return error("Issues are unavailable.", 404);
   if (request.headers.get("origin") !== new URL(request.url).origin) return error("Save changes from the Maintenance page.", 403);
   try { await reportUser(); }
   catch { return error("Sign in to update this issue.", 401); }

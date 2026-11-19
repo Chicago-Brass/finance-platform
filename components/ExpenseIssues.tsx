@@ -1,20 +1,21 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { EXPENSE_ISSUES_URL, ISSUE_NOTE_LIMIT, type ExpenseIssue } from "@/lib/progress/expense-issues";
+import { EXPENSE_ISSUES_URL, ISSUE_CATEGORY_LABELS, ISSUE_NOTE_LIMIT, type MaintenanceIssue, type IssueCategory } from "@/lib/progress/expense-issues";
 import { MaintenanceTabs } from "./MaintenanceTabs";
 import { ReportPageHeader } from "./ReportPageHeader";
 import { useReportQuery } from "./ReportData";
 import { ReportIcon } from "./ReportIcons";
 import { safeAuditLink } from "./ledger-table-utils";
 
-type IssueChanges = Partial<Pick<ExpenseIssue, "notes" | "resolved">>;
+type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "resolved">>;
 
-function ExpenseIssueCard({ issue, onChange }: {
-  issue: ExpenseIssue;
+function IssueCard({ issue, onChange }: {
+  issue: MaintenanceIssue;
   onChange: (changes: IssueChanges) => void;
 }) {
   const id = useId();
+  const categoryLabel = ISSUE_CATEGORY_LABELS[issue.category];
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,14 +67,14 @@ function ExpenseIssueCard({ issue, onChange }: {
 
   return <article className={issue.resolved ? "maintenance-card is-resolved" : "maintenance-card"} aria-labelledby={id}>
     <div className="maintenance-card-heading">
-      <div><p className="maintenance-category">Category - Expenses</p><h3 id={id}>{issue.title}</h3></div>
+      <div><p className="maintenance-category">Category - {categoryLabel}</p><h3 id={id}>{issue.title}</h3></div>
       <button type="button" className="btn btn-quiet maintenance-resolve" aria-pressed={issue.resolved}
         disabled={changingStatus} onClick={() => void changeStatus()}>Resolved</button>
     </div>
     {statusError && <p className="maintenance-status-error" role="alert">{statusError}</p>}
     <ul className="maintenance-codes" aria-label="Affected rules">{issue.rules.map(rule => <li key={rule.code}>
       <span className="maintenance-rule-code">{rule.code}</span>
-      <span><strong>{rule.trigger ?? "Trigger name unavailable"}</strong><small>{["Expenses", rule.source].filter(Boolean).join(" / ")}</small></span>
+      <span><strong>{rule.trigger ?? "Trigger name unavailable"}</strong><small>{[categoryLabel, rule.source].filter(Boolean).join(" / ")}</small></span>
     </li>)}</ul>
     <dl className="maintenance-finding">
       <div><dt>Context</dt><dd>{issue.context}</dd></div>
@@ -111,8 +112,8 @@ function ExpenseIssueCard({ issue, onChange }: {
 }
 
 export function ExpenseIssues() {
-  const query = useReportQuery<ExpenseIssue[]>(EXPENSE_ISSUES_URL);
-  const retained = useRef<ExpenseIssue[] | undefined>(undefined);
+  const query = useReportQuery<MaintenanceIssue[]>(EXPENSE_ISSUES_URL);
+  const retained = useRef<MaintenanceIssue[] | undefined>(undefined);
   if (query.data) retained.current = query.data;
   const issues = query.data ?? retained.current;
 
@@ -123,12 +124,20 @@ export function ExpenseIssues() {
   return <article className="report-page maintenance-page">
     <ReportPageHeader title="Maintenance" description="Chicago Brass Inc. / Ledger rules and review" />
     <MaintenanceTabs active="issues" />
-    <section className="maintenance-issues" aria-labelledby="expense-issues-title">
-      <header className="maintenance-issues-heading"><h2 id="expense-issues-title">Expense issues</h2><p>Ledger review for January 1 through November 16, 2026</p></header>
-      {query.error && <div role="alert"><p>Expense issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
-      {issues?.length ? issues.map(issue => <ExpenseIssueCard key={issue.id} issue={issue} onChange={changes => updateIssue(issue.id, changes)} />)
-        : query.pending ? <p role="status">Loading expense issues...</p>
-        : !query.error && <p>No expense issues are available.</p>}
+    <section className="maintenance-issues" aria-label="Ledger issues">
+      {query.error && <div role="alert"><p>Issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
+      {issues?.length ? (Object.keys(ISSUE_CATEGORY_LABELS) as IssueCategory[]).map(category => {
+        const cards = issues.filter(issue => issue.category === category);
+        if (!cards.length) return null;
+        return <section className="maintenance-category-section" key={category} aria-labelledby={`issues-${category}`}>
+          <header className="maintenance-issues-heading">
+            <h2 id={`issues-${category}`}>Category - {ISSUE_CATEGORY_LABELS[category]}</h2>
+            <p>Ledger review for January 1 through November {category === "expense" ? 16 : 15}, 2026</p>
+          </header>
+          {cards.map(issue => <IssueCard key={issue.id} issue={issue} onChange={changes => updateIssue(issue.id, changes)} />)}
+        </section>;
+      }) : query.pending ? <p role="status">Loading issues...</p>
+        : !query.error && <p>No issues are available.</p>}
     </section>
   </article>;
 }

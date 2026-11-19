@@ -4,6 +4,7 @@
 .maintenance-tabs a:hover { color: #183951; }
 .maintenance-issues { min-height: 0; overflow: auto; padding: 1rem .2rem 2rem; }
 .maintenance-issues-heading, .maintenance-card { max-width: 82rem; margin: 0 auto 1rem; }
+.maintenance-category-section + .maintenance-category-section { margin-top: 2.25rem; }
 .maintenance-issues-heading h2, .maintenance-card h3 { margin: 0; color: #183951; }
 .maintenance-issues-heading p { margin: .3rem 0 0; color: #526477; }
 .maintenance-card { padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #d8e0e8; border-left: 4px solid #986329; border-radius: 6px; background: white; }
