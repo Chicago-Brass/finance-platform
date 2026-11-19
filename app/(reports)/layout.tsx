@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function ReportsLayout({ children }: { children: React.ReactNode }) {
   // Shares the page's Auth check. A failure here is left for the page's error boundary to report.
   const user = await reportUser().catch(() => null);
+  const maintenance = expenseMaintenanceEnabled();
   const initials = user?.email?.split("@")[0].split(/[._-]/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "CB";
 
   return (
@@ -24,7 +25,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand-logo" src="/images/chicago-brass-white.png" width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass Architectural Hardware" />
           </div>
-          <NavLinks maintenance={expenseMaintenanceEnabled()} />
+          <NavLinks maintenance={maintenance} />
           <div className="ledger-actions">
             <RefreshDataButton />
             {user && process.env.LEDGER_WEBHOOK_SECRET && new URL(supabaseConfig().url).hostname === "inzobaubbikyiekcfarj.supabase.co" && <UpdateLedgerButton />}
@@ -39,7 +40,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
           </DismissibleMenu>
         </div>
       </header>
-      <ReportContent><ReportApplication>{children}</ReportApplication></ReportContent>
+      <ReportContent><ReportApplication maintenance={maintenance}>{children}</ReportApplication></ReportContent>
     </div></ReportNavigationProvider></ReportDataProvider>
   );
 }

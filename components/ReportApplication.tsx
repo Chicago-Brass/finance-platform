@@ -13,15 +13,17 @@ import { useReportQuery } from "./ReportData";
 import type { ReportQuery } from "./ReportData";
 import { useReportPath } from "./ReportNavigation";
 import { ProgressWorkspace } from "./ProgressWorkspace";
+import { ExpenseIssues } from "./ExpenseIssues";
 import { PeriodManagement } from "./PeriodManagement";
 
 type LedgerData = Awaited<ReturnType<typeof getGeneralLedger>>;
 const TITLES = { income: "Income Statement", balance: "Balance Sheet", trial: "Trial Balance", ledger: "General Ledger", rules: "T-Chart" };
 
 /** The destination shell renders from the URL; financial data arrives afterward through JSON. */
-export function ReportApplication({ children }: { children: ReactNode }) {
+export function ReportApplication({ children, maintenance = false }: { children: ReactNode; maintenance?: boolean }) {
   const pathname = useReportPath(), params = useSearchParams();
-  if (pathname === "/progress") return <ProgressWorkspace />;
+  if (pathname === "/progress") return maintenance && params.get("tab") === "issues"
+    ? <ExpenseIssues /> : <ProgressWorkspace maintenance={maintenance} />;
   if (pathname === "/periods") return <PeriodManagement />;
   const screen = Object.values(REPORT_PATHS).some(path => path === pathname)
     ? parseReportScreen(pathname, Object.fromEntries(params)) : null;
