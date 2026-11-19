@@ -44,12 +44,17 @@ function ExpenseIssueCard({ issue }: { issue: ExpenseIssue }) {
   return <article className="maintenance-card" aria-labelledby={id}>
     <div className="maintenance-card-heading">
       <div><p className="maintenance-category">Category - Expenses</p><h3 id={id}>{issue.title}</h3></div>
-      <ul className="maintenance-codes" aria-label="Affected rules">{issue.rule_codes.map(code => <li key={code}>{code}</li>)}</ul>
     </div>
+    <ul className="maintenance-codes" aria-label="Affected rules">{issue.rules.map(rule => <li key={rule.code}>
+      <span className="maintenance-rule-code">{rule.code}</span>
+      <span><strong>{rule.trigger ?? "Trigger name unavailable"}</strong><small>{["Expenses", rule.source].filter(Boolean).join(" / ")}</small></span>
+    </li>)}</ul>
     <dl className="maintenance-finding">
       <div><dt>Context</dt><dd>{issue.context}</dd></div>
       <div><dt>Issue</dt><dd>{issue.finding}</dd></div>
-      <div><dt>Potential solution</dt><dd>{issue.recommendation}</dd></div>
+      <div><dt>Potential solutions</dt><dd>
+        <ul>{issue.recommendation.split("\n").map(option => <li key={option}>{option}</li>)}</ul>
+      </dd></div>
     </dl>
     <section className="maintenance-examples" aria-label="Example records">
       <h4>Example records</h4>

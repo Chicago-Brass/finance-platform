@@ -10,9 +10,23 @@ export async function GET() {
   try { await reportUser(); }
   catch { return error("Sign in to view expense issues.", 401); }
   try {
-    const { data, error: queryError } = await ledgerRead(async client => client.from("expense_maintenance_issues")
-      .select("id,rule_codes,title,context,finding,recommendation,examples,notes").order("sort_order"));
-    if (queryError) throw queryError;
+    const data = await ledgerRead(async client => {
+      const [issues, catalog] = await Promise.all([
+        client.from("expense_maintenance_issues")
+          .select("id,rule_codes,title,context,finding,recommendation,examples,notes").order("sort_order"),
+        client.from("ledger_rules").select("display_code,trigger_name,source_label")
+          .eq("category", "expense").is("retired_at", null),
+      ]);
+      if (issues.error || catalog.error) throw new Error("Expense review lookup failed.");
+      const rules = new Map(catalog.data.map(rule => [rule.display_code, rule]));
+      return issues.data.map(({ rule_codes, ...issue }) => ({
+        ...issue,
+        rules: rule_codes.map((code: string) => {
+          const rule = rules.get(code);
+          return { code, trigger: rule?.trigger_name ?? null, source: rule?.source_label ?? null };
+        }),
+      }));
+    });
     return Response.json(data, { headers });
   } catch {
     return error("Expense issues could not be loaded.", 503);

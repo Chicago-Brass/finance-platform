@@ -5,7 +5,7 @@ export const ISSUE_NOTE_LIMIT = 4000;
 
 export type ExpenseIssue = {
   id: string;
-  rule_codes: string[];
+  rules: { code: string; trigger: string | null; source: string | null }[];
   title: string;
   context: string;
   finding: string;
