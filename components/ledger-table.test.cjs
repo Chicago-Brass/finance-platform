@@ -98,7 +98,8 @@ test('Ledger rendering uses readable dates, explicit zeros, pills and safe audit
 
 test('Trial Balance renderer preserves all-account totals and dates submit without a page parameter',()=>{
   const html=renderToStaticMarkup(React.createElement(tables.TrialBalanceTable,{rows:trial,asOf:'2026-11-03'}));
-  assert.match(html,/href="\/general-ledger\?from=2026-01-01&amp;to=2026-11-03&amp;account=112\.300"/);
+  assert.match(html,/class="row-account trial-account-row"/);
+  assert.match(html,/aria-haspopup="dialog" aria-expanded="false" title="Open 112.300 Bank - Nickel details"/);
   assert.match(html,/All-account totals/);
   assert.match(html,/\$35\.10/);
   assert.match(html,/Debits = Credits/);
@@ -108,6 +109,27 @@ test('Trial Balance renderer preserves all-account totals and dates submit witho
   assert.match(dates,/name="from"/);
   assert.match(dates,/name="to"/);
   assert.ok(!dates.includes('name="page"'));
+});
+
+test('Trial Balance row opens the balance drawer with its as-of date and branch', () => {
+  const file=path.join(__dirname,'LedgerTable.tsx');
+  const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  let target;
+  const hooks={...React,useMemo:calculate=>calculate(),useState:initial=>[target??initial,value=>{target=value;}]};
+  const module={exports:{}};
+  new Function('require','module','exports','window',js)(specifier=>specifier==='react'?hooks:specifier.endsWith('ReportNavigation')?navigation:specifier.startsWith('@/')?load(path.join(root,specifier.slice(2))):specifier.startsWith('.')?load(path.resolve(__dirname,specifier)):require(specifier),module,module.exports,{getSelection:()=>null});
+  const visit=(node,find)=>Array.isArray(node)?node.flatMap(child=>visit(child,find)):React.isValidElement(node)?[...(find(node)?[node]:[]),...visit(node.props.children,find)]:[];
+  const props={rows:trial,asOf:'2026-11-03',branch:'Chicago'};
+  const render=()=>module.exports.TrialBalanceTable(props);
+  const [row]=visit(render(),node=>node.type==='tr'&&node.props.className?.includes('trial-account-row'));
+  let focused=false;
+  row.props.onClick({target:{closest:()=>null},currentTarget:{querySelector:()=>({focus(){focused=true;}})}});
+  assert.equal(focused,true);
+  const [drawer]=visit(render(),node=>node.type.name==='AccountDrawer');
+  assert.equal(drawer.props.target.code,'112.300');
+  assert.deepEqual(drawer.props.range,{mode:'balance',from:'2026-01-01',to:'2026-11-03',branch:'Chicago'});
+  drawer.props.onClose();
+  assert.equal(visit(render(),node=>node.type.name==='AccountDrawer').length,0);
 });
 
 test('T-Chart renders grouped reference accounts without Ledger links',()=>{

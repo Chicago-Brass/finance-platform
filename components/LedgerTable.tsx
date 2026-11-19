@@ -3,21 +3,27 @@
 import { useMemo, useState } from "react";
 import type { LedgerAccountFilters, LedgerAccountOption, LedgerRow, TbRow } from "@/lib/reports/ledger";
 import { formatReportAmount } from "@/lib/format";
+import { startOfYear } from "@/lib/dates";
+import type { AccountActivityCache } from "@/lib/reports/account-activity-client";
 import { formatDate } from "@/lib/reports/report-utils";
 import { JournalEntryDrawer } from "./JournalEntryDrawer";
+import { AccountDrawer } from "./AccountDrawer";
+import type { DrillTarget } from "./AccountDrawer";
 import { AccountPill } from "./AccountPill";
 import { ReportIcon } from "./ReportIcons";
 import { ReportLink } from "./ReportNavigation";
-import { ACCOUNT_TYPES, accountLedgerHref, filterTrialAccounts, ledgerHref, moneyTotal, safeAuditLink } from "./ledger-table-utils";
+import { ACCOUNT_TYPES, filterTrialAccounts, ledgerHref, moneyTotal, safeAuditLink } from "./ledger-table-utils";
 import "./ledger-tables.css";
-
-/** An account pill that opens the General Ledger for that account. */
-export function AccountLedgerLink({ code, name, asOf, branch }: { code: string; name: string | null; asOf: string; branch?: string }) {
-  return <ReportLink className="account-pill-link" href={accountLedgerHref(code, asOf, branch)} title={`Open ${code} in the General Ledger`}><AccountPill code={code} name={name} /></ReportLink>;
-}
 
 export function TrialBalanceTable({ rows, asOf, branch, query = "", type = "all" }: { rows: TbRow[]; asOf?: string; branch?: string; query?: string; type?: string }) {
   const visible = useMemo(() => filterTrialAccounts(rows, query, type), [rows, query, type]);
+  const [target, setTarget] = useState<DrillTarget | null>(null);
+  const activityCache = useMemo<AccountActivityCache>(() => new Map(), [rows, asOf, branch]);
+  const accounts = useMemo(() => visible.map(row => ({
+    code: row.account_number,
+    label: [row.account_number, row.account_name].filter(Boolean).join(" "),
+    context: "Trial Balance",
+  })), [visible]);
   const debit = moneyTotal(rows.map(row => row.total_debit));
   const credit = moneyTotal(rows.map(row => row.total_credit));
   const balanced = Math.round(debit * 100) === Math.round(credit * 100);
@@ -28,11 +34,29 @@ export function TrialBalanceTable({ rows, asOf, branch, query = "", type = "all"
         <table className="fin-table ledger-data-table trial-balance-table">
           <colgroup><col className="ledger-account-col" /><col className="ledger-type-col" /><col className="ledger-money-col" /><col className="ledger-money-col" /><col className="ledger-money-col" /></colgroup>
           <thead><tr><th scope="col" className="label-cell">Account</th><th scope="col" className="label-cell">Type</th><th scope="col" className="num-cell">Debits</th><th scope="col" className="num-cell">Credits</th><th scope="col" className="num-cell">Balance</th></tr></thead>
-          <tbody>{visible.length === 0 ? <tr><td colSpan={5} className="ledger-empty">No accounts match these display filters.</td></tr> : visible.map(row => <tr key={row.account_number} className="row-account"><th scope="row" className="label-cell">{asOf ? <AccountLedgerLink code={row.account_number} name={row.account_name} asOf={asOf} branch={branch} /> : <AccountPill code={row.account_number} name={row.account_name} />}</th><td className="label-cell"><span className="ledger-type-label">{ACCOUNT_TYPES[row.account_type] ?? row.account_type}</span>{row.account_subtype && <small className="ledger-subtype">{row.account_subtype.replaceAll("_", " ")}</small>}</td><td className="num-cell">{formatReportAmount(Number(row.total_debit))}</td><td className="num-cell">{formatReportAmount(Number(row.total_credit))}</td><td className="num-cell">{formatReportAmount(Number(row.balance))}</td></tr>)}</tbody>
+          <tbody>{visible.length === 0 ? <tr><td colSpan={5} className="ledger-empty">No accounts match these display filters.</td></tr> : visible.map((row, index) => {
+            const account = accounts[index];
+            return <tr key={account.code} className={asOf ? "row-account trial-account-row" : "row-account"} onClick={asOf ? event => {
+              if (event.defaultPrevented || (event.target as Element).closest("button, a") || window.getSelection()?.toString()) return;
+              event.currentTarget.querySelector("button")?.focus();
+              setTarget(account);
+            } : undefined}>
+              <th scope="row" className="label-cell">{asOf ? (
+                <button type="button" className="drill-trigger" aria-haspopup="dialog" aria-expanded={target?.code === account.code} title={`Open ${account.label} details`} onClick={() => setTarget(account)}>
+                  <AccountPill code={account.code} name={row.account_name} />
+                </button>
+              ) : <AccountPill code={account.code} name={row.account_name} />}</th>
+              <td className="label-cell"><span className="ledger-type-label">{ACCOUNT_TYPES[row.account_type] ?? row.account_type}</span>{row.account_subtype && <small className="ledger-subtype">{row.account_subtype.replaceAll("_", " ")}</small>}</td>
+              <td className="num-cell">{formatReportAmount(Number(row.total_debit))}</td>
+              <td className="num-cell">{formatReportAmount(Number(row.total_credit))}</td>
+              <td className="num-cell">{formatReportAmount(Number(row.balance))}</td>
+            </tr>;
+          })}</tbody>
           <tfoot><tr><th scope="row" className="label-cell">All-account totals</th><td /><td className="num-cell">{formatReportAmount(debit)}</td><td className="num-cell">{formatReportAmount(credit)}</td><td /></tr></tfoot>
         </table>
       </div>
       <footer className="report-status ledger-table-footer"><span className={balanced ? "" : "ledger-balance-warning"}>{balanced && <ReportIcon name="check" />}{balanced ? "Debits = Credits" : `Debits and credits differ by ${formatReportAmount(Math.abs(debit - credit))}`}</span><span role="status">Showing {visible.length} of {rows.length} accounts</span>{filtered && <span>Totals include all accounts.</span>}</footer>
+      {asOf && target && <AccountDrawer target={target} range={{ mode: "balance", from: startOfYear(asOf), to: asOf, branch }} cache={activityCache} accounts={accounts} onSelect={setTarget} onClose={() => setTarget(null)} />}
     </section>
   );
 }
