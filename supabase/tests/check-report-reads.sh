@@ -18,7 +18,7 @@ trap cleanup EXIT HUP INT TERM
 docker run --rm -d --name "$container_name" -p 127.0.0.1::5432 \
   -e POSTGRES_PASSWORD=local-only-report-check \
   public.ecr.aws/supabase/postgres:17.11.0.004 \
-  postgres -D /var/lib/postgresql/data -c listen_addresses='*' >/dev/null
+  postgres -D /var/lib/postgresql/data -c listen_addresses='*' -c shared_preload_libraries=pg_net >/dev/null
 attempt=0
 until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | grep -q "/bin/postgres " && pg_isready -U postgres' >/dev/null 2>&1; do
   attempt=$((attempt + 1))
@@ -29,6 +29,8 @@ until docker exec "$container_name" sh -c 'tr "\000" " " < /proc/1/cmdline | gre
   sleep 1
 done
 docker exec "$container_name" createdb -U postgres report_check
+docker exec "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d report_check \
+  -c 'create schema extensions; create extension supabase_vault; create extension pg_net with schema extensions;'
 for file in "$test_dir/fixtures/supabase-platform.sql" "$@" "$project_dir/supabase/seed.sql"; do
   docker exec -i "$container_name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d report_check < "$file"
 done

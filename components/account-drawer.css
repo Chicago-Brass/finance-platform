@@ -30,6 +30,11 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-icon-button:hover:not(:disabled) { border-color: var(--steel); }
 .drill-icon-button:disabled { opacity: 0.4; cursor: default; }
 .drill-close { border-color: transparent; background: var(--bg); }
+:is(.account-drawer, .journal-drawer) .drill-header { background: var(--navy); border-color: transparent; color: white; }
+:is(.account-drawer, .journal-drawer) .drill-header :is(h2, .drill-eyebrow, .drill-range) { color: inherit; }
+:is(.account-drawer, .journal-drawer) .drill-header :is(.drill-icon-button, .journal-source-link) { background: #ffffff1f; color: white; border-color: #ffffff66; }
+:is(.account-drawer, .journal-drawer) .drill-header :is(.drill-icon-button, .journal-source-link):hover:not(:disabled) { background: #ffffff33; border-color: white; }
+:is(.account-drawer, .journal-drawer) .drill-header :is(.drill-icon-button, .journal-source-link):focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .drill-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .drill-state { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 24px 20px; color: var(--ink-2); font-size: 13px; }

@@ -8,11 +8,11 @@ const sql = postgres(url, { prepare: false, max: 1, onnotice() {} });
 after(() => sql.end());
 const filter = (db, options = {}) => db`select * from public.filter_ledger(
   '2032-01-01','2032-12-31',${options.query ?? ''},${options.account ?? null},${options.offset ?? null},${options.side ?? 'all'},
-  ${options.type ?? null},${options.category ?? null},${options.min ?? null},${options.max ?? null},${options.skip ?? 0},${options.take ?? 101})`;
+  ${options.type ?? null},${options.category ?? null},${options.min ?? null},${options.max ?? null},${options.skip ?? 0},${options.take ?? 101},${options.branch ?? null})`;
 
 const count = async (db, options = {}) => Number((await db`select public.count_ledger(
   '2032-01-01','2032-12-31',${options.query ?? ''},${options.account ?? null},${options.offset ?? null},${options.side ?? 'all'},
-  ${options.type ?? null},${options.category ?? null},${options.min ?? null},${options.max ?? null}) as total`)[0].total);
+  ${options.type ?? null},${options.category ?? null},${options.min ?? null},${options.max ?? null},${options.branch ?? null}) as total`)[0].total);
 
 test("all ledger filters combine before pagination, preserve cents and remain caller-scoped", async () => {
   await sql.begin(async tx => {
@@ -94,4 +94,26 @@ test("record counts validate filters and deny anonymous execution",async()=>{
   const [rights]=await sql`select has_function_privilege('anon','public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric,text)','execute') as anon,
     (select prosecdef from pg_proc where oid='public.count_ledger(date,date,text,text,text,text,text,text,numeric,numeric,text)'::regprocedure) as definer`;
   assert.equal(rights.anon,false);assert.equal(rights.definer,false);
+});
+
+test("No branch isolates unassigned posted lines in all report RPCs", async () => {
+  await sql.begin(async tx => {
+    const [entry] = await tx`insert into public.journal_entries(entry_date,description)
+      values ('2032-05-10','Branch scope fixture') returning id`;
+    await tx`insert into public.journal_lines(entry_id,line_no,account_code,debit,credit,branch) values
+      (${entry.id},1,'211.100',10,0,null),(${entry.id},2,'112.100',0,10,null),
+      (${entry.id},3,'211.100',4,0,'Chicago'),(${entry.id},4,'112.100',0,4,'Chicago')`;
+    await tx`update public.journal_entries set status='posted' where id=${entry.id}`;
+    for (const [branch, countExpected, debit] of [['no-branch',2,10],['Chicago',2,4],[null,4,14]]) {
+      const matching = await filter(tx, {branch,query:'Branch scope fixture'});
+      assert.equal(matching.length,countExpected);
+      assert.equal(await count(tx,{branch,query:'Branch scope fixture'}),countExpected);
+      assert.equal(await count(tx,{branch}),countExpected);
+      const [single] = await tx`select total_debit from public.get_trial_balance('2032-05-10','2032-05-10',${branch}) where account_number='211.100'`;
+      const [batch] = await tx`select accounts from public.get_trial_balances(array['2032-05-10'::date],array['2032-05-10'::date],${branch})`;
+      assert.equal(Number(single.total_debit),debit);
+      assert.equal(Number(batch.accounts.find(account=>account.account_number==='211.100').total_debit),debit);
+    }
+    throw new Error('rollback');
+  }).catch(error=>{if(error.message!=='rollback')throw error;});
 });

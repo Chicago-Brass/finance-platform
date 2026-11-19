@@ -1,11 +1,11 @@
 "use client";
 
-import { REPORT_BRANCHES } from "@/lib/reports/branch";
+import { NO_BRANCH, REPORT_BRANCHES, branchLabel } from "@/lib/reports/branch";
 import { useSearchParams } from "next/navigation";
 import { useReportNavigate } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
 
-const BRANCHES = [{ value: "", label: "Consolidated" }, ...REPORT_BRANCHES.map(branch => ({ value: branch, label: branch }))];
+const BRANCHES = ["", ...REPORT_BRANCHES, NO_BRANCH].map(value => ({ value, label: branchLabel(value) }));
 
 export function BranchFilter({ value, onChange }: { value?: string; onChange?: (value: string | undefined) => void }) {
   const params = useSearchParams(), navigate = useReportNavigate();

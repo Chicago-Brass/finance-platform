@@ -1,5 +1,6 @@
 import type { AccountBalance } from "./report-utils";
 import type { JournalPartyDetails } from "./journal-entry";
+import { NO_BRANCH } from "./branch";
 import { ledgerRead } from "./report-session";
 
 /**
@@ -56,7 +57,8 @@ export async function getTrialBalances(requests: TrialBalanceRequest[], branch?:
 export async function countPostedEntries(asOf: string, from: string | null, branch?: string) {
   return ledgerRead(async supabase => {
     let q = supabase.from("journal_entries").select(branch ? "id,journal_lines!inner(branch)" : "id", { count: "exact", head: true }).eq("status", "posted").lte("entry_date", asOf);
-    if (branch) q = q.eq("journal_lines.branch", branch);
+    if (branch === NO_BRANCH) q = q.is("journal_lines.branch", null);
+    else if (branch) q = q.eq("journal_lines.branch", branch);
     if (from) q = q.gte("entry_date", from);
     const { count, error } = await q;
     if (error) throw new Error(`Posted entry count failed: ${error.message}`);
