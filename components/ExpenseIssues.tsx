@@ -84,7 +84,7 @@ export function ExpenseIssues() {
     <ReportPageHeader title="Maintenance" description="Chicago Brass Inc. / Ledger rules and review" />
     <MaintenanceTabs active="issues" />
     <section className="maintenance-issues" aria-labelledby="expense-issues-title">
-      <header className="maintenance-issues-heading"><h2 id="expense-issues-title">Expense issues</h2><p>Staging review for January 1 through November 16, 2026</p></header>
+      <header className="maintenance-issues-heading"><h2 id="expense-issues-title">Expense issues</h2><p>Ledger review for January 1 through November 16, 2026</p></header>
       {query.error && <div role="alert"><p>Expense issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
       {issues?.length ? issues.map(issue => <ExpenseIssueCard key={issue.id} issue={issue} />)
         : query.pending ? <p role="status">Loading expense issues...</p>

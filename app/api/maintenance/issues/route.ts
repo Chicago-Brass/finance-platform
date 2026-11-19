@@ -6,7 +6,7 @@ const headers = { "Cache-Control": "private, no-store" };
 const error = (message: string, status: number) => Response.json({ error: message }, { status, headers });
 
 export async function GET() {
-  if (!expenseMaintenanceEnabled()) return error("Expense issues are available on staging.", 404);
+  if (!expenseMaintenanceEnabled()) return error("Expense issues are unavailable.", 404);
   try { await reportUser(); }
   catch { return error("Sign in to view expense issues.", 401); }
   try {
@@ -20,7 +20,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  if (!expenseMaintenanceEnabled()) return error("Expense issues are available on staging.", 404);
+  if (!expenseMaintenanceEnabled()) return error("Expense issues are unavailable.", 404);
   if (request.headers.get("origin") !== new URL(request.url).origin) return error("Save notes from the Maintenance page.", 403);
   try { await reportUser(); }
   catch { return error("Sign in to save notes.", 401); }
