@@ -18,7 +18,7 @@ export type JournalEntry = JournalPartyDetails & {
   id: string; entry_number: number; entry_date: string; source_date?: string | null; status: string; description: string;
   rule_code: string | null; transaction_type: string | null; notes: string | null; audit_link: string | null;
   source_system: string; source_event_type: string | null; source_table: string | null;
-  source_record_id: string | null; external_ref: string | null; created_at: string; created_by: string | null;
+  source_record_id: string | null; source_record_name: string | null; external_ref: string | null; created_at: string; created_by: string | null;
   posted_at: string | null; posted_by: string | null; reverses_entry_id: string | null; reversal_reason: string | null;
   lines: JournalLine[];
 };
@@ -33,7 +33,7 @@ export function journalEntryNumber(value: string | null) {
 export async function getJournalEntry(entryNumber: number): Promise<JournalEntry | null> {
   return ledgerRead(async supabase => {
     const { data: entry, error } = await supabase.from("journal_entries")
-      .select("id,entry_number,entry_date,source_date,status,description,rule_code,transaction_type,notes,audit_link,source_system,source_event_type,source_table,source_record_id,external_ref,client_names,vendor_names,reference_number,created_at,created_by,posted_at,posted_by,reverses_entry_id,reversal_reason")
+      .select("id,entry_number,entry_date,source_date,status,description,rule_code,transaction_type,notes,audit_link,source_system,source_event_type,source_table,source_record_id,source_record_name,external_ref,client_names,vendor_names,reference_number,created_at,created_by,posted_at,posted_by,reverses_entry_id,reversal_reason")
       .eq("entry_number", entryNumber).eq("status", "posted").maybeSingle();
     if (error) throw new Error(`Journal entry query failed: ${error.message}`);
     if (!entry) return null;

@@ -145,7 +145,11 @@ export function ReportView({ report, analytics, drill, display }: {
                   const isToggle = canCollapse.has(line.id), isCollapsed = collapsedIds.has(line.id);
                   const target = drill && line.accountCode && !isToggle ? targets.find(item => item.code === line.accountCode) : undefined;
                   const drilled = !!target && drillTarget?.code === target.code;
-                  return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}${drilled ? " is-drilled" : ""}`} data-account={line.accountCode}>
+                  return <tr key={line.id} className={`row-${line.kind}${line.spaceBefore ? " row-gap" : ""}${target ? " statement-account-row" : ""}${drilled ? " is-drilled" : ""}`} data-account={line.accountCode} onClick={target ? event => {
+                    if (event.defaultPrevented || (event.target as Element).closest("button, a") || window.getSelection()?.toString()) return;
+                    event.currentTarget.querySelector("button")?.focus();
+                    setDrillTarget(target);
+                  } : undefined}>
                     <th scope="row" className="label-cell" style={{ paddingLeft: `${14 + line.depth * 14}px` }}>
                       {isToggle ? <button type="button" className="row-toggle" aria-expanded={!isCollapsed} onClick={() => toggle(line.id)}><ReportIcon name={isCollapsed ? "chevronRight" : "chevronDown"} className="row-caret no-print" />{line.label}</button>
                         : target ? <button type="button" className="drill-trigger" aria-haspopup="dialog" aria-expanded={drilled} title={`Open ${target.code} details`} onClick={() => setDrillTarget(target)}><span className="drill-trigger-label">{line.label}</span></button>

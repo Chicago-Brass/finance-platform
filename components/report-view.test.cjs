@@ -170,6 +170,42 @@ test('Display rows and exported rows use the same account filters and collapse s
   assert.equal(collapsed.at(-1).values.a, -37.34);
 });
 
+test('Statement account rows open their drawer from amount cells and keep the account button', () => {
+  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname,'ReportView.tsx'),'utf8'), {
+    compilerOptions: {module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
+  }).outputText;
+  let selected = null;
+  const hooks = {...React,useMemo:fn=>fn(),useState:()=>[selected,value=>{selected=value;}]};
+  const module = {exports:{}};
+  new Function('require','module','exports','window',code)(
+    name=>name==='react'?hooks:name.startsWith('@/')?load(path.join(root,name.slice(2))):name.startsWith('.')?load(path.join(__dirname,name)):require(name),
+    module,module.exports,{getSelection:()=>null},
+  );
+  const visit=(node,match)=>Array.isArray(node)?node.flatMap(item=>visit(item,match)):React.isValidElement(node)?[...(match(node)?[node]:[]),...visit(node.props.children,match)]:[];
+  for (const [title,mode] of [['Income Statement','period'],['Balance Sheet','balance']]) {
+    selected=null;
+    const range={mode,from:'2026-01-01',to:'2026-11-19',branch:'Chicago'};
+    const render=()=>module.exports.ReportView({report:{title,lines,columns:[{key:'a',label:'2026'}],checks:[]},drill:range,display:display()});
+    const first=render();
+    const [row]=visit(first,node=>node.type==='tr'&&node.props['data-account']==='004.006');
+    const [total]=visit(first,node=>node.type==='tr'&&node.props.className==='row-grandTotal');
+    const [button]=visit(row,node=>node.type==='button'&&node.props['aria-haspopup']==='dialog');
+    let focused=false;
+    const event={target:{closest:()=>null},currentTarget:{querySelector:()=>({focus(){focused=true;}})}};
+    assert.equal(total.props.onClick,undefined);
+    row.props.onClick({...event,target:{closest:()=>button}});
+    assert.equal(selected,null);
+    row.props.onClick(event);
+    assert.equal(focused,true);
+    const [opened]=visit(render(),node=>node.type===drawer.AccountDrawer);
+    assert.equal(opened.props.target.code,'004.006');
+    assert.deepEqual(opened.props.range,range);
+    opened.props.onClose();
+    button.props.onClick();
+    assert.equal(selected.code,'004.006');
+  }
+});
+
 test('Account cards scroll with the table and capped counts are disclosed', () => {
   const source = fs.readFileSync(path.join(__dirname, 'AccountDrawer.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;

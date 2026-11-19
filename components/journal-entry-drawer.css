@@ -20,7 +20,8 @@
 .journal-lines thead th{padding:8px 10px;background:var(--navy);color:white;font-weight:500;font-size:12px;text-align:left;white-space:nowrap}
 .journal-lines tbody th,.journal-lines tbody td{padding:8px 10px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--rule);font-weight:400}
 .journal-lines .journal-money{text-align:right;white-space:nowrap}
-.journal-account{min-width:200px;max-width:260px}
+.journal-account{min-width:180px;max-width:260px}
+.journal-line-note{display:block;margin-top:3px;color:var(--ink-2);overflow-wrap:anywhere}
 .journal-lines .account-pill{max-width:240px}
 .journal-source-cell{width:32px}
 .journal-source-link{display:inline-flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--rule);border-radius:var(--control-radius);color:var(--steel);background:white}

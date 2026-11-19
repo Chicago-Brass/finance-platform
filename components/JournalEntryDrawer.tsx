@@ -33,20 +33,21 @@ export function JournalEntryDetails({ entry, selectedLineId }: { entry: JournalE
     <section className="journal-section" aria-label="Entry details">
       <h3>Entry details</h3>
       <p className="journal-description">{entry.description}</p>
-      <Fields items={[["Source", entry.source_system], ["Table", entry.source_table], ["Record", entry.source_record_id], ["Accounting date", formatDate(entry.entry_date)], ["Source date", entry.source_date ? formatDate(entry.source_date) : null], ["Transaction type", entry.transaction_type], ["Client", entry.client_names?.join(", ") ?? null], ["Vendor", entry.vendor_names?.join(", ") ?? null], ["Reference number", entry.reference_number ?? null]]} />
+      <Fields items={[["Source", entry.source_system], ["Table", entry.source_table], ["Record", entry.source_record_id], ["Record name", entry.source_record_name ?? null], ["Accounting date", formatDate(entry.entry_date)], ["Source date", entry.source_date ? formatDate(entry.source_date) : null], ["Transaction type", entry.transaction_type], ["Client", entry.client_names?.join(", ") ?? null], ["Vendor", entry.vendor_names?.join(", ") ?? null], ["Reference number", entry.reference_number ?? null]]} />
       {entry.notes && <div className="journal-notes"><h4>Notes</h4><p>{entry.notes}</p></div>}
     </section>
     <section className="journal-section" aria-label="Journal lines">
       <div className="journal-section-heading"><h3>Journal lines</h3><span>{entry.lines.length} lines</span></div>
       <div className="journal-lines-scroll" tabIndex={0} role="region" aria-label="All lines in this journal entry">
         <table className="journal-lines">
-          <thead><tr><th scope="col">Account</th><th scope="col" className="journal-money">Debit</th><th scope="col" className="journal-money">Credit</th><th scope="col"><span className="sr-only">Source</span></th></tr></thead>
+          <thead><tr><th scope="col">Account</th><th scope="col" className="journal-money">Debit</th><th scope="col" className="journal-money">Credit</th><th scope="col">Branch</th><th scope="col"><span className="sr-only">Source</span></th></tr></thead>
           <tbody>{entry.lines.map(line => <tr key={line.id} aria-selected={String(line.id) === selectedLineId} className={String(line.id) === selectedLineId ? "journal-selected-line" : undefined}>
-            <th scope="row" className="journal-account" title={`${line.account_code} ${line.account?.name ?? ""}`}><AccountPill code={line.account_code} name={line.account?.name ?? null} /></th>
+            <th scope="row" className="journal-account" title={`${line.account_code} ${line.account?.name ?? ""}`}><AccountPill code={line.account_code} name={line.account?.name ?? null} />{line.notes && <small className="journal-line-note">{line.notes}</small>}</th>
             <td className="journal-money">{Number(line.debit) ? formatReportAmount(Number(line.debit)) : <span className="drill-muted">-</span>}</td><td className="journal-money">{Number(line.credit) ? formatReportAmount(Number(line.credit)) : <span className="drill-muted">-</span>}</td>
+            <td>{line.branch || "No branch"}</td>
             <td className="journal-source-cell"><SourceLink url={line.audit_link} label={`Open source for ${line.account_code}`} /></td>
           </tr>)}</tbody>
-          <tfoot><tr><th scope="row">Entry totals</th><td className="journal-money">{formatReportAmount(debit)}</td><td className="journal-money">{formatReportAmount(credit)}</td><td /></tr></tfoot>
+          <tfoot><tr><th scope="row">Entry totals</th><td className="journal-money">{formatReportAmount(debit)}</td><td className="journal-money">{formatReportAmount(credit)}</td><td colSpan={2} /></tr></tfoot>
         </table>
       </div>
       {!balanced && <p className="journal-warning" role="alert">Debit and credit totals differ by {formatReportAmount(Math.abs(debit - credit))}.</p>}

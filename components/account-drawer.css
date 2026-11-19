@@ -3,6 +3,7 @@
 .drill-trigger:hover .drill-trigger-label { text-decoration: underline; text-underline-offset: 2px; }
 .drill-trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .drill-trigger[aria-expanded="true"] { color: var(--navy); font-weight: 600; }
+tr.statement-account-row { cursor: pointer; }
 tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 
 .drill-layer { position: fixed; inset: 0; z-index: 80; }
