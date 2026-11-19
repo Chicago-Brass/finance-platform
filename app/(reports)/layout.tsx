@@ -5,6 +5,7 @@ import { RefreshDataButton, ReportContent, ReportNavigationProvider, UpdateLedge
 import { LOGO_HEIGHT, LOGO_WIDTH } from "@/lib/reports/logo";
 import { ReportDataProvider } from "@/components/ReportData";
 import { ReportApplication } from "@/components/ReportApplication";
+import { expenseMaintenanceEnabled } from "@/lib/progress/expense-issues";
 import { supabaseConfig } from "@/lib/supabase/config";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand-logo" src="/images/chicago-brass-white.png" width={LOGO_WIDTH} height={LOGO_HEIGHT} alt="Chicago Brass Architectural Hardware" />
           </div>
-          <NavLinks />
+          <NavLinks maintenance={expenseMaintenanceEnabled()} />
           <div className="ledger-actions">
             <RefreshDataButton />
             {user && process.env.LEDGER_WEBHOOK_SECRET && new URL(supabaseConfig().url).hostname === "inzobaubbikyiekcfarj.supabase.co" && <UpdateLedgerButton />}

@@ -1,0 +1,29 @@
+.maintenance-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid #d8e0e8; flex: 0 0 auto; }
+.maintenance-tabs a { padding: .65rem .2rem; border-bottom: 3px solid transparent; color: #45576a; font-weight: 650; text-decoration: none; }
+.maintenance-tabs a[aria-current="page"] { border-color: #986329; color: #183951; }
+.maintenance-tabs a:hover { color: #183951; }
+.maintenance-issues { min-height: 0; overflow: auto; padding: 1rem .2rem 2rem; }
+.maintenance-issues-heading, .maintenance-card { max-width: 65rem; margin: 0 auto 1rem; }
+.maintenance-issues-heading h2, .maintenance-card h3 { margin: 0; color: #183951; }
+.maintenance-issues-heading p { margin: .3rem 0 0; color: #526477; }
+.maintenance-card { padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid #d8e0e8; border-left: 4px solid #986329; border-radius: 6px; background: white; }
+.maintenance-card-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .75rem 1rem; }
+.maintenance-category { margin: 0 0 .3rem; color: #526477; font-size: .85rem; }
+.maintenance-codes { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; margin: 0; padding: 0; }
+.maintenance-codes li { padding: .25rem .5rem; border-radius: 4px; background: #ecf1f6; color: #183951; font-weight: 700; font-size: .8rem; }
+.maintenance-finding { display: grid; gap: .8rem; margin: 1rem 0; }
+.maintenance-finding div { display: grid; grid-template-columns: 9.25rem minmax(0, 1fr); gap: .25rem .75rem; }
+.maintenance-finding dt, .maintenance-notes label { color: #183951; font-weight: 700; }
+.maintenance-finding dd { margin: 0; max-width: 77ch; line-height: 1.5; }
+.maintenance-examples { padding-top: .9rem; border-top: 1px solid #e4e9ef; }
+.maintenance-examples h4 { margin: 0; color: #183951; }
+.maintenance-examples ul { padding-left: 1.1rem; margin: .55rem 0 1rem; }
+.maintenance-examples li { padding: .18rem 0; }
+.maintenance-examples li span { display: block; color: #526477; }
+.maintenance-examples a { display: inline-flex; align-items: center; gap: .35rem; color: #235e85; font-weight: 650; }
+.maintenance-examples svg { width: .85rem; height: .85rem; }
+.maintenance-notes { display: grid; gap: .5rem; background: #f4f7fa; padding: .8rem; border-radius: 4px; }
+.maintenance-notes textarea { width: 100%; min-height: 7rem; padding: .65rem; resize: vertical; border: 1px solid #afbdcb; border-radius: 4px; font: inherit; color: inherit; background: white; }
+.maintenance-note-actions { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; }
+.maintenance-note-actions [role="alert"] { color: #8e2828; }
+@media (max-width: 650px) { .maintenance-finding div { grid-template-columns: 1fr; } }

@@ -11,6 +11,7 @@ import { FilterBar, FilterField, SearchField } from "./FilterControls";
 import { SearchableSelect } from "./SearchableSelect";
 import { DismissibleMenu } from "./DismissibleMenu";
 import { DetailDrawer } from "./DetailDrawer";
+import { MaintenanceTabs } from "./MaintenanceTabs";
 import { ReportPageHeader } from "./ReportPageHeader";
 import { ReportDataPanel } from "./ReportDataPanel";
 import { useReportQuery, useReportRefresh } from "./ReportData";
@@ -163,7 +164,7 @@ function RuleDrawer({ code, range, controls, onClose }: { code: string; range: R
   </DetailDrawer>;
 }
 
-export function ProgressWorkspace() {
+export function ProgressWorkspace({ maintenance = false }: { maintenance?: boolean } = {}) {
   const [search, setSearch] = useState(""), [draft, setDraft] = useState(""), [category, setCategory] = useState(""), [implementation, setImplementation] = useState(""), [enabled, setEnabled] = useState("all"), [range, setRange] = useState<Range>({}), [page, setPage] = useState(1), [selected, setSelected] = useState<string | null>(null);
   const params = new URLSearchParams({ page: String(page) });
   for (const [key, value] of Object.entries({ q: search, category, implementation, enabled: enabled === "all" ? "" : enabled, ...range })) if (value) params.set(key, value);
@@ -189,7 +190,8 @@ export function ProgressWorkspace() {
   const submitSearch = () => { const value = draft.trim(); if (value !== search) change(() => setSearch(value)); };
   const filtered = !!draft || !!category || !!implementation || enabled !== "all" || !!range.from || !!range.to;
   return <article className="report-page ledger-page progress-page">
-    <ReportPageHeader title="Progress" description="Chicago Brass Inc. / Ledger rules and posting activity" />
+    <ReportPageHeader title={maintenance ? "Maintenance" : "Progress"} description="Chicago Brass Inc. / Ledger rules and posting activity" />
+    {maintenance && <MaintenanceTabs active="progress" />}
     <FilterBar label="Rule progress filters" className="progress-filter-bar no-print">
       <form className="ledger-global-search" role="search" onSubmit={event => { event.preventDefault(); submitSearch(); }}><SearchField label="Search rules" value={draft} onChange={setDraft} onBlur={submitSearch} placeholder="Code, rule or account" maxLength={200} /></form>
       <PeriodFilter range={range} onChange={value => change(() => setRange(value))} />
