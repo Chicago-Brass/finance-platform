@@ -5,14 +5,15 @@ import { createClient } from "@/lib/supabase/client";
 import { todayChicago } from "@/lib/dates";
 import { formatDate } from "@/lib/reports/report-utils";
 import { formatReportAmount } from "@/lib/format";
-import { useReportRefresh, useReportRevision } from "./ReportData";
+import { useReportQuery, useReportRefresh, useReportRevision } from "./ReportData";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, FilterField } from "./FilterControls";
 import { DismissibleMenu } from "./DismissibleMenu";
 import { CalendarMark } from "./ReportViewControls";
 import { periodGroups, periodPresets, periodRange, type PeriodGrouping, type PeriodOverview, type PeriodRange } from "@/lib/periods/ranges";
 import { DetailDrawer } from "./DetailDrawer";
-import { JournalEntryDrawer } from "./JournalEntryDrawer";
+import type { JournalEntry } from "@/lib/reports/journal-entry";
+import { JournalEntryDrawer, JournalEntryDetails } from "./JournalEntryDrawer";
 import "./period-management.css";
 
 type Period = PeriodOverview & {
@@ -36,6 +37,7 @@ type Packet = {
   entryDate?: string;
   sourceDate?: string;
 };
+type ReviewJournal = { id: string; entry_number: number; status: string; description: string; rule_code: string | null };
 type Review = {
   id: string;
   kind: string;
@@ -43,6 +45,7 @@ type Review = {
   source_record_id: string;
   event_type: string;
   accounting_date: string;
+  approved_entry_date?: string | null;
   status: string;
   created_at: string;
   reviewed_by: string | null;
@@ -50,6 +53,7 @@ type Review = {
   last_error: string | null;
   writeback_pending: boolean;
   payload: Packet;
+  journals?: ReviewJournal[];
 };
 type Posted = {
   id: string;
@@ -93,8 +97,10 @@ type ReviewDetails = {
 type Action = {
   action: "open" | "close" | "approve" | "reject";
   requestId?: string;
+  repairLinks?: boolean;
   label: string;
   month?: string;
+  postingDate?: string;
 };
 const monthLabel = (month: string) =>
   new Intl.DateTimeFormat("en-US", {
@@ -117,12 +123,76 @@ export function PeriodStatusPill({ status }: { status: string }) {
   return <span className={`period-badge ${state}`}>{state === "open" ? "Open" : state === "mixed" ? "Mixed" : "Closed"}</span>;
 }
 
+function canRetryReviewLinks(status: string, writebackPending: boolean) {
+  return writebackPending && (status === "posted" || status === "rejected");
+}
+
+function reviewAction(row: Review): Action {
+  const repairLinks = canRetryReviewLinks(row.status, row.writeback_pending);
+  return {
+    action: row.status === "rejected" ? "reject" : "approve",
+    requestId: row.id,
+    month: row.accounting_date.slice(0, 7) + "-01",
+    label: repairLinks ? "Repair Airtable links" : "Approve posting",
+    repairLinks,
+  };
+}
+
 export function PeriodReviewActions({ status, writebackPending, canManage, onView, onAllow }: {
   status: string; writebackPending: boolean; canManage: boolean; onView: () => void; onAllow: () => void;
 }) {
-  return <div className="period-row-actions"><button type="button" className="btn btn-quiet" onClick={onView}>View</button>
-    {canManage && (status === "pending" || (status === "posted" && writebackPending)) && <button type="button" className="btn btn-primary" onClick={onAllow}>{status === "pending" ? "Allow entry" : "Retry links"}</button>}
+  return <div className="period-row-actions"><button type="button" className="btn btn-quiet" onClick={onView}>{status === "pending" && canManage ? "Review" : "View"}</button>
+    {canManage && canRetryReviewLinks(status, writebackPending) && <button type="button" className="btn btn-primary" onClick={onAllow}>Retry links</button>}
   </div>;
+}
+
+export function ReviewPostingControls({ originalDate, today, busy, error, onApprove }: {
+  originalDate: string; today: string; busy: boolean; error: string;
+  onApprove: (reason: string, postingDate?: string) => void;
+}) {
+  const [move, setMove] = useState(false);
+  const [date, setDate] = useState(today);
+  const [reason, setReason] = useState("");
+  const sameMonth = move && date.slice(0, 7) === originalDate.slice(0, 7);
+  return <form className="period-review-controls" onSubmit={event => {
+    event.preventDefault();
+    if (!busy && reason.trim() && (!move || (date && !sameMonth))) onApprove(reason.trim(), move ? date : undefined);
+  }}>
+    <h3>Approve posting</h3>
+    <fieldset disabled={busy}>
+      <legend>Posting date</legend>
+      <label><input type="radio" name="review-posting-mode" checked={!move} onChange={() => setMove(false)} /> Keep {formatDate(originalDate)}</label>
+      <label><input type="radio" name="review-posting-mode" checked={move} onChange={() => setMove(true)} /> Post in a different open month</label>
+      {move && <FilterField label="New posting date" htmlFor="review-posting-date">
+        <input id="review-posting-date" type="date" value={date} onChange={event => setDate(event.target.value)} required />
+      </FilterField>}
+      {sameMonth && <p role="status">Choose a date in a different month.</p>}
+    </fieldset>
+    <FilterField label="Reason" htmlFor="review-posting-reason">
+      <textarea id="review-posting-reason" value={reason} onChange={event => setReason(event.target.value)} maxLength={2000} required disabled={busy} rows={2} />
+    </FilterField>
+    {error && <p className="period-error" role="alert">{error}</p>}
+    <button className="btn btn-primary" disabled={busy || !reason.trim() || (move && (!date || sameMonth))}>
+      {busy ? "Posting..." : move ? "Post on new date" : "Approve original date"}
+    </button>
+  </form>;
+}
+
+function ReviewJournalPreview({ journals }: { journals: ReviewJournal[] }) {
+  const entries = journals.filter(journal => journal.status !== "rejected").sort((a, b) => a.entry_number - b.entry_number);
+  const [active, setActive] = useState(entries[0]?.entry_number);
+  const query = useReportQuery<JournalEntry>(active ? `/api/reports/journal-entry?entry=${active}` : null);
+  return <section className="period-review-entry" aria-label="Saved journal entries">
+    <h3>Journal entries</h3>
+    <div className="period-review-journals" role="group" aria-label="Select a journal">
+      {entries.map(entry => <button key={entry.id} type="button" className="btn btn-quiet" aria-pressed={active === entry.entry_number}
+        onClick={() => setActive(entry.entry_number)}>Entry #{entry.entry_number}</button>)}
+    </div>
+    {active && (query.pending ? <p role="status">Loading journal lines...</p> : query.error || !query.data
+      ? <p role="alert">Journal entry could not be loaded. <button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></p>
+      : <JournalEntryDetails entry={query.data} />)}
+    {journals.filter(journal => journal.status === "rejected").map(journal => <p key={journal.id}>Entry #{journal.entry_number} was rejected.</p>)}
+  </section>;
 }
 
 export function PeriodManagement() {
@@ -234,15 +304,14 @@ export function PeriodManagement() {
     setLoading(true);
     setNotice("");
   };
-  const submit = async () => {
-    if (!action) return;
+  const submit = async (decision: Action, reviewReason: string) => {
     setBusy(true);
     setError("");
     try {
       const client = createClient();
       const { data: result, error: failure } = await client.functions.invoke(
         "ledger-periods",
-        { body: { ...action, month: action.month ?? month, reason, deferPending: defer } },
+        { body: { ...decision, month: decision.month ?? month, reason: reviewReason, deferPending: defer } },
       );
       if (failure) {
         const body =
@@ -253,11 +322,12 @@ export function PeriodManagement() {
       }
       setNotice(
         result.message ||
-          (action.action === "approve"
-            ? "Request posted. Other pending requests are unchanged."
-            : action.action === "reject"
+          (decision.repairLinks ? "Airtable links repaired."
+            : decision.action === "approve"
+            ? result.postingDate ? `Journal posted on ${formatDate(result.postingDate)}.` : "Journal posted."
+            : decision.action === "reject"
               ? "Request rejected. No journals were posted."
-              : action.action === "close"
+              : decision.action === "close"
                 ? "Period closed."
                 : "Period opened. Pending requests still require approval."),
       );
@@ -474,9 +544,13 @@ export function PeriodManagement() {
                 </thead>
                 <tbody>
                   {(data.rows as Review[]).map((row) => (
-                    <tr key={row.id}>
+                    <tr key={row.id} className="period-review-row" onClick={event => {
+                      if (!(event.target as HTMLElement).closest("button, a")) { setError(""); setSelected(row.id); }
+                    }}>
                       <td>{stamp(row.created_at)}</td>
-                      <td>{formatDate(row.accounting_date)}</td>
+                      <td>{formatDate(row.accounting_date)}
+                        {row.approved_entry_date && <small>Posted {formatDate(row.approved_entry_date)}</small>}
+                      </td>
                       <td>
                         {row.payload.source?.recordName ||
                           row.payload.paymentName ||
@@ -488,6 +562,7 @@ export function PeriodManagement() {
                                 ?.map((c) => c.ruleCode)
                                 .join(", ")}
                         </small>
+                        {!!row.journals?.length && <small>{row.journals.map(entry => `Entry #${entry.entry_number}`).join(", ")}</small>}
                       </td>
                       <td>
                         <span className={`period-badge ${row.status}`}>
@@ -501,7 +576,7 @@ export function PeriodManagement() {
                       </td>
                       <td>
                         <PeriodReviewActions status={row.status} writebackPending={row.writeback_pending} canManage={data.canManage}
-                          onView={() => setSelected(row.id)} onAllow={() => begin({action:"approve",requestId:row.id,month:row.accounting_date.slice(0,7)+"-01",label:row.status === "pending" ? "Allow entry" : "Repair Airtable links"})} />
+                          onView={() => { setError(""); setSelected(row.id); }} onAllow={() => begin(reviewAction(row))} />
                       </td>
                     </tr>
                   ))}
@@ -589,16 +664,17 @@ export function PeriodManagement() {
         />
       )}
       {selected && (
-        <DetailDrawer titleId="review-title" onClose={() => setSelected(null)}>
+        <DetailDrawer titleId="review-title" onClose={() => !busy && setSelected(null)}>
           <header className="drill-header">
             <div className="drill-heading">
               <p className="drill-eyebrow">Period exception</p>
-              <h2 id="review-title">Review proposed journals</h2>
+              <h2 id="review-title">Review journal entries</h2>
             </div>
             <button
               data-drawer-close
               className="drill-icon-button"
               aria-label="Close review"
+              disabled={busy}
               onClick={() => setSelected(null)}
             >
               ×
@@ -607,18 +683,25 @@ export function PeriodManagement() {
           <div className="period-review-body">
             {detailError ? (
               <p role="alert">{detailError}</p>
-            ) : !details ? (
+            ) : !details || details.item.id !== selected ? (
               <p role="status">Loading request...</p>
             ) : (
               <>
+                {data?.canManage && details.item.status === "pending" && (
+                  <ReviewPostingControls key={details.item.id} originalDate={details.item.accounting_date} today={today}
+                    busy={busy} error={error} onApprove={(reason, postingDate) => void submit({
+                      ...reviewAction(details.item), postingDate,
+                    }, reason)} />
+                )}
                 <p>
-                  <span className="period-badge">
-                    {titleCase(details.item.status)}
+                  <span className={`period-badge ${details.item.status}`}>
+                    {details.item.status === "pending" ? "Pending review" : titleCase(details.item.status)}
                   </span>
                 </p>
                 <dl>
                   <dt>Accounting date</dt>
                   <dd>{formatDate(details.item.accounting_date)}</dd>
+                  {details.item.approved_entry_date && <><dt>Posted on</dt><dd>{formatDate(details.item.approved_entry_date)}</dd></>}
                   <dt>Source date</dt>
                   <dd>
                     {formatDate(
@@ -644,12 +727,8 @@ export function PeriodManagement() {
                   <dt>Event</dt>
                   <dd>{details.item.event_type}</dd>
                 </dl>
-                <p className="period-warning">
-                  Review the captured request below. Approval posts these
-                  journals only; it does not reopen the period or approve other
-                  records.
-                </p>
-                {details.item.payload.categories?.map((category, i) => (
+                {!!details.item.journals?.length && <ReviewJournalPreview key={details.item.id} journals={details.item.journals} />}
+                {!details.item.journals?.length && details.item.payload.categories?.map((category, i) => (
                   <section key={i}>
                     <h3>
                       {category.ruleCode}
@@ -693,7 +772,7 @@ export function PeriodManagement() {
                     </table>
                   </section>
                 ))}
-                {details.item.kind === "reversal" && (
+                {details.item.kind === "reversal" && !details.item.journals?.length && (
                   <>
                     <h3>Reversal lines</h3>
                     <table className="period-table">
@@ -721,49 +800,13 @@ export function PeriodManagement() {
                 {details.item.last_error && (
                   <p role="alert">{details.item.last_error}</p>
                 )}
-                {data?.canManage && details.item.status === "pending" && (
-                  <div className="period-review-actions">
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setSelected(null);
-                        begin({
-                          action: "approve",
-                          requestId: details.item.id,
-                          label: "Allow entry",
-                          month: details.item.accounting_date.slice(0,7)+"-01",
-                        });
-                      }}
-                    >
-                      Allow entry
-                    </button>
-                    <button
-                      className="btn btn-quiet"
-                      onClick={() => {
-                        setSelected(null);
-                        begin({
-                          action: "reject",
-                          requestId: details.item.id,
-                          label: "Reject this request",
-                        });
-                      }}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
                 {data?.canManage &&
-                  details.item.status === "posted" &&
-                  details.item.writeback_pending && (
+                  canRetryReviewLinks(details.item.status, details.item.writeback_pending) && (
                     <button
                       className="btn btn-primary"
                       onClick={() => {
                         setSelected(null);
-                        begin({
-                          action: "approve",
-                          requestId: details.item.id,
-                          label: "Repair Airtable links",
-                        });
+                        begin(reviewAction(details.item));
                       }}
                     >
                       Retry link writeback
@@ -798,11 +841,13 @@ export function PeriodManagement() {
             className="period-review-body"
             onSubmit={(e) => {
               e.preventDefault();
-              void submit();
+              void submit(action, reason);
             }}
           >
             <p>
-              {action.action === "approve"
+              {action.repairLinks
+                ? "Retry updating the source record’s Airtable links for this decision."
+                : action.action === "approve"
                 ? "Only this reviewed request will be posted. The period status will remain unchanged."
                 : action.action === "open"
                   ? "Pending requests will remain pending and require individual approval."

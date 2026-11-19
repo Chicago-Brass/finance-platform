@@ -5,7 +5,7 @@ import { syncLedgerLinks, LedgerWritebackError } from "../_shared/ledger-links.t
 export async function reverseAndSync(sql: Sql, request: ReversalRequest, token: string, fetcher: typeof fetch = fetch) {
   if (!token) throw new LedgerWritebackError();
   const result = await reverseJournals(sql, request);
-  if (result.status) return result;
-  const links = await syncLedgerLinks(sql, result.source, token, fetcher);
+  if (result.status === "rejected") return result;
+  const links = await syncLedgerLinks(sql, result.source, token, fetcher, undefined, [], undefined, result.withdrewPending);
   return { ...result, journalEntryIds: links.journalEntryIds, reversalJournalEntryIds: links.reversalJournalEntryIds, ledgerPostings: links.postings };
 }

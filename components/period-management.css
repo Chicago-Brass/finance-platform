@@ -352,3 +352,21 @@
   margin-left: 10px;
 }
 .period-page .period-action{width:auto;min-width:110px;flex:none;align-self:center}.period-table th:first-child,.period-table td:first-child{white-space:nowrap}.period-review-body>.btn{width:auto}
+
+.period-review-journals { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+
+.period-review-row { cursor: pointer; }
+.period-review-controls {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.period-review-controls h3, .period-review-controls p { margin: 0; }
+.period-review-controls fieldset { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.period-review-controls legend { margin-bottom: 6px; font-weight: 600; }
+.period-review-controls fieldset > label { display: flex; align-items: center; gap: 8px; }
+.period-review-controls > button { justify-self: start; }
+.period-review-entry .period-review-journals { margin-bottom: 10px; }
+.period-review-entry .period-review-journals button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }

@@ -1,18 +1,75 @@
 // Airtable posting cache shared by current webhooks and the future daily worker.
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { lockLedgerSource } from "./period-review.ts";
+import { LOAN_TABLE, LOAN_LINK_FIELDS } from "./loan-record.ts";
 import { MANUAL_TABLE, MANUAL_FIELDS } from "./manual-journal.ts";
 
 export const FIN_BASE = "app0Q1UMEdUeWl538";
 export const LINK_FIELDS = {
-  [MANUAL_TABLE]: { postings: MANUAL_FIELDS.postings, ids: MANUAL_FIELDS.ids, reversalIds: MANUAL_FIELDS.reversalIds, posted: MANUAL_FIELDS.posted },
-  tblrnXm1HN9y6HPxY: { postings: "fldpzQMtRabsTFN3p", ids: "fldAnSta5oo9el7xm", reversalIds: "fldDSYAiyS6IjgAA7" },
-  tblR61NG9i0giid28: { postings: "fldFcvTSQ5035ZYVa", ids: "fldUTQWnsCYxYZ8wa", reversalIds: "fld7j7LKJNbgfyFhk" },
-  tbldQXuqNEp8G5pfs: { postings: "fld2K7xKmNnLoi4u6", ids: "fldLqYrXCySCoZRQT", reversalIds: "fldKWzgJ7ypvfn6Jw" },
-  tblV26TC0f6CKDneL: { postings: "fldggH4cOAdWpW8WO", ids: "fldi0ML7ThX0lD1vg", reversalIds: "fldxgFR0EWkD0fMLD" },
-  tbl1LgiUYt7Gc492d: { postings: "fldw8s2MSZm1vbuO2", ids: "fld5xpLcuYN7i1gRz", reversalIds: "fldbYYEu6fFmzegQT" },
-  tblC0dbO5UMXzHma9: { postings: "fldTbVTOFkYW8Qb5Y", ids: "fld0rJIJ4BytBFaTC", reversalIds: "fldA3dt8UXrE5tpPc" },
+  [LOAN_TABLE]: { reference: LOAN_LINK_FIELDS.reference },
+  [MANUAL_TABLE]: { reference: MANUAL_FIELDS.reference, posted: MANUAL_FIELDS.posted },
+  tblrnXm1HN9y6HPxY: { reference: "fldjKkpuYD0wdISuL" }, // Shipping Records
+  tblR61NG9i0giid28: { reference: "fldpPZv5Pj6cjqC2Z" }, // Payments
+  tbldQXuqNEp8G5pfs: { reference: "fld1j9TIbgYCLbBSX" }, // Invoices
+  tblV26TC0f6CKDneL: { reference: "fldk9ztOCDg1VIZx8" }, // Invoice Lines
+  tbl1LgiUYt7Gc492d: { reference: "fld95GSC4nPFhu1vp" }, // Prepay Expenses/Bad Debt
+  tblC0dbO5UMXzHma9: { reference: "fldpEeJxfQncYjD6j" }, // Depreciation Table
 } as const;
+export const REVERSE_FIELDS: Readonly<Record<string, {reverse: string; reverseDate: string}>> = {
+  [LOAN_TABLE]: {reverse: LOAN_LINK_FIELDS.reverse, reverseDate: LOAN_LINK_FIELDS.reverseDate},
+  [MANUAL_TABLE]: {reverse: MANUAL_FIELDS.cancelled, reverseDate: MANUAL_FIELDS.reverseDate},
+  tblrnXm1HN9y6HPxY: {reverse: "fld4Yt3NM58rdq8h7", reverseDate: "fldGuMWL4ZaEikHBW"},
+  tblR61NG9i0giid28: {reverse: "fldNtEQiswXd8mODj", reverseDate: "fldXItbQ15eokPT0P"},
+  tbldQXuqNEp8G5pfs: {reverse: "fldOZh1NZmJi9tqkb", reverseDate: "fld1SzFreZ84owLgq"},
+  tblV26TC0f6CKDneL: {reverse: "fldEN2QtqnbyNjjDW", reverseDate: "fld5t7Tr5qraHGWP8"},
+  tbl1LgiUYt7Gc492d: {reverse: "fldnTDkZ6w2HdA3g0", reverseDate: "fldqX6PQbMnOCbTWC"},
+  tblC0dbO5UMXzHma9: {reverse: "fld421jsytudCyW6u", reverseDate: "fldroh8valB06yEvQ"},
+};
+
+export const postedKey = (rule: string) => "main:" + rule;
+type LedgerReferenceEntry = {
+  id: string;
+  rule: string;
+  key: string;
+  date: string;
+  environment: "main" | "staging" | "develop";
+  kind: "journal" | "reversal";
+  reverses?: string;
+};
+
+export function serializeLedgerReferences(
+  rows: (LedgerReference & {reversal_id: string | null; reversal_date?: string | null; entry_date?: string})[],
+  current?: unknown,
+) {
+  const entries: LedgerReferenceEntry[] = [];
+  if (current != null && current !== "") {
+    if (typeof current !== "string") throw new Error("Invalid Ledger References.");
+    const saved = JSON.parse(current);
+    if (saved?.version !== 1 || !Array.isArray(saved.entries)) throw new Error("Invalid Ledger References.");
+    for (const entry of saved.entries) {
+      if (entry?.environment === "main") continue;
+      if ((entry?.environment !== "staging" && entry?.environment !== "develop")
+        || (entry.kind !== "journal" && entry.kind !== "reversal")
+        || !["id", "rule", "key", "date"].every(key => typeof entry[key] === "string")
+        || (entry.kind === "reversal" && typeof entry.reverses !== "string"))
+        throw new Error("Invalid Ledger References entry.");
+      entries.push({ id: entry.id, rule: entry.rule, key: entry.key, date: entry.date,
+        environment: entry.environment, kind: entry.kind,
+        ...(entry.kind === "reversal" ? { reverses: entry.reverses } : {}) });
+    }
+  }
+  for (const row of rows) {
+    entries.push({ id: row.id, rule: row.rule, key: row.key,
+      date: row.entry_date ?? row.datetime.slice(0, 10), environment: "main", kind: "journal" });
+    if (row.reversal_id) {
+      if (!row.reversal_date) throw new Error("Linked reversal is missing its accounting date.");
+      entries.push({ id: row.reversal_id, rule: row.rule, key: row.key,
+        date: row.reversal_date, environment: "main", kind: "reversal", reverses: row.id });
+    }
+  }
+  const postedKeys = entries.flatMap(entry => entry.kind === "journal" ? [entry.environment + ":" + entry.rule] : []);
+  return JSON.stringify({ version: 1, postedKeys: [...new Set(postedKeys)].sort(), entries });
+}
 export interface LedgerSource { tableId: string; recordId: string }
 export interface LedgerReference { rule: string; key: string; datetime: string; id: string }
 export interface LedgerLinks { postings: LedgerReference[]; journalEntryIds: string[]; reversalJournalEntryIds: string[] }
@@ -39,16 +96,20 @@ export function validateLinkSource(source: LedgerSource) {
   if (!Object.hasOwn(LINK_FIELDS, source.tableId) || !/^rec[A-Za-z0-9]{14}$/.test(source.recordId)) throw new Error("Unsupported Airtable ledger source.");
 }
 
-export async function readLedgerLinks(tx: TransactionSql, source: LedgerSource): Promise<LedgerLinks> {
-  const rows = await tx<(LedgerReference & { reversal_id: string | null })[]>`
+async function ledgerLinkRows(tx: TransactionSql, source: LedgerSource) {
+  const rows = await tx<(LedgerReference & { reversal_id: string | null; reversal_date: string | null; entry_date: string; posting_cycle: string | null })[]>`
     select o.rule_code as rule, o.source_entry_key as key, o.id::text,
-      to_char(o.posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as datetime,
-      r.id::text as reversal_id
-    from public.journal_entries o
-    left join public.journal_entries r on r.reverses_entry_id=o.id and r.status='posted'
+      to_char(coalesce(o.posted_at,o.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as datetime,
+      o.entry_date::text, r.id::text as reversal_id, r.entry_date::text as reversal_date, o.posting_cycle::text
+    from ledger_private.current_airtable_journals(${source.tableId},${source.recordId}) o
+    left join public.journal_entries r on r.reverses_entry_id=o.id and r.status in ('posted','pending')
     where o.source_system='airtable' and o.source_table=${source.tableId} and o.source_record_id=${source.recordId}
-      and o.status='posted' and o.reverses_entry_id is null
+      and o.status in ('posted','pending') and o.reverses_entry_id is null
     order by o.rule_code, o.source_entry_key, o.id`;
+  return rows;
+}
+
+function ledgerLinks(rows: Awaited<ReturnType<typeof ledgerLinkRows>>): LedgerLinks {
   return {
     postings: rows.map(({ rule, key, datetime, id }) => ({ rule, key, datetime, id })),
     journalEntryIds: rows.map(row => row.id),
@@ -56,8 +117,12 @@ export async function readLedgerLinks(tx: TransactionSql, source: LedgerSource):
   };
 }
 
+export async function readLedgerLinks(tx: TransactionSql, source: LedgerSource): Promise<LedgerLinks> {
+  return ledgerLinks(await ledgerLinkRows(tx, source));
+}
+
 // Verification and any compensating delete share the writer's source lock.
-export async function syncLedgerLinks(sql: Sql, source: LedgerSource, token: string, fetcher: typeof fetch = fetch, deadline = Date.now() + 90_000, newJournalIds: string[] = []): Promise<LedgerLinks> {
+export async function syncLedgerLinks(sql: Sql, source: LedgerSource, token: string, fetcher: typeof fetch = fetch, deadline = Date.now() + 90_000, newJournalIds: string[] = [], repostId?: string, clearEmpty = false): Promise<LedgerLinks> {
   validateLinkSource(source);
   const fields = LINK_FIELDS[source.tableId as keyof typeof LINK_FIELDS];
   if (!token) throw new LedgerWritebackError();
@@ -67,18 +132,33 @@ export async function syncLedgerLinks(sql: Sql, source: LedgerSource, token: str
     await tx`set local role service_role`;
     await tx`set local statement_timeout='15s'`;
     await lockLedgerSource(tx, source);
-    const links = await readLedgerLinks(tx, source);
-    if (!links.journalEntryIds.length) return { links, rolledBack: false };
+    const rows = await ledgerLinkRows(tx, source);
+    const links = ledgerLinks(rows);
+    const repostRows = repostId ? rows.filter(row => row.posting_cycle === repostId) : [];
+    if (repostId && (!repostRows.length || repostRows.some(row => row.reversal_id))) throw new LedgerWritebackError();
+    const [cancellation] = repostId ? await tx<{older: boolean}[]>`select c.created_at <= (
+      select min(e.posted_at) from ledger_private.current_airtable_journals(${source.tableId},${source.recordId}) e
+      where e.posting_cycle=${repostId}::uuid
+    ) as older from ledger_private.ledger_source_cancellations c
+    where c.source_table=${source.tableId} and c.source_record_id=${source.recordId}` : [];
+    const resetReversal = cancellation?.older === true;
+    const { reference } = fields;
+    const reverse = REVERSE_FIELDS[source.tableId];
+    if (!links.journalEntryIds.length && !clearEmpty) return { links, rolledBack: false };
+    const priorReference = await readLinkFields(source, [reference], token, fetcher, deadline);
+    if (!priorReference) throw new LedgerWritebackError("unconfirmed", { operation: "GET", status: 200, attempt: 1, reason: "invalid_response" });
     const values = {
-      [fields.postings]: JSON.stringify(links.postings),
-      [fields.ids]: JSON.stringify(links.journalEntryIds),
-      [fields.reversalIds]: JSON.stringify(links.reversalJournalEntryIds),
-      ...("posted" in fields ? { [fields.posted]: true } : {}),
+      [reference]: serializeLedgerReferences(rows, priorReference[reference]),
+      ...("posted" in fields ? { [fields.posted]: links.journalEntryIds.length > 0 } : {}),
+      ...(resetReversal ? { [reverse.reverse]: false, [reverse.reverseDate]: null } : {}),
     };
     const verification = await writeAndRead(source, values, token, fetcher, deadline);
     const saved = verification.fields;
     failure = verification.failure;
-    if (Object.entries(values).every(([id, value]) => saved[id] === value)) return { links, rolledBack: false };
+    if (fieldsMatch(values, saved)) {
+      if (resetReversal) await tx`select ledger_private.finish_airtable_repost(${source.tableId},${source.recordId},${repostId ?? null}::uuid)`;
+      return { links, rolledBack: false };
+    }
     // Never delete prior journals or IDs which Airtable may already reference, even in a partial save.
     if (!newJournalIds.length || ("posted" in fields && saved[fields.posted] === true) || newJournalIds.some(id => Object.values(saved).some(value => String(value).includes(id)))) throw new LedgerWritebackError("unconfirmed", failure);
     const deleted = await tx`delete from public.journal_entries
@@ -103,11 +183,26 @@ export async function syncLedgerLinks(sql: Sql, source: LedgerSource, token: str
   return result.links;
 }
 
-async function writeAndRead(source: LedgerSource, values: Record<string, string | boolean>, token: string, fetcher: typeof fetch, deadline: number): Promise<{ fields: Record<string, unknown>; failure?: WritebackFailure }> {
+function fieldsMatch(values: Record<string, string | boolean | null>, actual: Record<string, unknown>) {
+  return Object.entries(values).every(([id, value]) =>
+    value === null || value === false ? (actual[id] ?? value) === value : actual[id] === value);
+}
+
+async function readLinkFields(source: LedgerSource, fields: string[], token: string, fetcher: typeof fetch, deadline: number) {
+  const url = `https://api.airtable.com/v0/${FIN_BASE}/${source.tableId}`;
+  const params = new URLSearchParams({ filterByFormula: `RECORD_ID()=${JSON.stringify(source.recordId)}`, returnFieldsByFieldId: "true", maxRecords: "1" });
+  fields.forEach(id => params.append("fields[]", id));
+  const saved = await request(`${url}?${params}`, { headers: { Authorization: "Bearer " + token } }, fetcher, deadline);
+  const invalid = () => new LedgerWritebackError("unconfirmed", { operation: "GET", status: 200, attempt: 1, reason: "invalid_response" });
+  if (!Array.isArray(saved.records)) throw invalid();
+  const record = saved.records.find((row: { id: string }) => row.id === source.recordId);
+  if (record && (!record.fields || typeof record.fields !== "object" || Array.isArray(record.fields))) throw invalid();
+  return record?.fields as Record<string, unknown> | undefined;
+}
+
+async function writeAndRead(source: LedgerSource, values: Record<string, string | boolean | null>, token: string, fetcher: typeof fetch, deadline: number): Promise<{ fields: Record<string, unknown>; failure?: WritebackFailure }> {
   const url = `https://api.airtable.com/v0/${FIN_BASE}/${source.tableId}`;
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  const params = new URLSearchParams({ filterByFormula: `RECORD_ID()=${JSON.stringify(source.recordId)}`, returnFieldsByFieldId: "true", maxRecords: "1" });
-  Object.keys(values).forEach(id => params.append("fields[]", id));
   let snapshot: { fields: Record<string, unknown>; failure?: WritebackFailure } = { fields: {} };
   for (let attempt = 0; ; attempt++) {
     // Reserve a complete PATCH and verification GET before another write.
@@ -126,12 +221,8 @@ async function writeAndRead(source: LedgerSource, values: Record<string, string 
       }
     }
     // A lost PATCH response may already have saved; verify before retrying the same snapshot.
-    const saved = await request(`${url}?${params}`, { headers }, fetcher, deadline);
-    if (!Array.isArray(saved.records)) throw new LedgerWritebackError("unconfirmed", { operation: "GET", status: 200, attempt: attempt + 1, reason: "invalid_response" });
-    const record = saved.records.find((row: { id: string }) => row.id === source.recordId);
-    if (record && (!record.fields || typeof record.fields !== "object" || Array.isArray(record.fields))) throw new LedgerWritebackError("unconfirmed", { operation: "GET", status: 200, attempt: attempt + 1, reason: "invalid_response" });
-    const fields = record?.fields ?? {};
-    if (Object.entries(values).every(([id, value]) => fields[id] === value)) return { fields };
+    const fields = await readLinkFields(source, Object.keys(values), token, fetcher, deadline) ?? {};
+    if (fieldsMatch(values, fields)) return { fields };
     snapshot = { fields, failure: failure ?? { operation: "GET", status: 200, attempt: attempt + 1, reason: "mismatch" } };
     if (attempt >= 2 || !failure || (failure.reason !== "network" && failure.reason !== "timeout" && failure.status !== 429 && (failure.status === null || failure.status < 500))) return snapshot;
     const delay = failure.status === 429 ? 0 : 500 * 2 ** attempt;

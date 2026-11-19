@@ -3,6 +3,7 @@ import { test, after } from "node:test";
 import postgres from "postgres";
 import { postPayment } from "../functions/ledger-payment/ledger.ts";
 import { reverseJournals } from "../functions/ledger-reversal/reversal.ts";
+import { holdForReview } from "../functions/_shared/period-review.ts";
 import {
   changePeriod,
   reviewRequest,
@@ -37,22 +38,39 @@ const event = (n, date = "2097-05-15") => ({
 const month = "2097-05-01";
 await sql`insert into public.accounting_periods(period_month,status) values (${month},'closed') on conflict(period_month) do update set status='closed'`;
 
-test("closed-period requests persist without journals; reopening and exact retries do not approve them", async () => {
+test("closed-period journals are visible in the ledger but excluded from reports until approved on the same ID", async () => {
   const e = event(9701);
   const a = await postPayment(sql, e);
   assert.equal(a.status, "pending_review");
+  e.categories[0].display = { vendorNames: ["Vendor now available"] };
   const b = await postPayment(sql, e);
   assert.equal(a.requestId, b.requestId);
-  assert.equal(
-    (
-      await sql`select * from public.journal_entries where source_record_id=${e.paymentRecordId}`
-    ).length,
-    0,
-  );
+  assert.deepEqual(a.journalEntryIds, b.journalEntryIds);
+  assert.equal(a.journalEntryIds.length, 1);
+  const check = async (status) => {
+    const [header] = await sql`select status from public.journal_entries where id=${a.journalEntryIds[0]}::uuid`;
+    assert.equal(header.status, status);
+    const ledger = await sql`select entry_id,status from public.filter_ledger('2097-05-15','2097-05-15',p_include_pending=>true)`;
+    assert.equal(ledger.length, 2);
+    assert(ledger.every(row => row.entry_id === a.journalEntryIds[0] && row.status === status));
+    const [counts] = await sql`select
+      public.count_ledger('2097-05-15','2097-05-15',p_include_pending=>true) as inclusive,
+      public.count_ledger('2097-05-15','2097-05-15',p_query=>'Period test',p_include_pending=>true) as searched,
+      public.count_ledger('2097-05-15','2097-05-15') as report`;
+    assert.equal(Number(counts.inclusive), 2);
+    assert.equal(Number(counts.searched), 2);
+    assert.equal(Number(counts.report), status === "posted" ? 2 : 0);
+    const [total] = await sql`select total_debit from public.get_trial_balance('2097-05-15','2097-05-15') where account_number='211.100'`;
+    assert.equal(Number(total.total_debit), status === "posted" ? 12.34 : 0);
+    const [batch] = await sql`select accounts from public.get_trial_balances(array['2097-05-15'::date],array['2097-05-15'::date])`;
+    assert.equal(Number(batch.accounts.find(account => account.account_number === "211.100").total_debit), Number(total.total_debit));
+  };
+  await check("pending");
   await changePeriod(sql, manager, "open", month, "Review late entries");
   const c = await postPayment(sql, e);
   assert.equal(c.status, "pending_review");
   assert.equal(c.requestId, a.requestId);
+  await check("pending");
   const approved = await reviewRequest(
     sql,
     manager,
@@ -60,7 +78,8 @@ test("closed-period requests persist without journals; reopening and exact retri
     "approve",
     "Reviewed source and accounts",
   );
-  assert.equal(approved.journalEntryIds.length, 1);
+  assert.deepEqual(approved.journalEntryIds, a.journalEntryIds);
+  await check("posted");
   const retry = await reviewRequest(
     sql,
     manager,
@@ -143,6 +162,17 @@ test("changed packets need fresh review and supersede old pending packets", asyn
   );
 });
 
+test("independent rules on one closed-period source remain independently approvable", async () => {
+  const e = event(9714);
+  const options = { allowAdditionalCategories: true };
+  const a = await postPayment(sql, e, options);
+  const b = await postPayment(sql, {...e, categories: [{...e.categories[0], ruleCode: "PAY-08"}]}, options);
+  const [first, second] = await Promise.all([a, b].map(held =>
+    reviewRequest(sql, manager, held.requestId, "approve", "Reviewed independently")));
+  assert.deepEqual(first.journalEntryIds, a.journalEntryIds);
+  assert.deepEqual(second.journalEntryIds, b.journalEntryIds);
+});
+
 test("closed-period reversal waits for review, posts once and preserves original targets", async () => {
   const e = event(9706, "2097-06-15");
   await changePeriod(sql, manager, "open", "2097-06-01", "Open June");
@@ -154,13 +184,10 @@ test("closed-period reversal waits for review, posts once and preserves original
   };
   const held = await reverseJournals(sql, req);
   assert.equal(held.status, "pending_review");
-  await reviewRequest(
-    sql,
-    manager,
-    held.requestId,
-    "approve",
-    "Reversal exception reviewed",
-  );
+  const [pending] = await sql`select status from public.journal_entries where id=${held.reversalJournalEntryIds[0]}::uuid`;
+  assert.equal(pending.status, "pending");
+  const approved = await reviewRequest(sql, manager, held.requestId, "approve", "Reversal exception reviewed");
+  assert.deepEqual(approved.journalEntryIds, held.reversalJournalEntryIds);
   const retry = await reverseJournals(sql, req);
   assert.equal(retry.reversedCount, 0);
   assert.equal(retry.duplicateCount, 1);
@@ -220,9 +247,9 @@ test("approval rollback cannot leak a closed-period bypass or an approved status
   assert.equal(request.status, "pending");
   assert.equal(
     (
-      await sql`select id from public.journal_entries where posting_request_id=${r.requestId}`
+      await sql`select id from public.journal_entries where posting_request_id=${r.requestId} and status='pending'`
     ).length,
-    0,
+    1,
   );
 });
 
@@ -291,11 +318,68 @@ test("direct/manual posting cannot bypass a pending review after reopening",asyn
  const e=event(9713,"2197-08-15");const held=await postPayment(sql,e);
  await changePeriod(sql,manager,"open","2197-08-01","Review pending entry");
  await assert.rejects(()=>sql.begin(async tx=>{
-   const [entry]=await tx`insert into public.journal_entries(entry_date,source_system,source_table,source_record_id,source_event_type,rule_code,description)
-     values ('2197-08-15','airtable','tblR61NG9i0giid28',${e.paymentRecordId},'sent','PAY-09','Manual bypass attempt') returning id`;
+   const [entry]=await tx`insert into public.journal_entries(entry_date,source_system,source_table,source_record_id,source_event_type,rule_code,description,source_entry_key)
+     values ('2197-08-15','airtable','tblR61NG9i0giid28',${e.paymentRecordId},'sent','PAY-09','Manual bypass attempt','different key') returning id`;
    await tx`insert into public.journal_lines(entry_id,line_no,account_code,debit,credit) values (${entry.id},1,'211.100',12.34,0),(${entry.id},2,'112.100',0,12.34)`;
    await tx`update public.journal_entries set status='posted' where id=${entry.id}`;
  }),/explicit review/);
  await reviewRequest(sql,manager,held.requestId,"approve","Approved through review service");
 });
 after(() => sql.end({ timeout: 2 }));
+
+test("moving a pending posting preserves its journal and source date, records both dates, and permits replay", async () => {
+  const source = event(9790, "2197-09-12");
+  source.sourceDate = "2197-09-10";
+  await changePeriod(sql, manager, "close", "2197-09-01", "Close original");
+  await changePeriod(sql, manager, "open", "2197-10-01", "Open destination");
+  const held = await postPayment(sql, source);
+  assert.equal(held.status, "pending_review");
+  await assert.rejects(() => reviewRequest(sql, manager, held.requestId, "approve", "Same month", "2197-09-19"), /different open month/);
+  await assert.rejects(() => reviewRequest(sql, manager, held.requestId, "approve", "Unknown month", "2297-02-01"), /destination month must be open/);
+  const approved = await reviewRequest(sql, manager, held.requestId, "approve", "Move to open month", "2197-10-05");
+  assert.deepEqual(approved.journalEntryIds, held.journalEntryIds);
+  assert.equal(approved.postingDate, "2197-10-05");
+  const [saved] = await sql`select e.entry_date::text,e.source_date::text,r.accounting_date::text,r.approved_entry_date::text
+    from public.journal_entries e join public.ledger_posting_requests r on e.posting_request_id=r.id
+    where e.id=${held.journalEntryIds[0]}::uuid and e.status='posted'`;
+  assert.deepEqual(saved, {entry_date:"2197-10-05",source_date:"2197-09-10",accounting_date:"2197-09-12",approved_entry_date:"2197-10-05"});
+  const [history] = await sql`select details from public.ledger_period_history where request_id=${held.requestId}::uuid and action='request_approved'`;
+  assert.equal(history.details.originalAccountingDate, "2197-09-12");
+  assert.equal(history.details.postingDate, "2197-10-05");
+  const [counts] = await sql`select public.count_ledger('2197-09-12','2197-09-12')::int as original,
+    public.count_ledger('2197-10-05','2197-10-05')::int as destination`;
+  assert.deepEqual(counts,{original:0,destination:2});
+  assert.equal((await postPayment(sql, source)).duplicateCount, 1);
+  assert.equal((await reviewRequest(sql, manager, held.requestId, "approve", "Retry", "2197-10-05")).duplicate, true);
+  await assert.rejects(() => reviewRequest(sql, manager, held.requestId, "approve", "Different retry", "2197-10-06"), /already posted on a different date/);
+});
+
+test("moving a pending reversal preserves its journal and deduplicates a retry from Airtable", async () => {
+  const e = event(9791, "2197-10-09");
+  await postPayment(sql, e);
+  const request = {
+    source: {tableId:"tblR61NG9i0giid28",recordId:e.paymentRecordId},
+    reversalDate:"2197-09-22",
+  };
+  const held = await reverseJournals(sql, request);
+  assert.equal(held.status, "pending_review");
+  const approved = await reviewRequest(sql, manager, held.requestId, "approve", "Move reversal", "2197-10-12");
+  assert.deepEqual(approved.journalEntryIds, held.reversalJournalEntryIds);
+  const retry = await reverseJournals(sql, request);
+  assert.equal(retry.duplicateCount, 1);
+  assert.deepEqual(retry.reversalJournalEntryIds, approved.journalEntryIds);
+});
+
+
+test("a legacy pending request without saved journals can post on an open date", async () => {
+  const e = event(9792, "2197-09-18");
+  const held = await sql.begin(tx => holdForReview(tx, {
+    kind: "posting", source: {tableId:"tblR61NG9i0giid28",recordId:e.paymentRecordId},
+    eventType: e.eventType, date: e.entryDate, payload: e,
+  }));
+  assert.deepEqual(held.journalIds, []);
+  const approved = await reviewRequest(sql, manager, held.requestId, "approve", "Legacy review", "2197-10-15");
+  const [row] = await sql`select entry_date::text,source_date::text from public.journal_entries where id=${approved.journalEntryIds[0]}::uuid`;
+  assert.deepEqual(row,{entry_date:"2197-10-15",source_date:"2197-09-18"});
+  assert.equal((await postPayment(sql, e)).duplicateCount, 1);
+});

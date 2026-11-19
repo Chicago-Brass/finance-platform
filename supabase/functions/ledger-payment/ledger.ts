@@ -2,7 +2,8 @@
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { PostingError } from "./errors.ts";
 export { PostingError } from "./errors.ts";
-import { holdForReview, lockLedgerSource } from "../_shared/period-review.ts";
+import { holdForReview, lockLedgerSource, recordPendingJournals } from "../_shared/period-review.ts";
+import { LOAN_TABLE } from "../_shared/loan-record.ts";
 import { MANUAL_TABLE } from "../_shared/manual-journal.ts";
 
 interface AccountReference { recordId?: string; number?: string }
@@ -35,6 +36,12 @@ export interface LedgerPosting {
   branch?: string | string[];
   [key: string]: unknown;
 }
+interface JournalDisplayFields {
+  clientNames?: string[];
+  vendorNames?: string[];
+  referenceNumber?: string;
+}
+
 export interface LedgerPaymentEvent {
   paymentRecordId?: string;
   invoiceRecordId?: string;
@@ -42,16 +49,19 @@ export interface LedgerPaymentEvent {
   depreciationRecordId?: string;
   prepayLogRecordId?: string;
   shippingRecordId?: string;
+  depositInvoiceAmountCents?: number;
   manualJournalRecordId?: string;
+  loanRecordId?: string;
   source?: LedgerSource;
   eventType: "sent" | "cancelled" | "returned" | "reconciled" | "created" | "entry_requested" | "paid";
   entryDate: string;
   sourceDate?: string;
+  repostId?: string;
   paymentName?: string;
   referenceNumber?: string;
   paymentAmount?: string | null;
   paymentAccount?: AccountReference | null;
-  categories: { ruleCode: string; entryKey?: string; transactionType: string; postings: LedgerPosting[]; notes?: string }[];
+  categories: { ruleCode: string; entryKey?: string; transactionType: string; postings: LedgerPosting[]; notes?: string; display?: JournalDisplayFields }[];
   [key: string]: unknown;
 }
 export interface PostingResult {
@@ -63,6 +73,7 @@ export interface PostingResult {
   depreciationRecordId?: string;
   prepayLogRecordId?: string;
   shippingRecordId?: string;
+  loanRecordId?: string;
   eventType: string;
   results: { ruleCode: string; entryKey?: string; status: "posted" | "duplicate" | "noop"; journalEntryId?: string; reason?: string }[];
   journalEntryIds: string[];
@@ -77,6 +88,7 @@ interface Catalog { accounts: Map<string, Account>; sourceAccounts: Map<string, 
 interface JournalHeader {
   id?: string;
   entry_date: string;
+  requested_entry_date?: string;
   source_date?: string;
   posting_request_id?: string | null;
   rule_code: string | null;
@@ -89,7 +101,12 @@ interface JournalHeader {
   source_table: string;
   source_record_id: string;
   source_entry_key: string;
+  posting_cycle?: string | null;
   external_ref: string | null;
+  source_record_name?: string | null;
+  client_names?: string[] | null;
+  vendor_names?: string[] | null;
+  reference_number?: string | null;
   status?: string;
   reverses_entry_id?: string | null;
 }
@@ -125,7 +142,10 @@ const LINE_COLUMNS = ["entry_id", "line_no", "account_code", "offset_account_cod
 // ==================== SERVICE ====================
 
 /** Airtable owns category decisions and final account pairs. This transaction stores its complete event. */
-export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: { allowAdditionalCategories?: boolean; transaction?: TransactionSql; approvalRequestId?: string } = {}): Promise<PostingResult> {
+export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: { allowAdditionalCategories?: boolean; transaction?: TransactionSql; approvalRequestId?: string; approvalEntryDate?: string } = {}): Promise<PostingResult> {
+  if (event.repostId !== undefined && (typeof event.repostId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(event.repostId)
+      || !Array.isArray(event.categories) || !event.categories.length || new Set(event.categories.map(c => c?.ruleCode)).size !== 1))
+    throw new PostingError("A repost requires one rule and a UUID.");
   const paymentId = optionalText(event.paymentRecordId);
   const invoiceId = optionalText(event.invoiceRecordId);
   const invoiceLineId = optionalText(event.invoiceLineRecordId);
@@ -133,10 +153,12 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
   const prepayLogId = optionalText(event.prepayLogRecordId);
   const shippingId = optionalText(event.shippingRecordId);
   const manualId = optionalText(event.manualJournalRecordId);
+  const loanId = optionalText(event.loanRecordId);
+  if (loanId && !/^rec[A-Za-z0-9]{14}$/.test(loanId)) throw new PostingError("loanRecordId must be a FIN Airtable record ID.");
   if (manualId && !/^rec[A-Za-z0-9]{14}$/.test(manualId)) throw new PostingError("manualJournalRecordId must be a FIN Airtable record ID.");
   if (shippingId && !/^rec[A-Za-z0-9]{14}$/.test(shippingId)) throw new PostingError("shippingRecordId must be a FIN Airtable record ID.");
-  if ([invoiceLineId, depreciationId, prepayLogId, shippingId, manualId].filter(Boolean).length > 1) throw new PostingError("A record event must identify only one source record type.");
-  const recordTable = manualId ? MANUAL_TABLE : invoiceLineId ? INVOICE_LINE_TABLE : depreciationId ? DEPRECIATION_TABLE : prepayLogId ? PREPAY_TABLE : shippingId ? SHIPPING_TABLE : null;
+  if ([invoiceLineId, depreciationId, prepayLogId, shippingId, manualId, loanId].filter(Boolean).length > 1) throw new PostingError("A record event must identify only one source record type.");
+  const recordTable = loanId ? LOAN_TABLE : manualId ? MANUAL_TABLE : invoiceLineId ? INVOICE_LINE_TABLE : depreciationId ? DEPRECIATION_TABLE : prepayLogId ? PREPAY_TABLE : shippingId ? SHIPPING_TABLE : null;
   const invoiceEvent = !recordTable && ["created", "entry_requested", "paid"].includes(event.eventType);
   if (manualId) {
     if (event.eventType !== "entry_requested" || paymentId || invoiceId) throw new PostingError("A manual journal requires eventType entry_requested and its own source identity.");
@@ -145,7 +167,7 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
     if (!/^rec[A-Za-z0-9]{14}$/.test(invoiceLineId)) throw new PostingError("invoiceLineRecordId must be a FIN Airtable record ID.");
     if (event.eventType !== "entry_requested" || paymentId || invoiceId) throw new PostingError("An invoice-line event requires eventType entry_requested and must not supply paymentRecordId or invoiceRecordId; put the parent invoice on posting references.");
   } else if (recordTable) {
-    if (event.eventType !== "created" || paymentId || invoiceId) throw new PostingError("A depreciation, prepay-log or shipping-record event requires eventType created and must not supply paymentRecordId or invoiceRecordId.");
+    if (event.eventType !== "created" || paymentId || invoiceId) throw new PostingError("A loan, depreciation, prepay-log or shipping-record event requires eventType created and must not supply paymentRecordId or invoiceRecordId.");
   } else if (invoiceEvent) {
     if (!invoiceId) throw new PostingError("invoiceRecordId is required for an invoice event.");
     if (paymentId) throw new PostingError("An invoice event must not supply paymentRecordId.");
@@ -158,9 +180,14 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
   if (!["sent", "cancelled", "returned", "reconciled", "created", "entry_requested", "paid"].includes(event.eventType)) throw new PostingError("Unsupported ledger event type.");
   if (!Array.isArray(event.categories)) throw new PostingError("categories must be an array.");
   if (!manualId && event.categories.some(category => category?.ruleCode === "MAN-01")) throw new PostingError("MAN-01 requires a manual journal source.");
-  const triggerId = manualId ?? invoiceLineId ?? depreciationId ?? prepayLogId ?? shippingId ?? (invoiceEvent ? invoiceId! : paymentId!);
+  const loanFunding = (code: string) => code === "PAY-31" || code === "PAY-33";
+  if (loanId && (event.categories.length !== 1 || !loanFunding(event.categories[0]?.ruleCode)))
+    throw new PostingError("A loan record requires one loan funding category.");
+  if (event.categories.some(category => (loanFunding(category?.ruleCode) && !loanId) || (category?.ruleCode === "PAY-16" && !invoiceLineId)))
+    throw new PostingError("Loan categories require the matching loan or invoice-line source.");
+  const triggerId = loanId ?? manualId ?? invoiceLineId ?? depreciationId ?? prepayLogId ?? shippingId ?? (invoiceEvent ? invoiceId! : paymentId!);
   const source = resolveSource(event, triggerId, invoiceEvent, recordTable);
-  const auditLink = `${FIN_URL}/${recordTable ?? (invoiceEvent ? INVOICE_TABLE : PAYMENT_TABLE)}/${triggerId}`;
+  const auditLink = `${FIN_URL}/${source.tableId}/${source.recordId}`;
 
   const execute = async (tx: TransactionSql): Promise<PostingResult> => {
     await tx`set local role service_role`;
@@ -174,13 +201,14 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
       rules: new Map(rules.map((rule) => [rule.rule_code, rule])),
     };
     // Historical reversal links remain read-only replay guards; new events only insert supplied pairs.
-    const headers = await tx<JournalHeader[]>`select e.id::text, e.entry_date::text, e.source_date::text, e.rule_code, e.transaction_type, e.source_event_type,
+    const headers = await tx<JournalHeader[]>`select e.id::text, e.entry_date::text, r.accounting_date::text as requested_entry_date, e.source_date::text, e.rule_code, e.transaction_type, e.source_event_type,
       e.description, e.notes, e.audit_link, e.status, e.reverses_entry_id::text,
-      e.source_system, e.source_table, e.source_record_id, e.source_entry_key, e.external_ref
-      from public.journal_entries e where
+      e.source_system, e.source_table, e.source_record_id, e.source_entry_key, e.posting_cycle::text, e.external_ref
+      from public.journal_entries e left join public.ledger_posting_requests r on r.id=e.posting_request_id where
       (e.source_system='airtable' and e.source_table=${source.tableId} and e.source_record_id=${source.recordId})
       or e.reverses_entry_id in (select o.id from public.journal_entries o where
-        o.source_system='airtable' and o.source_table=${source.tableId} and o.source_record_id=${source.recordId} and o.reverses_entry_id is null)`;
+        o.source_system='airtable' and o.source_table=${source.tableId} and o.source_record_id=${source.recordId} and o.reverses_entry_id is null)
+      order by e.entry_number desc`;
     const seen = new Set<string>();
     for (const category of event.categories) {
       const ruleCode = optionalText(category?.ruleCode);
@@ -193,8 +221,22 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
       if (!Array.isArray(category.postings)) throw new PostingError("postings must be an array.");
       seen.add(identity);
     }
-    const result: PostingResult = { ...(invoiceLineId ? { invoiceLineRecordId: invoiceLineId } : depreciationId ? { depreciationRecordId: depreciationId } : prepayLogId ? { prepayLogRecordId: prepayLogId } : shippingId ? { shippingRecordId: shippingId } : invoiceEvent ? { invoiceRecordId: invoiceId! } : { paymentRecordId: paymentId! }), eventType: event.eventType, results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
-    const originals = headers.filter((header) => !header.reverses_entry_id && header.source_system === "airtable" && header.source_table === source.tableId && header.source_record_id === source.recordId);
+    const result: PostingResult = { ...(loanId ? {loanRecordId:loanId} : invoiceLineId ? { invoiceLineRecordId: invoiceLineId } : depreciationId ? { depreciationRecordId: depreciationId } : prepayLogId ? { prepayLogRecordId: prepayLogId } : shippingId ? { shippingRecordId: shippingId } : invoiceEvent ? { invoiceRecordId: invoiceId! } : { paymentRecordId: paymentId! }), eventType: event.eventType, results: [], journalEntryIds: [], postedCount: 0, duplicateCount: 0 };
+    const history = headers.filter(header => header.status !== "pending" && header.status !== "rejected" && !header.reverses_entry_id && header.source_system === "airtable" && header.source_table === source.tableId && header.source_record_id === source.recordId);
+    if (loanId && !event.repostId && history.some(entry => entry.rule_code !== event.categories[0].ruleCode))
+      throw new PostingError("This loan already has a funding journal under a different setup.", "23505");
+    const postedReversal = (entry: JournalHeader) => headers.some(reversal => reversal.reverses_entry_id === entry.id && reversal.status === "posted");
+    const cycles = new Map<string | null, string | null>();
+    for (const header of history) if (!cycles.has(header.rule_code)) cycles.set(header.rule_code, header.posting_cycle ?? null);
+    const current = history.filter(header => (header.posting_cycle ?? null) === cycles.get(header.rule_code));
+    if (event.repostId) {
+      const prior = current.filter(header => header.rule_code === event.categories[0].ruleCode);
+      const retry = prior.length > 0 && prior.every(header => header.posting_cycle === event.repostId);
+      if (!retry && (!prior.length || prior.some(header => header.status !== "posted" || !postedReversal(header)) ||
+          history.some(header => header.posting_cycle === event.repostId)))
+        throw new PostingError("Repost requires the current journals for this rule to be fully reversed.", "23505");
+    }
+    const originals = event.repostId ? current.filter(header => header.posting_cycle === event.repostId) : current;
     if (originals.some((header) => !header.source_event_type)) throw new PostingError("Existing source journals lack lifecycle metadata; review them before replaying this event.", "23505");
     const priorRules = originals.filter((header) => header.source_event_type === event.eventType).map((header) => JSON.stringify([header.rule_code, header.source_entry_key])).sort();
     const plans: { header: JournalHeader; lines: JournalLine[] }[] = [];
@@ -213,11 +255,15 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
       }
       currentRules.push(JSON.stringify([ruleCode, entryKey]));
       const header: JournalHeader = {
-        entry_date: event.entryDate, source_date: event.sourceDate ?? event.entryDate, posting_request_id: options.approvalRequestId ?? null, rule_code: ruleCode, transaction_type: category.transactionType, source_event_type: event.eventType,
+        entry_date: options.approvalEntryDate ?? event.entryDate, source_date: event.sourceDate ?? event.entryDate, posting_request_id: options.approvalRequestId ?? null, rule_code: ruleCode, transaction_type: category.transactionType, source_event_type: event.eventType,
         description: category.transactionType + (source.recordName ? " - " + source.recordName : "") + (source.tableId === INVOICE_TABLE && paymentId ? ` - Trigger payment ${paymentId}` : ""),
         notes: optionalText(category.notes), audit_link: auditLink,
-        source_system: "airtable", source_table: source.tableId, source_record_id: source.recordId, source_entry_key: entryKey,
+        source_system: "airtable", source_table: source.tableId, source_record_id: source.recordId, source_entry_key: entryKey, posting_cycle: event.repostId ?? existing?.posting_cycle ?? null,
         external_ref: source.tableId === INVOICE_TABLE ? source.recordId : optionalText(event.referenceNumber),
+        source_record_name: source.recordName === source.recordId ? null : displayText(source.recordName),
+        client_names: displayNames(category.display?.clientNames),
+        vendor_names: displayNames(category.display?.vendorNames),
+        reference_number: displayText(category.display?.referenceNumber ?? (source.tableId === PAYMENT_TABLE ? event.referenceNumber : null)),
       };
       if (existing) {
         if (existing.status !== "posted" || headers.some((reversal) => reversal.reverses_entry_id === existing.id && reversal.status === "posted")) {
@@ -237,21 +283,36 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
       const keys = event.categories.filter(category => category.ruleCode === ruleCode).map(category => category.entryKey || "");
       if (keys.includes("") && keys.some(Boolean)) throw new PostingError("A category cannot mix whole-category and keyed entries.");
     }
-    if (!options.allowAdditionalCategories && priorRules.length && JSON.stringify(priorRules) !== JSON.stringify(currentRules.sort())) {
+    if ((!options.allowAdditionalCategories || event.repostId) && priorRules.length && JSON.stringify(priorRules) !== JSON.stringify(currentRules.sort())) {
       throw new PostingError("Source event already exists with different categories; review the changed event.", "23505");
     }
+    let reviewRequestId: string | undefined;
     if (plans.length) {
       const [cancelled] = await tx`select 1 from ledger_private.ledger_source_cancellations
         where source_table=${source.tableId} and source_record_id=${source.recordId}`;
-      if (cancelled) throw new PostingError("Source was cancelled or historically reversed; restoring it is not implemented.", "23505");
+      if (cancelled && !event.repostId) throw new PostingError("Source was cancelled or historically reversed; restoring it is not implemented.", "23505");
       const held = await holdForReview(tx,{kind:"posting",source,eventType:event.eventType,date:event.entryDate,payload:event,allowAdditionalCategories:options.allowAdditionalCategories},options.approvalRequestId);
-      if (held) return {...result,...held};
+      if (held) {
+        if (held.status === "rejected" || held.journalIds.length)
+          return {...result, status: held.status, requestId: held.requestId,
+            journalEntryIds: held.status === "pending_review" ? [...result.journalEntryIds, ...held.journalIds] : []};
+        reviewRequestId = held.requestId;
+      }
     }
+    const pendingIds: string[] = [];
     for (const plan of plans) {
-      const id = await createEntry(tx, plan.header, plan.lines);
-      result.results.push({ ruleCode: plan.header.rule_code!, ...(plan.header.source_entry_key ? { entryKey: plan.header.source_entry_key } : {}), status: "posted", journalEntryId: id });
+      const id = await createEntry(tx, {...plan.header, posting_request_id: reviewRequestId ?? plan.header.posting_request_id}, plan.lines, reviewRequestId ? "pending" : "posted");
       result.journalEntryIds.push(id);
+      if (reviewRequestId) {
+        pendingIds.push(id);
+        continue;
+      }
+      result.results.push({ ruleCode: plan.header.rule_code!, ...(plan.header.source_entry_key ? { entryKey: plan.header.source_entry_key } : {}), status: "posted", journalEntryId: id });
       result.postedCount++;
+    }
+    if (reviewRequestId) {
+      await recordPendingJournals(tx, reviewRequestId, pendingIds);
+      return {...result, status: "pending_review", requestId: reviewRequestId};
     }
     return result;
   };
@@ -304,15 +365,16 @@ function resolveAccount(catalog: Catalog, reference: AccountReference | null | u
 
 // ==================== DATABASE ====================
 
-async function createEntry(tx: TransactionSql, header: JournalHeader, lines: JournalLine[]): Promise<string> {
+async function createEntry(tx: TransactionSql, header: JournalHeader, lines: JournalLine[], status: "posted" | "pending"): Promise<string> {
   const [created] = await tx<{ id: string }[]>`insert into public.journal_entries
-    (entry_date, source_date, posting_request_id, rule_code, transaction_type, source_event_type, description, notes, audit_link, source_system, source_table, source_record_id, source_entry_key, external_ref)
+    (entry_date, source_date, posting_request_id, rule_code, transaction_type, source_event_type, description, notes, audit_link, source_system, source_table, source_record_id, source_entry_key, posting_cycle, external_ref, source_record_name, client_names, vendor_names, reference_number)
     values (${header.entry_date}::date, ${header.source_date ?? header.entry_date}::date, ${header.posting_request_id ?? null}::uuid, ${header.rule_code}, ${header.transaction_type}, ${header.source_event_type}, ${header.description}, ${header.notes}, ${header.audit_link},
-      ${header.source_system}, ${header.source_table}, ${header.source_record_id}, ${header.source_entry_key}, ${header.external_ref})
+      ${header.source_system}, ${header.source_table}, ${header.source_record_id}, ${header.source_entry_key}, ${header.posting_cycle ?? null}::uuid, ${header.external_ref},
+      ${header.source_record_name ?? null}, ${header.client_names ?? null}::text[], ${header.vendor_names ?? null}::text[], ${header.reference_number ?? null})
     returning id::text`;
   const rows = lines.map((line, index) => ({ entry_id: created.id, line_no: index + 1, ...line }));
   await tx`insert into public.journal_lines ${tx(rows, ...LINE_COLUMNS)}`;
-  await tx`update public.journal_entries set status='posted' where id=${created.id}::uuid`;
+  await tx`update public.journal_entries set status=${status}::public.entry_status where id=${created.id}::uuid`;
   return created.id;
 }
 
@@ -328,18 +390,18 @@ function resolveSource(event: LedgerPaymentEvent, triggerId: string, invoiceEven
   if (event.source === undefined) return { tableId: recordTable ?? (invoiceEvent ? INVOICE_TABLE : PAYMENT_TABLE), recordId: triggerId, recordName: invoiceEvent || recordTable ? undefined : event.paymentName };
   if (!event.source || typeof event.source !== "object" || Array.isArray(event.source)) throw new PostingError("source must identify a FIN source table and record.");
   const tableId = optionalText(event.source.tableId), recordId = optionalText(event.source.recordId);
-  if (!tableId || ![PAYMENT_TABLE, INVOICE_TABLE, INVOICE_LINE_TABLE, DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE, MANUAL_TABLE].includes(tableId) || !recordId) throw new PostingError("source must identify a supported FIN ledger source record.");
+  if (!tableId || ![PAYMENT_TABLE, INVOICE_TABLE, INVOICE_LINE_TABLE, DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE, MANUAL_TABLE, LOAN_TABLE].includes(tableId) || !recordId) throw new PostingError("source must identify a supported FIN ledger source record.");
   if (recordTable && (tableId !== recordTable || recordId !== triggerId)) throw new PostingError("The source must match its source record ID and table.");
   if (!recordTable && tableId === INVOICE_LINE_TABLE) throw new PostingError("An invoice-line source requires invoiceLineRecordId and eventType entry_requested.");
-  if (!recordTable && [DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE].includes(tableId)) throw new PostingError("A depreciation, prepay-log or shipping-record source requires its record ID and eventType created.");
+  if (!recordTable && [DEPRECIATION_TABLE, PREPAY_TABLE, SHIPPING_TABLE, LOAN_TABLE].includes(tableId)) throw new PostingError("A loan, depreciation, prepay-log or shipping-record source requires its record ID and eventType created.");
   if (invoiceEvent && (tableId !== INVOICE_TABLE || recordId !== triggerId)) throw new PostingError("An invoice source must match its FIN invoiceRecordId.");
   if (!invoiceEvent && tableId === PAYMENT_TABLE && recordId !== triggerId) throw new PostingError("A payment source must match paymentRecordId.");
   return { tableId, recordId, recordName: optionalText(event.source.recordName) ?? (tableId === PAYMENT_TABLE ? event.paymentName : undefined) };
 }
 
 function assertReplay(existing: JournalHeader, expected: JournalHeader, actualLines: JournalLine[], expectedLines: JournalLine[]): void {
-  // The trigger's audit URL is metadata; a different payment must not repost an invoice total.
-  if ((existing.source_date && existing.source_date !== expected.source_date) || existing.entry_date !== expected.entry_date || existing.rule_code !== expected.rule_code || existing.transaction_type !== expected.transaction_type ||
+  // The source audit URL is metadata; a different payment must not repost an invoice total.
+  if ((existing.source_date && existing.source_date !== expected.source_date) || (existing.requested_entry_date ?? existing.entry_date) !== expected.entry_date || existing.rule_code !== expected.rule_code || existing.transaction_type !== expected.transaction_type ||
       existing.source_event_type !== expected.source_event_type || existing.source_entry_key !== expected.source_entry_key || existing.external_ref !== expected.external_ref ||
       existing.notes !== expected.notes ||
       existing.source_system !== expected.source_system || existing.source_table !== expected.source_table || existing.source_record_id !== expected.source_record_id ||
@@ -399,6 +461,16 @@ function parseCents(value: unknown): bigint {
 function formatCents(cents: bigint): string {
   const absolute = cents < 0n ? -cents : cents;
   return `${cents < 0n ? "-" : ""}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
+}
+
+function displayText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function displayNames(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const names = [...new Set(value.map(displayText).filter((name): name is string => name !== null))];
+  return names.length ? names : null;
 }
 
 function optionalText(value: unknown): string | null {

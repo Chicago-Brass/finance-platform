@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { periodQueryRange } from "@/lib/periods/ranges";
 
 export const dynamic = "force-dynamic";
+const reviewJournals = "journals:journal_entries!journal_entries_posting_request_id_fkey(id,entry_number,status,description,rule_code)";
 export async function GET(request: Request) {
   const client = await createClient();
   const { data: auth, error: authError } = await client.auth.getClaims();
@@ -26,13 +27,13 @@ export async function GET(request: Request) {
         throw new Error("Invalid request");
       const { data: item, error } = await client
         .from("ledger_posting_requests")
-        .select("*")
+        .select(`*,${reviewJournals}`)
         .eq("id", requestId)
         .single();
       if (error) throw error;
       const [accounts, lines] = await Promise.all([
         client.from("accounts").select("code,name,airtable_record_id"),
-        item.kind === "reversal" && item.target_journal_ids.length
+        item.kind === "reversal" && !item.journals?.length && item.target_journal_ids.length
           ? client
               .from("journal_lines")
               .select("entry_id,line_no,account_code,debit,credit")
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
         ? client
             .from("ledger_posting_requests")
             .select(
-              "id,kind,source_table,source_record_id,event_type,accounting_date,status,created_at,reviewed_at,reviewed_by,review_reason,last_error,writeback_pending,journal_ids,payload",
+              `id,kind,source_table,source_record_id,event_type,accounting_date,approved_entry_date,status,created_at,reviewed_at,reviewed_by,review_reason,last_error,writeback_pending,payload,${reviewJournals}`,
               { count: "exact" },
             )
             .gte("accounting_date", selected.from)
