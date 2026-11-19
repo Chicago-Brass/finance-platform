@@ -17,7 +17,7 @@ function load(file){
   new Function('require','module','exports',code)(requireLocal,mod,mod.exports);cache.set(file,mod.exports);return mod.exports;
 }
 const ui=load(path.join(__dirname,'ProgressWorkspace.tsx'));
-const rule={ruleCode:'EXP-01',name:'Utilities <invoice>',category:'expense',sourceTable:'table',sourceLabel:'Invoices',family:'Operating expenses',implementationStatus:'partial',enabled:true,debitLabel:'Utilities (006.002)',creditLabel:'Accounts Payable (211.100)',postedCount:5,reversalCount:2,succeededCount:7,failedCount:3,pendingCount:0,lastActivityAt:null,notes:null};
+const rule={ruleCode:'EXP-01',displayCode:'EXP-01',name:'Utilities <invoice>',category:'expense',sourceTable:'table',sourceLabel:'Invoices',family:'Operating expenses',implementationStatus:'partial',enabled:true,debitLabel:'Utilities (006.002)',creditLabel:'Accounts Payable (211.100)',postedCount:5,reversalCount:2,succeededCount:7,failedCount:3,pendingCount:0,lastActivityAt:null,notes:null};
 const data={rules:[rule],total:1,page:1,pageSize:50,summary:{rules:1,enabled:1,posted:5,succeeded:7,failed:3},trackingSince:'2026-11-18T00:00:00.000Z',canManage:true};
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props));
 
@@ -32,6 +32,17 @@ test('rule table shows stable codes, financial mappings and independent implemen
   assert.match(html,/progress-rule-code/);
   assert.match(html,/aria-haspopup="dialog"/);assert.match(html,/tabindex="0"/);
   assert.doesNotMatch(html,/Fully implemented/,'enabled does not imply full implementation');
+});
+
+test('Progress displays T-Chart codes in the server order while toggles use the stored rule ID',()=>{
+  const rules=[rule,{...rule,ruleCode:'EXP-14',displayCode:'EXP-02'},{...rule,ruleCode:'EXP-02',displayCode:'EXP-03'}];
+  const html=render(ui.ProgressRulesTable,{data:{...data,rules,total:3},selected:null,onSelect(){},onPage(){}});
+  assert.deepEqual([...html.matchAll(/class="tchart-rule-code">([^<]+)/g)].map(match=>match[1]),['EXP-01','EXP-02','EXP-03']);
+  assert.match(html,/aria-label="Enable EXP-02"/);
+  const changes=[];
+  const tree=ui.RuleToggle({rule:rules[1],controls:{canManage:true,savingCode:null,errors:{},enabled:{},onToggle:(...args)=>changes.push(args)}});
+  React.Children.toArray(tree.props.children)[0].props.onClick({stopPropagation(){}});
+  assert.deepEqual(changes,[['EXP-14',false]]);
 });
 
 test('rule rows open on Enter or Space without intercepting keys from nested controls',()=>{

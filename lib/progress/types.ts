@@ -2,6 +2,7 @@ export type ImplementationStatus = "fully" | "partial" | "not_implemented" | "de
 export type ProgressCategory = "expense" | "invoice_entry" | "payment" | "other";
 export type ProgressRule = {
   ruleCode: string;
+  displayCode: string;
   name: string;
   category: string;
   sourceTable: string | null;
