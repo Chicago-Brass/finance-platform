@@ -6,6 +6,7 @@ export const ISSUE_NOTE_LIMIT = 4000;
 export const ISSUE_CATEGORY_LABELS = {
   expense: "Expenses",
   invoice_entry: "Invoice Entry",
+  payment: "Payments",
 } as const;
 
 export type IssueCategory = keyof typeof ISSUE_CATEGORY_LABELS;
