@@ -3,5 +3,5 @@
   "regions": [
     "pdx1"
   ],
-  "buildCommand": "NEXT_PUBLIC_SUPABASE_URL=https://yiuzyntqddjriaflwgcc.supabase.co NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_5Wkf_wuVmtMHQy7F2g7RXw_ZYo9UqeV npm run build"
+  "buildCommand": "if [ \"$VERCEL_ENV\" = preview ] && [ \"$VERCEL_GIT_COMMIT_REF\" = staging ]; then NEXT_PUBLIC_SUPABASE_URL=https://yiuzyntqddjriaflwgcc.supabase.co NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_5Wkf_wuVmtMHQy7F2g7RXw_ZYo9UqeV npm run build; else npm run build; fi"
 }
