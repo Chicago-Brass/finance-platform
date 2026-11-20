@@ -1,0 +1,2 @@
+alter table public.expense_maintenance_issues
+  drop constraint expense_maintenance_issues_resolution_requires_review;

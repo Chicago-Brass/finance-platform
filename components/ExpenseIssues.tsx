@@ -10,7 +10,7 @@ import { safeAuditLink } from "./ledger-table-utils";
 
 const TRIGGER_IMPLEMENTATION_TYPE = "Trigger implementation problem";
 
-type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "reviewed" | "resolved">>;
+type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "resolved">>;
 
 function IssueCard({ issue, onChange }: {
   issue: MaintenanceIssue;
@@ -20,7 +20,7 @@ function IssueCard({ issue, onChange }: {
   const categoryLabel = ISSUE_CATEGORY_LABELS[issue.category];
   const [issueType, ...context] = issue.context.split("\n\n");
   const hasIssueType = ["Airtable data irregularity", "Category filter or mapping gap", TRIGGER_IMPLEMENTATION_TYPE, "Decision needed"].includes(issueType);
-  const statusLabel = issue.resolved ? "Reopen issue" : issue.reviewed ? "Mark as resolved" : "Mark as reviewed";
+  const statusLabel = issue.resolved ? "Reopen issue" : "Mark as resolved";
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -58,11 +58,11 @@ function IssueCard({ issue, onChange }: {
       const response = await fetch(EXPENSE_ISSUES_URL, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: issue.id, ...(issue.reviewed ? { resolved: !issue.resolved } : { reviewed: true }) }),
+        body: JSON.stringify({ id: issue.id, resolved: !issue.resolved }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The issue status could not be saved.");
-      onChange({ reviewed: result.reviewed, resolved: result.resolved });
+      onChange({ resolved: result.resolved });
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "The issue status could not be saved.");
     } finally {
@@ -70,7 +70,7 @@ function IssueCard({ issue, onChange }: {
     }
   }
 
-  return <article className={`maintenance-card${issue.resolved ? " is-resolved" : issue.reviewed ? " is-reviewed" : ""}`} aria-labelledby={id}>
+  return <article className={`maintenance-card${issue.resolved ? " is-resolved" : issue.notes.trim() ? " is-reviewed" : ""}`} aria-labelledby={id}>
     <div className="maintenance-card-heading">
       <div><p className="maintenance-category">Category - {categoryLabel}</p><h3 id={id}>{issue.title}</h3></div>
       <button type="button" className="btn btn-quiet maintenance-resolve"

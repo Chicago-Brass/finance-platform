@@ -13,7 +13,7 @@ export async function GET() {
     const data = await ledgerRead(async client => {
       const [issues, catalog] = await Promise.all([
         client.from("expense_maintenance_issues")
-          .select("id,category,rule_codes,title,context,finding,question,recommendation,examples,notes,reviewed,resolved").order("sort_order"),
+          .select("id,category,rule_codes,title,context,finding,question,recommendation,examples,notes,resolved").order("sort_order"),
         client.from("ledger_rules").select("category,display_code,trigger_name,source_label")
           .in("category", Object.keys(ISSUE_CATEGORY_LABELS)).is("retired_at", null),
       ]);
@@ -42,7 +42,7 @@ async function issueWrite(request: Request) {
   if (!input || typeof input.id !== "string" || !/^[a-z0-9-]{1,80}$/.test(input.id)) {
     return error("Provide a valid issue.", 400);
   }
-  return input as { id: string; note?: unknown; reviewed?: unknown; resolved?: unknown };
+  return input as { id: string; note?: unknown; resolved?: unknown };
 }
 
 export async function POST(request: Request) {
@@ -64,19 +64,14 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const input = await issueWrite(request);
   if (input instanceof Response) return input;
-  const review = input.reviewed === true && input.resolved === undefined;
-  if (!review && (input.reviewed !== undefined || typeof input.resolved !== "boolean"))
-    return error("Choose a valid issue status.", 400);
-  const resolution = input.resolved === true;
+  if (typeof input.resolved !== "boolean") return error("Choose a valid issue status.", 400);
+  const resolved = input.resolved;
   try {
-    const { data, error: queryError } = await ledgerRead(async client => {
-      const update = client.from("expense_maintenance_issues")
-        .update(review ? { reviewed: true } : { resolved: resolution }).eq("id", input.id);
-      return (resolution ? update.eq("reviewed", true) : update)
-        .select("reviewed,resolved").maybeSingle();
-    });
+    const { data, error: queryError } = await ledgerRead(async client =>
+      client.from("expense_maintenance_issues").update({ resolved }).eq("id", input.id)
+        .select("resolved").maybeSingle());
     if (queryError) throw queryError;
-    if (!data) return resolution ? error("Mark the issue as reviewed before resolving it.", 409) : error("This issue is unavailable.", 404);
+    if (!data) return error("This issue is unavailable.", 404);
     return Response.json(data, { headers });
   } catch {
     return error("The issue status could not be saved. Try again.", 503);
