@@ -103,7 +103,7 @@ function IssueCard({ issue, onChange }: {
         {issue.notes && <div className="maintenance-note-text">{issue.notes}</div>}
       </div>
       <label htmlFor={id + "-notes"}>Add a note</label>
-      <textarea id={id + "-notes"} value={draft} disabled={saving} maxLength={ISSUE_NOTE_LIMIT} rows={4} placeholder="Add a decision, correction, or follow-up..." onChange={event => {
+      <textarea id={id + "-notes"} value={draft} disabled={saving} maxLength={ISSUE_NOTE_LIMIT} rows={3} placeholder="Add a decision, correction, or follow-up..." onChange={event => {
         setDraft(event.target.value);
         setMessage("");
       }} />

@@ -35,7 +35,7 @@
 .maintenance-notes { display: grid; gap: .5rem; background: #f4f7fa; padding: .8rem; border-radius: 4px; }
 .maintenance-note-history > strong { color: #183951; }
 .maintenance-note-text { margin: .35rem 0 .45rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.maintenance-notes textarea { width: 100%; min-height: 7rem; padding: .65rem; resize: vertical; border: 1px solid #afbdcb; border-radius: 4px; font: inherit; color: inherit; background: white; }
+.maintenance-notes textarea { width: 100%; padding: .65rem; resize: vertical; border: 1px solid #afbdcb; border-radius: 4px; font: inherit; color: inherit; background: white; }
 .maintenance-note-actions { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; }
 .maintenance-note-actions [role="alert"] { color: #8e2828; }
 @media (max-width: 650px) {
