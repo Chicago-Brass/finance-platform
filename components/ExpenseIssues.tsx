@@ -86,9 +86,7 @@ function IssueCard({ issue, onChange }: {
       <div><dt>Context</dt><dd>{hasIssueType ? context.join("\n\n") : issue.context}</dd></div>
       <div><dt>Issue</dt><dd>{issue.finding}</dd></div>
       {!issue.resolved && issue.question && <div><dt>Question</dt><dd>{issue.question}</dd></div>}
-      <div><dt>Potential solutions</dt><dd>
-        <ul>{issue.recommendation.split("\n").map(option => <li key={option}>{option}</li>)}</ul>
-      </dd></div>
+      <div><dt>Potential solutions</dt><dd>{issue.recommendation}</dd></div>
     </dl>
     <section className="maintenance-examples" aria-label="Example records">
       <h4>Example records</h4>

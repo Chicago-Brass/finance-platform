@@ -23,8 +23,6 @@
 .maintenance-finding div { display: grid; grid-template-columns: 9.25rem minmax(0, 1fr); gap: .25rem .75rem; }
 .maintenance-finding dt, .maintenance-notes label { color: #183951; font-weight: 700; }
 .maintenance-finding dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; white-space: pre-line; }
-.maintenance-finding ul { margin: 0; padding-left: 1.1rem; }
-.maintenance-finding li + li { margin-top: .35rem; }
 .maintenance-examples { padding-top: .9rem; border-top: 1px solid #e4e9ef; }
 .maintenance-examples h4 { margin: 0; color: #183951; }
 .maintenance-examples ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem 1.75rem; padding-left: 1.1rem; margin: .55rem 0 1rem; }
