@@ -8,7 +8,7 @@ import { useReportQuery } from "./ReportData";
 import { ReportIcon } from "./ReportIcons";
 import { safeAuditLink } from "./ledger-table-utils";
 
-type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "resolved">>;
+type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "reviewed" | "resolved">>;
 
 function IssueCard({ issue, onChange }: {
   issue: MaintenanceIssue;
@@ -16,6 +16,9 @@ function IssueCard({ issue, onChange }: {
 }) {
   const id = useId();
   const categoryLabel = ISSUE_CATEGORY_LABELS[issue.category];
+  const [issueType, ...context] = issue.context.split("\n\n");
+  const hasIssueType = ["Airtable data irregularity", "Category filter or mapping gap", "Trigger implementation problem", "Decision needed"].includes(issueType);
+  const statusLabel = issue.resolved ? "Reopen issue" : issue.reviewed ? "Mark as resolved" : "Mark as reviewed";
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -53,11 +56,11 @@ function IssueCard({ issue, onChange }: {
       const response = await fetch(EXPENSE_ISSUES_URL, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: issue.id, resolved: !issue.resolved }),
+        body: JSON.stringify({ id: issue.id, ...(issue.reviewed ? { resolved: !issue.resolved } : { reviewed: true }) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The issue status could not be saved.");
-      onChange({ resolved: result.resolved });
+      onChange({ reviewed: result.reviewed, resolved: result.resolved });
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "The issue status could not be saved.");
     } finally {
@@ -65,11 +68,11 @@ function IssueCard({ issue, onChange }: {
     }
   }
 
-  return <article className={issue.resolved ? "maintenance-card is-resolved" : "maintenance-card"} aria-labelledby={id}>
+  return <article className={`maintenance-card${issue.resolved ? " is-resolved" : issue.reviewed ? " is-reviewed" : ""}`} aria-labelledby={id}>
     <div className="maintenance-card-heading">
       <div><p className="maintenance-category">Category - {categoryLabel}</p><h3 id={id}>{issue.title}</h3></div>
-      <button type="button" className="btn btn-quiet maintenance-resolve" aria-pressed={issue.resolved}
-        disabled={changingStatus} onClick={() => void changeStatus()}>Resolved</button>
+      <button type="button" className="btn btn-quiet maintenance-resolve"
+        disabled={changingStatus} onClick={() => void changeStatus()}>{statusLabel}</button>
     </div>
     {statusError && <p className="maintenance-status-error" role="alert">{statusError}</p>}
     <ul className="maintenance-codes" aria-label="Affected rules">{issue.rules.map(rule => <li key={rule.code}>
@@ -77,7 +80,8 @@ function IssueCard({ issue, onChange }: {
       <span><strong>{rule.trigger ?? "Trigger name unavailable"}</strong><small>{[categoryLabel, rule.source].filter(Boolean).join(" / ")}</small></span>
     </li>)}</ul>
     <dl className="maintenance-finding">
-      <div><dt>Context</dt><dd>{issue.context}</dd></div>
+      {hasIssueType && <div><dt>Issue type</dt><dd>{issueType}</dd></div>}
+      <div><dt>Context</dt><dd>{hasIssueType ? context.join("\n\n") : issue.context}</dd></div>
       <div><dt>Issue</dt><dd>{issue.finding}</dd></div>
       <div><dt>Potential solutions</dt><dd>
         <ul>{issue.recommendation.split("\n").map(option => <li key={option}>{option}</li>)}</ul>
@@ -121,22 +125,33 @@ export function ExpenseIssues() {
     retained.current = retained.current?.map(issue => issue.id === id ? { ...issue, ...changes } : issue);
     query.retry();
   }
+  const open = issues?.filter(issue => !issue.resolved) ?? [];
+  const resolved = issues?.filter(issue => issue.resolved) ?? [];
+  const renderCard = (issue: MaintenanceIssue) =>
+    <IssueCard key={issue.id} issue={issue} onChange={changes => updateIssue(issue.id, changes)} />;
+  const openCards = (Object.keys(ISSUE_CATEGORY_LABELS) as IssueCategory[]).flatMap(category => {
+    const cards = open.filter(issue => issue.category === category);
+    return cards.length ? [
+      <header className="maintenance-issues-heading" key={category}>
+        <h2>Category - {ISSUE_CATEGORY_LABELS[category]}</h2>
+        <p>Ledger review for January 1 through November {category === "expense" ? 16 : 15}, 2026</p>
+      </header>,
+      ...cards.map(renderCard),
+    ] : [];
+  });
+
   return <article className="report-page maintenance-page">
     <ReportPageHeader title="Maintenance" description="Chicago Brass Inc. / Ledger rules and review" />
     <MaintenanceTabs active="issues" />
     <section className="maintenance-issues" aria-label="Ledger issues">
       {query.error && <div role="alert"><p>Issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
-      {issues?.length ? (Object.keys(ISSUE_CATEGORY_LABELS) as IssueCategory[]).map(category => {
-        const cards = issues.filter(issue => issue.category === category);
-        if (!cards.length) return null;
-        return <section className="maintenance-category-section" key={category} aria-labelledby={`issues-${category}`}>
-          <header className="maintenance-issues-heading">
-            <h2 id={`issues-${category}`}>Category - {ISSUE_CATEGORY_LABELS[category]}</h2>
-            <p>Ledger review for January 1 through November {category === "expense" ? 16 : 15}, 2026</p>
-          </header>
-          {cards.map(issue => <IssueCard key={issue.id} issue={issue} onChange={changes => updateIssue(issue.id, changes)} />)}
-        </section>;
-      }) : query.pending ? <p role="status">Loading issues...</p>
+      {issues?.length ? [
+        ...openCards,
+        ...(resolved.length ? [
+          <header className="maintenance-issues-heading" key="resolved"><h2>Resolved issues</h2></header>,
+          ...resolved.map(renderCard),
+        ] : []),
+      ] : query.pending ? <p role="status">Loading issues...</p>
         : !query.error && <p>No issues are available.</p>}
     </section>
   </article>;

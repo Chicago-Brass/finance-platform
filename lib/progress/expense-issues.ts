@@ -21,6 +21,7 @@ export type MaintenanceIssue = {
   recommendation: string;
   examples: { label: string; detail: string; url: string }[];
   notes: string;
+  reviewed: boolean;
   resolved: boolean;
 };
 
