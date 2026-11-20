@@ -8,6 +8,8 @@ import { useReportQuery } from "./ReportData";
 import { ReportIcon } from "./ReportIcons";
 import { safeAuditLink } from "./ledger-table-utils";
 
+const TRIGGER_IMPLEMENTATION_TYPE = "Trigger implementation problem";
+
 type IssueChanges = Partial<Pick<MaintenanceIssue, "notes" | "reviewed" | "resolved">>;
 
 function IssueCard({ issue, onChange }: {
@@ -17,7 +19,7 @@ function IssueCard({ issue, onChange }: {
   const id = useId();
   const categoryLabel = ISSUE_CATEGORY_LABELS[issue.category];
   const [issueType, ...context] = issue.context.split("\n\n");
-  const hasIssueType = ["Airtable data irregularity", "Category filter or mapping gap", "Trigger implementation problem", "Decision needed"].includes(issueType);
+  const hasIssueType = ["Airtable data irregularity", "Category filter or mapping gap", TRIGGER_IMPLEMENTATION_TYPE, "Decision needed"].includes(issueType);
   const statusLabel = issue.resolved ? "Reopen issue" : issue.reviewed ? "Mark as resolved" : "Mark as reviewed";
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -126,11 +128,13 @@ export function ExpenseIssues() {
     query.retry();
   }
   const open = issues?.filter(issue => !issue.resolved) ?? [];
+  const isTriggerIssue = (issue: MaintenanceIssue) => issue.context.split("\n\n", 1)[0] === TRIGGER_IMPLEMENTATION_TYPE;
+  const triggerIssues = open.filter(isTriggerIssue);
   const resolved = issues?.filter(issue => issue.resolved) ?? [];
   const renderCard = (issue: MaintenanceIssue) =>
     <IssueCard key={issue.id} issue={issue} onChange={changes => updateIssue(issue.id, changes)} />;
   const openCards = (Object.keys(ISSUE_CATEGORY_LABELS) as IssueCategory[]).flatMap(category => {
-    const cards = open.filter(issue => issue.category === category);
+    const cards = open.filter(issue => issue.category === category && !isTriggerIssue(issue));
     return cards.length ? [
       <header className="maintenance-issues-heading" key={category}>
         <h2>Category - {ISSUE_CATEGORY_LABELS[category]}</h2>
@@ -147,6 +151,10 @@ export function ExpenseIssues() {
       {query.error && <div role="alert"><p>Issues could not be refreshed.</p><button type="button" className="btn btn-quiet" onClick={query.retry}>Try again</button></div>}
       {issues?.length ? [
         ...openCards,
+        ...(triggerIssues.length ? [
+          <header className="maintenance-issues-heading" key="trigger-implementation"><h2>Trigger implementation issues</h2></header>,
+          ...triggerIssues.map(renderCard),
+        ] : []),
         ...(resolved.length ? [
           <header className="maintenance-issues-heading" key="resolved"><h2>Resolved issues</h2></header>,
           ...resolved.map(renderCard),
