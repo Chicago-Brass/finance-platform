@@ -85,6 +85,7 @@ function IssueCard({ issue, onChange }: {
       {hasIssueType && <div><dt>Issue type</dt><dd>{issueType}</dd></div>}
       <div><dt>Context</dt><dd>{hasIssueType ? context.join("\n\n") : issue.context}</dd></div>
       <div><dt>Issue</dt><dd>{issue.finding}</dd></div>
+      {!issue.resolved && issue.question && <div><dt>Question</dt><dd>{issue.question}</dd></div>}
       <div><dt>Potential solutions</dt><dd>
         <ul>{issue.recommendation.split("\n").map(option => <li key={option}>{option}</li>)}</ul>
       </dd></div>

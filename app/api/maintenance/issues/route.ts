@@ -13,7 +13,7 @@ export async function GET() {
     const data = await ledgerRead(async client => {
       const [issues, catalog] = await Promise.all([
         client.from("expense_maintenance_issues")
-          .select("id,category,rule_codes,title,context,finding,recommendation,examples,notes,reviewed,resolved").order("sort_order"),
+          .select("id,category,rule_codes,title,context,finding,question,recommendation,examples,notes,reviewed,resolved").order("sort_order"),
         client.from("ledger_rules").select("category,display_code,trigger_name,source_label")
           .in("category", Object.keys(ISSUE_CATEGORY_LABELS)).is("retired_at", null),
       ]);

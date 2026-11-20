@@ -18,6 +18,7 @@ export type MaintenanceIssue = {
   title: string;
   context: string;
   finding: string;
+  question: string | null;
   recommendation: string;
   examples: { label: string; detail: string; url: string }[];
   notes: string;
