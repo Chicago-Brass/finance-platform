@@ -7,6 +7,11 @@ export function ledgerPageNumber(value: string | string[] | undefined) {
   return Number.isSafeInteger(page) && page >= 1 ? page : 1;
 }
 
+export function ledgerEntryParam(value: string | string[] | undefined) {
+  const text = Array.isArray(value) ? value[0] : value, number = Number(text);
+  return text && /^\d+$/.test(text) && Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
 const ACCOUNT_CODE = /^\d{3}\.\d{3}$/;
 
 /** Accepts only a ledger account code such as 112.300; anything else means no filter. */
@@ -56,6 +61,10 @@ export function ledgerHref({ from, to, account, offset, query, side, accountType
   if (max !== undefined) params.set("max", String(max));
   if (page) params.set("page", String(page));
   return `?${params}`;
+}
+
+export function journalLedgerHref(entryNumber: number, date: string) {
+  return `/general-ledger?${new URLSearchParams({ from: date, to: date, entry: String(entryNumber) })}`;
 }
 
 /** General Ledger for one account, from the start of the as-of year through the as-of date. */

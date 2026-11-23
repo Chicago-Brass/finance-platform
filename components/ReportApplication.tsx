@@ -36,7 +36,7 @@ function ActiveReport({ screen }: { screen: ReportScreen }) {
     case "income": return <IncomeStatementWorkspace options={screen.options} data={query as ReportQuery<IncomeStatementData>} />;
     case "balance": return <BalanceSheetWorkspace options={screen.options} data={query as ReportQuery<BalanceSheetData>} />;
     case "trial": return <TrialBalanceWorkspace asOf={screen.options.asOf} data={query as ReportQuery<TbRow[]>} />;
-    case "ledger": return <GeneralLedgerWorkspace options={screen.options} data={query as ReportQuery<LedgerData>} countData={count} accountData={accounts} categoryData={categories} />;
+    case "ledger": return <GeneralLedgerWorkspace options={screen.options} entryNumber={screen.entryNumber} data={query as ReportQuery<LedgerData>} countData={count} accountData={accounts} categoryData={categories} />;
     case "rules": return <PostingRulesWorkspace data={query as ReportQuery<TChartRow[]>} />;
   }
 }
