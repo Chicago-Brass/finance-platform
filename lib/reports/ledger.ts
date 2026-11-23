@@ -1,4 +1,5 @@
 import type { AccountBalance } from "./report-utils";
+import type { JournalPartyDetails } from "./journal-entry";
 import { ledgerRead } from "./report-session";
 
 /**
@@ -78,6 +79,24 @@ export type LedgerRow = {
   line_id: string;
   line_no: number;
 };
+
+/** Join the drawer's already-filtered lines to posted journal metadata by entry number. */
+export async function getLedgerPartyDetails(entryNumbers: number[]) {
+  const unique = [...new Set(entryNumbers)];
+  const details = new Map<number, JournalPartyDetails>();
+  if (!unique.length) return details;
+  return ledgerRead(async supabase => {
+    // Bound request URL length while keeping one read per batch of entries.
+    const batches = Array.from({ length: Math.ceil(unique.length / 500) }, (_, index) => unique.slice(index * 500, (index + 1) * 500));
+    const results = await Promise.all(batches.map(batch => supabase.from("journal_entries")
+      .select("entry_number,client_names,vendor_names,reference_number,source_record_name").eq("status", "posted").in("entry_number", batch)));
+    for (const { data, error } of results) {
+      if (error) throw new Error(`Ledger party details query failed: ${error.message}`);
+      for (const row of data ?? []) details.set(row.entry_number, row);
+    }
+    return details;
+  });
+}
 
 export const LEDGER_PAGE_SIZE = 100;
 const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no";

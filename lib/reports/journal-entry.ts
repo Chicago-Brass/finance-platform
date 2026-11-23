@@ -8,6 +8,13 @@ export type JournalLine = {
   state_code: string | null; airtable_record_id: string | null; branch: string | null;
 };
 
+export type JournalPartyDetails = {
+  client_names: string[] | null;
+  vendor_names: string[] | null;
+  reference_number: string | null;
+  source_record_name: string | null;
+};
+
 export type JournalEntry = {
   id: string; entry_number: number; entry_date: string; source_date?: string | null; status: string; description: string;
   rule_code: string | null; transaction_type: string | null; notes: string | null; audit_link: string | null;
