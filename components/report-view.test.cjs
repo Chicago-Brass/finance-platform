@@ -227,9 +227,7 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
     const scrollChildren = React.Children.toArray(scroll.props.children);
     assert.ok(scrollChildren.some(child => child.props?.className === 'drill-filters'));
     const markup = renderToStaticMarkup(tree);
-    assert.ok(markup.includes(`data-empty="${!lines[0].clientNames.length}">Client</th>`));
-    assert.ok(markup.includes(`data-empty="${!lines[0].vendorNames.length}">Vendor</th>`));
-    assert.ok(markup.includes(`data-empty="${!lines[0].referenceNumber}">Reference number</th>`));
+    assert.match(markup, /<colgroup>.*drill-col-entry.*drill-col-source.*drill-col-standard.*drill-col-party.*drill-col-standard.*drill-col-audit.*<\/colgroup>/);
     assert.match(markup, /class="drill-audit"><a[^>]+href="https:\/\/airtable\.com\/source"[^>]+aria-label="Open the source record for entry 8680"/);
     if (truncated) {
       assert.match(text, /Line counts use the first 1 lines. Summary amounts include all posted lines./);
