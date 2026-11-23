@@ -125,11 +125,18 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
 
           <div className="drill-lines" tabIndex={0} role="region" aria-label="Account ledger lines">
             <table className="drill-table">
+              <colgroup>
+                <col className="drill-col-entry" /><col className="drill-col-source" />
+                <col className="drill-col-standard" span={2} />
+                <col className="drill-col-party" span={2} />
+                <col className="drill-col-standard" span={2} />
+                <col className="drill-col-audit" />
+              </colgroup>
               <thead><tr>
-                <th scope="col" className="drill-entry">Entry #</th><th scope="col">Source record name</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
-                <th scope="col" data-empty={!visible.some(line => line.clientNames?.length)}>Client</th>
-                <th scope="col" data-empty={!visible.some(line => line.vendorNames?.length)}>Vendor</th>
-                <th scope="col" data-empty={!visible.some(line => line.referenceNumber)}>Reference number</th>
+                <th scope="col">Entry #</th><th scope="col">Source record name</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
+                <th scope="col">Client</th>
+                <th scope="col">Vendor</th>
+                <th scope="col">Reference number</th>
                 <th scope="col">Date</th><th scope="col" className="drill-audit">Audit link</th>
               </tr></thead>
               <tbody>
@@ -138,8 +145,8 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
                   const clients = line.clientNames?.join(", ");
                   const vendors = line.vendorNames?.join(", ");
                   return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
-                    <td className="drill-entry">{line.entry}</td>
-                    <td className="drill-record-name">{line.sourceRecordName && <span className="drill-copy" title={line.sourceRecordName}>{line.sourceRecordName}</span>}</td>
+                    <td>{line.entry}</td>
+                    <td>{line.sourceRecordName && <span className="drill-copy" title={line.sourceRecordName}>{line.sourceRecordName}</span>}</td>
                     <td className="num">{line.debit ? money(line.debit) : <span className="drill-muted">-</span>}</td>
                     <td className="num">{line.credit ? money(line.credit) : <span className="drill-muted">-</span>}</td>
                     <td>{clients && <span className="drill-copy" title={clients}>{clients}</span>}</td>
