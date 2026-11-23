@@ -132,8 +132,8 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
                 <th scope="col">Entry #</th><th scope="col">Source record name</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
                 <th scope="col">Client</th>
                 <th scope="col">Vendor</th>
-                <th scope="col">Reference number</th>
-                <th scope="col">Date</th><th scope="col" className="drill-audit">Audit link</th>
+                <th scope="col" title="Reference number" aria-label="Reference number">Ref. #</th>
+                <th scope="col">Date</th><th scope="col" className="drill-audit" aria-label="Audit link">Audit</th>
               </tr></thead>
               <tbody>
                 {visible.length === 0 ? <tr><td colSpan={9} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
