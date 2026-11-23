@@ -3,7 +3,7 @@ import { ledgerAccountParam } from "@/components/ledger-table-utils";
 import { cleanDate } from "@/lib/dates";
 import { dayBefore, naturalNet, shiftYears, toActivityLine } from "./account-activity";
 import type { AccountActivityLines, AccountActivitySummary, DrillRange } from "./account-activity";
-import { getGeneralLedger, getLedgerPartyDetails, getTrialBalances, type LedgerRow } from "./ledger";
+import { getAccountLedgerPage, getLedgerPartyDetails, getTrialBalances, type LedgerRow } from "./ledger";
 import { cents } from "./report-utils";
 
 export type AccountActivityInput = DrillRange & { account: string };
@@ -38,12 +38,12 @@ export async function getAccountActivitySummary({ account, from, to, mode, branc
   };
 }
 
-/** Preserve the 2,000-line cap, using up to four 500-line reads instead of twenty 100-line reads. */
+/** Read the newest 2,000 lines in up to four 500-line pages. */
 export async function getAccountActivityLines({ account, from, to, branch }: AccountActivityInput): Promise<AccountActivityLines> {
   const rows: LedgerRow[] = [];
   let truncated = false;
   for (let page = 1; page <= 4; page++) {
-    const result = await getGeneralLedger(from, to, page, { account, branch }, 500);
+    const result = await getAccountLedgerPage(from, to, page, account, branch);
     rows.push(...result.rows);
     truncated = result.hasNext;
     if (!truncated) break;

@@ -126,6 +126,17 @@ export async function getLedgerCount(from: string, to: string, filters: LedgerAc
   });
 }
 
+export async function getAccountLedgerPage(from: string, to: string, page: number, account: string, branch?: string) {
+  return ledgerRead(async supabase => {
+    const { data, error } = await supabase.rpc("get_account_activity_page", {
+      p_account: account, p_from: from, p_to: to, p_branch: branch ?? null, p_page: page,
+    }).select(LEDGER_COLUMNS);
+    if (error) throw new Error(`Account activity query failed: ${error.message}`);
+    const rows = (data ?? []) as LedgerRow[];
+    return { rows: rows.slice(0, 500), hasNext: rows.length > 500 };
+  });
+}
+
 export async function getGeneralLedger(from: string, to: string, requestedPage = 1, filters: LedgerAccountFilters = {}, pageSize = LEDGER_PAGE_SIZE) {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= Math.floor(Number.MAX_SAFE_INTEGER / pageSize) ? requestedPage : 1;
   const offset = (page - 1) * pageSize;
