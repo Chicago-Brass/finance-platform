@@ -13,6 +13,7 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
   background: var(--surface); color: var(--ink); box-shadow: -12px 0 32px #1f2a3733;
   font-variant-numeric: tabular-nums; animation: drill-slide 200ms ease-out;
 }
+.drill-drawer.account-drawer { width: min(100vw, max(768px, 75vw)); }
 @keyframes drill-slide { from { transform: translateX(32px); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @keyframes drill-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .drill-drawer, .drill-scrim { animation: none; } }
@@ -66,6 +67,11 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-table { width: 100%; border-collapse: collapse; font-size: var(--report-text-size); }
 .drill-table th { position: sticky; top: 0; z-index: 1; padding: 7px 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
 .drill-table td { padding: 7px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top; white-space: nowrap; }
+.drill-table .drill-entry { width: 1%; }
+.drill-table .drill-record-name { min-width: 160px; max-width: 30vw; white-space: normal; overflow-wrap: anywhere; }
+.drill-party, .drill-reference { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.drill-table .drill-audit { text-align: center; }
+.account-drawer .drill-table { min-width: 700px; }
 .drill-table .num { text-align: right; }
 .drill-table tbody tr:hover td { background: var(--surface-2); }
 .drill-table tr.is-target td { background: #dbe7f4; font-weight: 600; color: var(--navy); }
