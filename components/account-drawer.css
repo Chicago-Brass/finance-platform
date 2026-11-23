@@ -68,7 +68,7 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-table th { position: sticky; top: 0; z-index: 1; padding: 7px 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
 .drill-table td { padding: 7px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top; white-space: nowrap; }
 .drill-table :is(.drill-entry, .drill-audit, .num, th[data-empty="true"]) { width: 1%; }
-.drill-table .drill-copy { display: block; min-width: 10ch; max-width: 24ch; white-space: normal; overflow-wrap: anywhere; }
+.drill-table .drill-copy { display: block; min-width: 10ch; max-width: 24ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .drill-table .drill-record-name .drill-copy { min-width: 16ch; max-width: 28ch; }
 .drill-table .drill-audit { text-align: center; }
 .account-drawer .drill-table { min-width: 700px; }
