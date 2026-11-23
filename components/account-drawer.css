@@ -68,13 +68,14 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-table th { position: sticky; top: 0; z-index: 1; padding: 7px 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
 .drill-table td { padding: 7px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top; white-space: nowrap; }
 /* Fixed widths keep account information in the same position across rows. */
-.drill-table .drill-col-entry { width: 6%; }
-.drill-table .drill-col-source { width: 21%; }
-.drill-table .drill-col-standard { width: 10.5%; }
-.drill-table .drill-col-party { width: 12%; }
-.drill-table .drill-col-audit { width: 7%; }
+.drill-table .drill-col-entry { width: 5%; }
+.drill-table .drill-col-source { width: 25%; }
+.drill-table .drill-col-standard { width: 9.5%; }
+.drill-table .drill-col-party { width: 14%; }
+.drill-table .drill-col-audit { width: 4%; }
 .drill-table :is(th, td, .drill-copy) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .drill-table .drill-copy { display: block; }
+.drill-table th:first-child, .drill-table .drill-audit { padding-inline: 4px; }
 .drill-table .num { text-align: right; }
 .drill-table tbody tr:hover td { background: var(--surface-2); }
 .drill-table tr.is-target td { background: #dbe7f4; font-weight: 600; color: var(--navy); }
