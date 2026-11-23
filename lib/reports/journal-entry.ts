@@ -12,13 +12,14 @@ export type JournalPartyDetails = {
   client_names: string[] | null;
   vendor_names: string[] | null;
   reference_number: string | null;
+  source_record_name: string | null;
 };
 
 export type JournalEntry = JournalPartyDetails & {
   id: string; entry_number: number; entry_date: string; source_date?: string | null; status: string; description: string;
   rule_code: string | null; transaction_type: string | null; notes: string | null; audit_link: string | null;
   source_system: string; source_event_type: string | null; source_table: string | null;
-  source_record_id: string | null; source_record_name: string | null; external_ref: string | null; created_at: string; created_by: string | null;
+  source_record_id: string | null; external_ref: string | null; created_at: string; created_by: string | null;
   posted_at: string | null; posted_by: string | null; reverses_entry_id: string | null; reversal_reason: string | null;
   lines: JournalLine[];
 };

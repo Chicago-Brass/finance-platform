@@ -91,7 +91,7 @@ export async function getLedgerPartyDetails(entryNumbers: number[]) {
     // Bound request URL length while keeping one read per batch of entries.
     const batches = Array.from({ length: Math.ceil(unique.length / 500) }, (_, index) => unique.slice(index * 500, (index + 1) * 500));
     const results = await Promise.all(batches.map(batch => supabase.from("journal_entries")
-      .select("entry_number,client_names,vendor_names,reference_number").eq("status", "posted").in("entry_number", batch)));
+      .select("entry_number,client_names,vendor_names,reference_number,source_record_name").eq("status", "posted").in("entry_number", batch)));
     for (const { data, error } of results) {
       if (error) throw new Error(`Ledger party details query failed: ${error.message}`);
       for (const row of data ?? []) details.set(row.entry_number, row);

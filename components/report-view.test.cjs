@@ -212,7 +212,7 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
   const texts = node => !React.isValidElement(node) ? typeof node === 'string' || typeof node === 'number' ? String(node) : '' : React.Children.toArray(node.props.children).map(texts).join('');
   for (const mode of ['period', 'balance']) for (const truncated of [false, true]) {
     const cache = new Map(), range = { mode, from: '2026-01-01', to: '2026-01-31' };
-    const lines = [{ id: 'line', date: '2026-01-09', entry: 8680, lineNo: 1, offsetCode: '211.100', offsetName: 'Payable', offsetSplit: false, debit: 100, credit: 0, auditLink: 'https://airtable.com/source', clientNames: ['Example Client'], vendorNames: ['Example Vendor'], referenceNumber: 'INV.42' }];
+    const lines = [{ id: 'line', date: '2026-01-09', entry: 8680, lineNo: 1, offsetCode: '211.100', offsetName: 'Payable', offsetSplit: false, debit: 100, credit: 0, auditLink: 'https://airtable.com/source', clientNames: ['Example Client'], vendorNames: ['Example Vendor'], referenceNumber: 'INV.42', sourceRecordName: 'Example source record' }];
     const loaded = { key: `112.100|${mode}|${range.from}|${range.to}|0`, cache, lines: { lines, truncated }, summary: { ...range, account: { code: '112.100', name: 'Bank', normalBalance: 'debit' }, debit: truncated ? 10000 : 100, credit: 0, opening: mode === 'balance' ? 200 : null, previous: null } };
     let stateIndex = 0;
     const hooks = { ...React, useId: () => 'test', useEffect() {}, useMemo: fn => fn(), useState: initial => [stateIndex++ === 0 ? loaded : initial, () => {}] };
@@ -220,8 +220,8 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
     new Function('require', 'module', 'exports', code)(specifier => specifier === 'react' ? hooks : specifier.startsWith('@/') ? load(path.join(root, specifier.slice(2))) : specifier.startsWith('.') ? load(path.join(__dirname, specifier)) : require(specifier), module, module.exports);
     const tree = module.exports.AccountDrawer({ target: { code: '112.100', label: 'Bank' }, range, cache, onClose() {}, onSelect() {} });
     const text = texts(tree);
-    assert.match(text, /Entry numberDebitCreditClientVendorReference numberDateAudit link/);
-    assert.match(text, /8680\$1\.00-Example ClientExample VendorINV\.42Jan 9, 2026/);
+    assert.match(text, /Entry #Source record nameDebitCreditClientVendorReference numberDateAudit link/);
+    assert.match(text, /8680Example source record\$1\.00-Example ClientExample VendorINV\.42Jan 9, 2026/);
     assert.doesNotMatch(text, /Open in General Ledger|Footer totals/);
     const scroll = React.Children.toArray(tree.props.children).find(child => child.props?.className === 'drill-activity-scroll');
     const scrollChildren = React.Children.toArray(scroll.props.children);

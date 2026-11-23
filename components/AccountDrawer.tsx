@@ -121,17 +121,18 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
             <div className="drill-lines" role="region" aria-label="Account ledger lines">
               <table className="drill-table">
                 <thead><tr>
-                  <th scope="col">Entry number</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
+                  <th scope="col" className="drill-entry">Entry #</th><th scope="col">Source record name</th><th scope="col" className="num">Debit</th><th scope="col" className="num">Credit</th>
                   <th scope="col">Client</th><th scope="col">Vendor</th><th scope="col">Reference number</th>
                   <th scope="col">Date</th><th scope="col" className="drill-audit">Audit link</th>
                 </tr></thead>
                 <tbody>
-                  {visible.length === 0 ? <tr><td colSpan={8} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
+                  {visible.length === 0 ? <tr><td colSpan={9} className="drill-empty">{lines.length ? "No lines match these filters." : "No posted lines for this account in these dates."}</td></tr> : visible.map(line => {
                     const audit = safeAuditLink(line.auditLink);
                     const clients = line.clientNames?.join(", ");
                     const vendors = line.vendorNames?.join(", ");
                     return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
-                      <td>{line.entry}</td>
+                      <td className="drill-entry">{line.entry}</td>
+                      <td className="drill-record-name">{line.sourceRecordName}</td>
                       <td className="num">{line.debit ? money(line.debit) : <span className="drill-muted">-</span>}</td>
                       <td className="num">{line.credit ? money(line.credit) : <span className="drill-muted">-</span>}</td>
                       <td className="drill-party" title={clients}>{clients}</td>

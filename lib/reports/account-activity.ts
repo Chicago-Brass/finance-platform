@@ -24,6 +24,7 @@ export type AccountActivityLine = {
   clientNames: string[];
   vendorNames: string[];
   referenceNumber: string | null;
+  sourceRecordName: string | null;
   debit: number;
   credit: number;
 };
@@ -59,6 +60,7 @@ export function toActivityLine(row: LedgerRow, details?: JournalPartyDetails): A
     clientNames: details?.client_names ?? [],
     vendorNames: details?.vendor_names ?? [],
     referenceNumber: details?.reference_number ?? null,
+    sourceRecordName: details?.source_record_name ?? null,
     debit: cents(row.debit ?? 0),
     credit: cents(row.credit ?? 0),
   };
@@ -162,7 +164,7 @@ export function filterActivityLines(lines: AccountActivityLine[], filters: Activ
     if (filters.side === "debit" && !line.debit) return false;
     if (filters.side === "credit" && !line.credit) return false;
     if (!search) return true;
-    return `${line.entry} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date} ${line.clientNames?.join(" ") ?? ""} ${line.vendorNames?.join(" ") ?? ""} ${line.referenceNumber ?? ""}`.toLocaleLowerCase().includes(search);
+    return `${line.entry} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date} ${line.clientNames?.join(" ") ?? ""} ${line.vendorNames?.join(" ") ?? ""} ${line.referenceNumber ?? ""} ${line.sourceRecordName ?? ""}`.toLocaleLowerCase().includes(search);
   });
 }
 
