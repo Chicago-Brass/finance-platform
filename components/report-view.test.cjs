@@ -210,9 +210,9 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
   const source = fs.readFileSync(path.join(__dirname, 'AccountDrawer.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const texts = node => !React.isValidElement(node) ? typeof node === 'string' || typeof node === 'number' ? String(node) : '' : React.Children.toArray(node.props.children).map(texts).join('');
-  for (const mode of ['period', 'balance']) for (const truncated of [false, true]) {
+  for (const mode of ['period', 'balance']) for (const truncated of [false, true]) for (const parties of ['both', 'client', 'vendor', 'none']) {
     const cache = new Map(), range = { mode, from: '2026-01-01', to: '2026-01-31' };
-    const lines = [{ id: 'line', date: '2026-01-09', entry: 8680, lineNo: 1, offsetCode: '211.100', offsetName: 'Payable', offsetSplit: false, debit: 100, credit: 0, auditLink: 'https://airtable.com/source', clientNames: ['Example Client'], vendorNames: ['Example Vendor'], referenceNumber: 'INV.42', sourceRecordName: 'Example source record' }];
+    const lines = [{ id: 'line', date: '2026-01-09', entry: 8680, lineNo: 1, offsetCode: '211.100', offsetName: 'Payable', offsetSplit: false, debit: 100, credit: 0, auditLink: 'https://airtable.com/source', clientNames: ['both', 'client'].includes(parties) ? ['Example Client With a Longer Name'] : [], vendorNames: ['both', 'vendor'].includes(parties) ? ['Example Vendor With a Longer Name'] : [], referenceNumber: parties === 'none' ? null : 'INV.42', sourceRecordName: 'Example source record with an unusually long display name' }];
     const loaded = { key: `112.100|${mode}|${range.from}|${range.to}|0`, cache, lines: { lines, truncated }, summary: { ...range, account: { code: '112.100', name: 'Bank', normalBalance: 'debit' }, debit: truncated ? 10000 : 100, credit: 0, opening: mode === 'balance' ? 200 : null, previous: null } };
     let stateIndex = 0;
     const hooks = { ...React, useId: () => 'test', useEffect() {}, useMemo: fn => fn(), useState: initial => [stateIndex++ === 0 ? loaded : initial, () => {}] };
@@ -221,12 +221,15 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
     const tree = module.exports.AccountDrawer({ target: { code: '112.100', label: 'Bank' }, range, cache, onClose() {}, onSelect() {} });
     const text = texts(tree);
     assert.match(text, /Entry #Source record nameDebitCreditClientVendorReference numberDateAudit link/);
-    assert.match(text, /8680Example source record\$1\.00-Example ClientExample VendorINV\.42Jan 9, 2026/);
+    assert.ok(text.includes('8680' + lines[0].sourceRecordName + '$1.00-' + lines[0].clientNames.join(', ') + lines[0].vendorNames.join(', ') + (lines[0].referenceNumber ?? '') + 'Jan 9, 2026'));
     assert.doesNotMatch(text, /Open in General Ledger|Footer totals/);
     const scroll = React.Children.toArray(tree.props.children).find(child => child.props?.className === 'drill-activity-scroll');
     const scrollChildren = React.Children.toArray(scroll.props.children);
     assert.ok(scrollChildren.some(child => child.props?.className === 'drill-filters'));
     const markup = renderToStaticMarkup(tree);
+    assert.ok(markup.includes(`data-empty="${!lines[0].clientNames.length}">Client</th>`));
+    assert.ok(markup.includes(`data-empty="${!lines[0].vendorNames.length}">Vendor</th>`));
+    assert.ok(markup.includes(`data-empty="${!lines[0].referenceNumber}">Reference number</th>`));
     assert.match(markup, /class="drill-audit"><a[^>]+href="https:\/\/airtable\.com\/source"[^>]+aria-label="Open the source record for entry 8680"/);
     if (truncated) {
       assert.match(text, /Line counts use the first 1 lines. Summary amounts include all posted lines./);
