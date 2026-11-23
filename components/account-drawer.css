@@ -74,6 +74,7 @@ tr.is-drilled > th, tr.is-drilled > td { background: #dbe7f4; }
 .drill-table tbody tr:hover td { background: var(--surface-2); }
 .drill-table tr.is-target td { background: #dbe7f4; font-weight: 600; color: var(--navy); }
 .drill-table .drill-audit { text-align: center; }
+.drill-entry-link { color: var(--steel); text-decoration: underline; text-underline-offset: 2px; }
 .drill-source { display: inline-grid; place-items: center; color: var(--steel); }
 .drill-muted { color: var(--ink-3); }
 .drill-empty { padding: 20px 10px !important; color: var(--ink-2); text-align: center; white-space: normal !important; }
