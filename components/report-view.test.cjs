@@ -220,7 +220,7 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
     new Function('require', 'module', 'exports', code)(specifier => specifier === 'react' ? hooks : specifier.startsWith('@/') ? load(path.join(root, specifier.slice(2))) : specifier.startsWith('.') ? load(path.join(__dirname, specifier)) : require(specifier), module, module.exports);
     const tree = module.exports.AccountDrawer({ target: { code: '112.100', label: 'Bank' }, range, cache, onClose() {}, onSelect() {} });
     const text = texts(tree);
-    assert.match(text, /Entry #Source record nameDebitCreditClientVendorReference numberDateAudit link/);
+    assert.match(text, /Entry #Source record nameDebitCreditClientVendorRef\. #DateAudit/);
     assert.ok(text.includes('8680' + lines[0].sourceRecordName + '$1.00-' + lines[0].clientNames.join(', ') + lines[0].vendorNames.join(', ') + (lines[0].referenceNumber ?? '') + 'Jan 9, 2026'));
     assert.doesNotMatch(text, /Open in General Ledger|Footer totals/);
     const scroll = React.Children.toArray(tree.props.children).find(child => child.props?.className === 'drill-activity-scroll');
