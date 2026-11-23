@@ -64,6 +64,10 @@ export function ledgerHref({ from, to, account, offset, query, side, accountType
   return `?${params}`;
 }
 
+export function journalLedgerHref(entryNumber: number, date: string) {
+  return `/general-ledger?${new URLSearchParams({ from: date, to: date, entry: String(entryNumber) })}`;
+}
+
 /** General Ledger for one account, from the start of the as-of year through the as-of date. */
 export function accountLedgerHref(account: string, asOf: string, branch?: string) {
   return `/general-ledger${ledgerHref({ from: startOfYear(asOf), to: asOf, account, branch })}`;

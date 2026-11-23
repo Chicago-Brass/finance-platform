@@ -10,7 +10,7 @@ import { formatDate } from "@/lib/reports/report-utils";
 import { ReportLink } from "./ReportNavigation";
 import { SearchableSelect } from "./SearchableSelect";
 import { FilterBar, SearchField } from "./FilterControls";
-import { ledgerHref, safeAuditLink } from "./ledger-table-utils";
+import { journalLedgerHref, ledgerHref, safeAuditLink } from "./ledger-table-utils";
 import { DetailDrawer } from "./DetailDrawer";
 
 /** The row a drill-down opens from. `lineId` highlights one ledger line in the list. */
@@ -141,7 +141,7 @@ export function AccountDrawer({ target, range, cache, accounts = [], onSelect, o
                   const clients = line.clientNames?.join(", ");
                   const vendors = line.vendorNames?.join(", ");
                   return <tr key={line.id} className={line.id === target.lineId ? "is-target" : undefined}>
-                    <td>{line.entry}</td>
+                    <td><ReportLink className="drill-entry-link" href={journalLedgerHref(line.entry, line.date)} aria-label={`Open journal entry ${line.entry}`}>{line.entry}</ReportLink></td>
                     <td>{line.sourceRecordName && <span className="drill-copy" title={line.sourceRecordName}>{line.sourceRecordName}</span>}</td>
                     <td className="num">{line.debit ? money(line.debit) : <span className="drill-muted">-</span>}</td>
                     <td className="num">{line.credit ? money(line.credit) : <span className="drill-muted">-</span>}</td>

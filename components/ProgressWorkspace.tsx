@@ -17,7 +17,7 @@ import { useReportQuery, useReportRefresh } from "./ReportData";
 import { ReportIcon } from "./ReportIcons";
 import { ReportLink } from "./ReportNavigation";
 import { CalendarMark } from "./ReportViewControls";
-import { ledgerDatePresets, safeAuditLink } from "./ledger-table-utils";
+import { journalLedgerHref, ledgerDatePresets, safeAuditLink } from "./ledger-table-utils";
 import "./ledger-tables.css";
 import "./progress-workspace.css";
 
@@ -30,7 +30,7 @@ const count = (value: number) => value.toLocaleString("en-US");
 const timestamp = (value: string) => new Date(value).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
 export function progressLedgerHref(journal: Pick<ProgressJournal, "entryNumber" | "entryDate">) {
-  return `/general-ledger?${new URLSearchParams({ from: journal.entryDate, to: journal.entryDate, entry: String(journal.entryNumber) })}`;
+  return journalLedgerHref(journal.entryNumber, journal.entryDate);
 }
 
 export function progressAccounts(text: string | null): { code: string | null; name: string }[] {
