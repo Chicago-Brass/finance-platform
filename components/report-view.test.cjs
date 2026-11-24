@@ -227,7 +227,7 @@ test('Account cards scroll with the table and capped counts are disclosed', () =
     const scrollChildren = React.Children.toArray(scroll.props.children);
     assert.ok(scrollChildren.some(child => child.props?.className === 'drill-filters'));
     const markup = renderToStaticMarkup(tree);
-    assert.match(markup, /href="\/general-ledger\?from=2026-01-09&amp;to=2026-01-09&amp;entry=8680"[^>]*>8680<\/a>/);
+    assert.match(markup, /href="\/general-ledger\?from=2026-01-09&amp;to=2026-01-09&amp;entry=8680"[^>]*>008680<\/a>/);
     assert.match(markup, /<colgroup>.*drill-col-entry.*drill-col-source.*drill-col-standard.*drill-col-party.*drill-col-standard.*drill-col-audit.*<\/colgroup>/);
     assert.match(markup, /class="drill-audit"><a[^>]+href="https:\/\/airtable\.com\/source"[^>]+aria-label="Open the source record for entry 8680"/);
     if (truncated) {
