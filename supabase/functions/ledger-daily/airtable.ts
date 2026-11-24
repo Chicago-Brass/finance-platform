@@ -39,12 +39,14 @@ export class AirtableClient implements FormulaBuilder {
   private token: string;
   readonly deadline: number;
   readonly dateRange?: SyncDateRange;
+  readonly ignorePostingMarkers: boolean;
   private fetcher: typeof fetch;
   private readOnly: boolean;
   private maxRequests: number;
-  constructor(token: string, deadline: number, fetcher: typeof fetch = fetch, options: { readOnly?: boolean; maxRequests?: number; dateRange?: SyncDateRange } = {}) {
+  constructor(token: string, deadline: number, fetcher: typeof fetch = fetch, options: { readOnly?: boolean; ignorePostingMarkers?: boolean; maxRequests?: number; dateRange?: SyncDateRange } = {}) {
     this.token = token; this.deadline = deadline; this.fetcher = fetcher; this.dateRange = options.dateRange;
-    this.readOnly=options.readOnly??false; this.maxRequests=options.maxRequests??80;
+    this.ignorePostingMarkers = options.ignorePostingMarkers ?? false;
+    this.readOnly = this.ignorePostingMarkers || (options.readOnly ?? false); this.maxRequests=options.maxRequests??80;
   }
   async initialize(): Promise<void> {
     const schema = await this.request("GET", `meta/bases/${FIN_BASE}/tables`);
@@ -64,17 +66,28 @@ export class AirtableClient implements FormulaBuilder {
   private remember(t: string, rows: RawRecord[], fields: string[]): AirtableRecord[] {
     return rows.map(row => {
       const key = `${t}/${row.id}`, old = this.cache.get(key);
-      this.cache.set(key, { row: { id: row.id, fields: { ...old?.row.fields, ...row.fields } }, selected: new Set([...(old?.selected || []), ...fields]) });
+      const values = { ...old?.row.fields };
+      for (const field of fields) delete values[field]; // Airtable omits empty fields, including unchecked boxes.
+      this.cache.set(key, { row: { id: row.id, fields: { ...values, ...row.fields } }, selected: new Set([...(old?.selected || []), ...fields]) });
       return new AirtableRecord(t, row.id, this);
     });
   }
-  async queryIds(tableId: string, formula: string, offset?: string | null): Promise<{ ids: string[]; offset: string | null }> {
+  async queryIds(tableId: string, formula: string, offset?: string | null, maxRecords?: number, sortFieldId?: string, dateFieldId?: string): Promise<{ ids: string[]; offset: string | null; dates?: Record<string, string> }> {
     const primary = this.table(tableId).primaryFieldId;
     const params = new URLSearchParams({ filterByFormula: formula, pageSize: "100", returnFieldsByFieldId: "true" });
-    params.append("fields[]", primary); if (offset) params.set("offset", offset);
+    params.append("fields[]", primary);
+    if (dateFieldId && dateFieldId !== primary) params.append("fields[]", dateFieldId);
+    if (offset) params.set("offset", offset);
+    if (maxRecords !== undefined) params.set("maxRecords", String(maxRecords));
+    if (sortFieldId) {
+      params.set("sort[0][field]", this.getField(tableId, sortFieldId).name);
+      params.set("sort[0][direction]", "asc");
+    }
     const result = await this.request("GET", `${FIN_BASE}/${tableId}`, undefined, params);
-    // Discovery retains only IDs; full records are fetched after the candidate snapshot is complete.
-    return { ids: result.records.map((r: RawRecord) => r.id), offset: result.offset ?? null };
+    // Fetch dates with the IDs so related pages can be merged into accounting order.
+    const dates = dateFieldId ? Object.fromEntries(result.records.map((r: RawRecord) =>
+      [r.id, typeof r.fields[dateFieldId] === "string" ? r.fields[dateFieldId].slice(0, 10) : ""])) : undefined;
+    return { ids: result.records.map((r: RawRecord) => r.id), offset: result.offset ?? null, ...(dates ? { dates } : {}) };
   }
   async queryRecords(tableId: string, formula: string, fields: string[], offset?: string | null): Promise<{ records: AirtableRecord[]; offset: string | null }> {
     const selected = [...new Set([...fields, this.table(tableId).primaryFieldId])];
@@ -87,20 +100,30 @@ export class AirtableClient implements FormulaBuilder {
   async readRecord(t: string, id: string, fields: readonly string[]): Promise<AirtableRecord | null> {
     return (await this.readRecords(t, [id], fields, false))[0] ?? null;
   }
-  async readRecords(t: string, ids: string[], fields: readonly string[], requireAll = true): Promise<AirtableRecord[]> {
-    const unique = [...new Set(ids)], selected = [...new Set([...fields, this.table(t).primaryFieldId])];
+  async readRecords(t: string, ids: string[], fields: readonly string[], requireAll: boolean | "optional" = true): Promise<AirtableRecord[]> {
+    const optional = requireAll === "optional";
+    const table = optional ? this.tables.get(t) : this.table(t);
+    if (!table) return [];
+    const unique = [...new Set(ids)], selected = [...new Set([...fields, table.primaryFieldId])];
     const missing = unique.filter(id => selected.some(f => !this.cached(t, id)?.selected.has(f)));
     for (let start = 0; start < missing.length; start += 40) {
       const part = missing.slice(start, start + 40), params = new URLSearchParams({ returnFieldsByFieldId: "true", filterByFormula: `OR(${part.map(id => `RECORD_ID()=${JSON.stringify(id)}`).join(",")})`, pageSize: "100" });
       selected.forEach(f => params.append("fields[]", f));
-      const result = await this.request("GET", `${FIN_BASE}/${t}`, undefined, params);
-      this.remember(t, result.records, selected);
+      if (optional && (this.requests + 13 > this.maxRequests || Date.now() + 43_000 >= this.deadline)) break;
+      try {
+        const result = await this.request("GET", `${FIN_BASE}/${t}`, undefined, params, optional);
+        this.remember(t, result.records, selected);
+      } catch (error) {
+        if (!optional) throw error;
+        console.warn("Airtable display lookup unavailable", { tableId: t });
+        break;
+      }
     }
     const found = unique.filter(id => selected.every(f => this.cached(t, id)?.selected.has(f)));
-    if (requireAll && found.length !== unique.length) throw new Error(`Missing linked records in ${t}: ${unique.filter(id => !found.includes(id)).join(", ")}`);
+    if (requireAll === true && found.length !== unique.length) throw new Error(`Missing linked records in ${t}: ${unique.filter(id => !found.includes(id)).join(", ")}`);
     return found.map(id => new AirtableRecord(t, id, this));
   }
-  async loadLinkNames(records: AirtableRecord[], fields: string[]): Promise<void> {
+  async loadLinkNames(records: AirtableRecord[], fields: string[], mode: true | "optional" = true): Promise<void> {
     const grouped = new Map<string, Set<string>>();
     for (const record of records) for (const fieldId of fields) {
       const field = this.getField(record.tableId, fieldId), target = field.options?.linkedTableId;
@@ -108,7 +131,7 @@ export class AirtableClient implements FormulaBuilder {
       if (!grouped.has(target)) grouped.set(target, new Set());
       for (const id of this.cached(record.tableId, record.id)?.row.fields[fieldId] || []) grouped.get(target)!.add(id);
     }
-    for (const [tableId, ids] of grouped) await this.readRecords(tableId, [...ids], [this.table(tableId).primaryFieldId]);
+    for (const [tableId, ids] of grouped) await this.readRecords(tableId, [...ids], [], mode);
   }
   async update(tableId: string, records: { id: string; fields: Record<string, unknown> }[]): Promise<void> {
     for (let start = 0; start < records.length; start += 10) {
@@ -132,16 +155,16 @@ export class AirtableClient implements FormulaBuilder {
     await sleep(Math.max(0, 300 - (Date.now() - this.lastRequest))); this.lastRequest = Date.now(); this.requests++;
     return this.fetcher(url, options);
   }
-  private async request(method: string, path: string, body?: unknown, params?: URLSearchParams): Promise<any> {
+  private async request(method: string, path: string, body?: unknown, params?: URLSearchParams, optional = false): Promise<any> {
     if(this.readOnly && method!=="GET")throw new Error("Read-only preview forbids Airtable writes.");
     return retry(async () => {
       let response: Response;
-      try { response = await this.fetch(`https://api.airtable.com/v0/${path}${params ? `?${params}` : ""}`, { method, headers: { Authorization: `Bearer ${this.token}`, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20_000) }); }
+      try { response = await this.fetch(`https://api.airtable.com/v0/${path}${params ? `?${params}` : ""}`, { method, headers: { Authorization: `Bearer ${this.token}`, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(optional ? 2_000 : 20_000) }); }
       catch (error) { if (error instanceof BudgetExceeded) throw error; throw new RetryableError("Airtable request did not complete."); }
       if (response.status === 429) throw new RetryableError("Airtable rate limit reached.", 30_000);
       if (response.status >= 500) throw new RetryableError(`Airtable server error (${response.status}).`);
       if (!response.ok) throw new Error(`Airtable ${method} failed (${response.status}): ${await response.text()}`);
       return response.json();
-    }, { deadline: this.deadline });
+    }, { deadline: this.deadline, attempts: optional ? 1 : 3 });
   }
 }

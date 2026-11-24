@@ -5,7 +5,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import type { ProgressData, ProgressDetail, ProgressJournal, ProgressRule, ImplementationStatus } from "@/lib/progress/types";
 import { todayChicago } from "@/lib/dates";
 import { formatDate } from "@/lib/reports/report-utils";
-import { formatReportAmount } from "@/lib/format";
+import { formatJournalNumber, formatReportAmount } from "@/lib/format";
 import { AccountPill } from "./AccountPill";
 import { FilterBar, FilterField, SearchField } from "./FilterControls";
 import { SearchableSelect } from "./SearchableSelect";
@@ -126,7 +126,7 @@ export function ProgressJournalList({ journals }: { journals: ProgressJournal[] 
   return journals.length ? <div className="progress-journals">{journals.map(journal => {
     const audit = safeAuditLink(journal.auditLink);
     return <section className="progress-journal" key={journal.id} aria-label={`Journal entry ${journal.entryNumber}`}>
-      <header className="progress-journal-heading"><div><strong className="progress-journal-link">Entry #{journal.entryNumber}</strong><time dateTime={journal.entryDate}>{formatDate(journal.entryDate)}</time></div><div className="progress-journal-actions">{journal.isReversal && <span className="progress-stage deferred">Reversal</span>}<ReportLink className="progress-journal-redirect" href={progressLedgerHref(journal)} title="Open in General Ledger" aria-label={`Open General Ledger for journal ${journal.entryNumber}`}>Ledger<ReportIcon name="arrowRight" /></ReportLink>{audit && <a className="progress-journal-redirect" href={audit} target="_blank" rel="noopener noreferrer" title="Open Airtable record" aria-label={`Open Airtable source for journal ${journal.entryNumber}`}>Airtable<ReportIcon name="externalLink" /></a>}</div></header>
+      <header className="progress-journal-heading"><div><strong className="progress-journal-link">Entry {formatJournalNumber(journal.entryNumber, journal.isReversal)}</strong><time dateTime={journal.entryDate}>{formatDate(journal.entryDate)}</time></div><div className="progress-journal-actions">{journal.isReversal && <span className="progress-stage deferred">Reversal</span>}<ReportLink className="progress-journal-redirect" href={progressLedgerHref(journal)} title="Open in General Ledger" aria-label={`Open General Ledger for journal ${journal.entryNumber}`}>Ledger<ReportIcon name="arrowRight" /></ReportLink>{audit && <a className="progress-journal-redirect" href={audit} target="_blank" rel="noopener noreferrer" title="Open Airtable record" aria-label={`Open Airtable source for journal ${journal.entryNumber}`}>Airtable<ReportIcon name="externalLink" /></a>}</div></header>
       <p className="progress-journal-description">{journal.description}</p>
       <table className="progress-journal-lines"><thead><tr><th scope="col">Account</th><th scope="col" className="num-cell">Debit</th><th scope="col" className="num-cell">Credit</th></tr></thead><tbody>{journal.lines.map(line => <tr key={line.lineNumber}><th scope="row"><AccountPill code={line.accountCode} name={line.accountName} /></th><td className="num-cell">{formatReportAmount(Number(line.debit))}</td><td className="num-cell">{formatReportAmount(Number(line.credit))}</td></tr>)}</tbody></table>
     </section>;

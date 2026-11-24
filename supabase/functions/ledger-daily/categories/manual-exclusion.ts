@@ -11,7 +11,7 @@ export async function hasManualInvoice(client: AirtableClient, category: Categor
   else if (category.tableId === E.TABLES.payments) {
     invoiceIds = ids(source, E.PAYMENT_FIELDS.invoices);
     if (category.code === "PAY-09") {
-      const minis = await client.readRecords(E.TABLES.payments, ids(source, P.PAYMENT_FIELDS.miniPayments), [E.PAYMENT_FIELDS.invoices]);
+      const minis = await client.readRecords(E.TABLES.payments, ids(source, P.PAYMENT_FIELDS.miniPayments), [E.PAYMENT_FIELDS.invoices, P.PAYMENT_FIELDS.accounts]);
       invoiceIds.push(...minis.flatMap(mini => ids(mini, E.PAYMENT_FIELDS.invoices)));
     }
   } else if (category.tableId === E.TABLES.prepay) invoiceIds = ids(source, E.PREPAY_FIELDS.invoices);

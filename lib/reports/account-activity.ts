@@ -1,5 +1,6 @@
 import type { JournalPartyDetails } from "./journal-entry";
 import type { LedgerRow } from "./ledger";
+import { formatJournalNumber } from "../format";
 import { cents } from "./report-utils";
 
 /**
@@ -15,6 +16,7 @@ export type AccountActivityLine = {
   id: string;
   date: string;
   entry: number;
+  isReversal?: boolean;
   lineNo: number;
   offsetCode: string | null;
   offsetName: string | null;
@@ -51,6 +53,7 @@ export function toActivityLine(row: LedgerRow, details?: JournalPartyDetails): A
     id: row.line_id,
     date: row.date,
     entry: row.entry_number,
+    ...(row.reverses_entry_id ? { isReversal: true } : {}),
     lineNo: row.line_no,
     offsetCode: row.offset_is_split ? null : row.offsetting_account_number,
     offsetName: row.offset_is_split ? null : row.offsetting_account_name,
@@ -164,7 +167,7 @@ export function filterActivityLines(lines: AccountActivityLine[], filters: Activ
     if (filters.side === "debit" && !line.debit) return false;
     if (filters.side === "credit" && !line.credit) return false;
     if (!search) return true;
-    return `${line.entry} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date} ${line.clientNames?.join(" ") ?? ""} ${line.vendorNames?.join(" ") ?? ""} ${line.referenceNumber ?? ""} ${line.sourceRecordName ?? ""}`.toLocaleLowerCase().includes(search);
+    return `${formatJournalNumber(line.entry, line.isReversal)} entry ${line.entry} ${offsetLabel(line)} ${line.notes ?? ""} ${line.date} ${line.clientNames?.join(" ") ?? ""} ${line.vendorNames?.join(" ") ?? ""} ${line.referenceNumber ?? ""} ${line.sourceRecordName ?? ""}`.toLocaleLowerCase().includes(search);
   });
 }
 

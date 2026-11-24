@@ -21,6 +21,7 @@ export type JournalEntry = JournalPartyDetails & {
   source_system: string; source_event_type: string | null; source_table: string | null;
   source_record_id: string | null; external_ref: string | null; created_at: string; created_by: string | null;
   posted_at: string | null; posted_by: string | null; reverses_entry_id: string | null; reversal_reason: string | null;
+  reversed_entry_number?: number | null;
   lines: JournalLine[];
 };
 
@@ -47,6 +48,13 @@ export async function getJournalEntry(entryNumber: number): Promise<JournalEntry
       lines.push(...(data ?? []) as unknown as JournalLine[]);
       if ((data?.length ?? 0) < 500) break;
     }
-    return { ...entry, lines } as JournalEntry;
+    let reversedEntryNumber: number | null = null;
+    if (entry.reverses_entry_id) {
+      const { data: original, error } = await supabase.from("journal_entries")
+        .select("entry_number").eq("id", entry.reverses_entry_id).maybeSingle();
+      if (error) throw new Error(`Original journal lookup failed: ${error.message}`);
+      reversedEntryNumber = original?.entry_number ?? null;
+    }
+    return { ...entry, lines, reversed_entry_number: reversedEntryNumber } as JournalEntry;
   });
 }

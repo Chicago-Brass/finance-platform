@@ -1,49 +1,93 @@
 // Current Payment T-Charts. Each source owns its journals and reversal; the shared writer only records final pairs.
-import { paymentWorkerFields as fields, POSTING_FIELDS } from "../definitions.ts";
+import { combinedInvoiceBranches } from "./invoice-branch.ts";
+import { CARD_LIABILITY_ACCOUNTS, CARD_REBATE_INCOME, paymentWorkerFields as fields, POSTING_FIELDS, LINKED_SETTLEMENT_FIELDS, LOAN_RECORDS, LOAN_SOURCE_FIELDS } from "../definitions.ts";
 import { inSyncDateRange } from "../scope.ts";
+import { allocateInvoicePaymentCents } from "./payment-allocation.ts";
 
-export function createCategories(client) {
+export function createCategories(client, customerBalance) {
     const { TABLES: T, INVOICE_FIELDS: I, PAYMENT_FIELDS: P, LINE_FIELDS: L, ACCOUNT_FIELDS: A } = fields;
 
-    async function handleClientCredit(data,results) {
-        if (!invoiceMatches(data.invoice,"AR","AR - Refund/Credit")) return;
-        const invoice=data.invoice, cents=-money(invoice.value(I.amount),"Invoice Amount");
-        if (!cents) return;
-        const payments=await client.readRecords(T.payments,ids(invoice,I.payments),[P.accounts]);
-        const accountIds=[...new Set(payments.flatMap(payment=>ids(payment,P.accounts)))];
-        if (accountIds.length!==1) throw new Error("Credit invoice linked payments must identify exactly one payment account.");
-        const bank=await client.readRecord(T.accounts,accountIds[0],Object.values(A));
-        if (!bank || !bank.text(A.number)) throw new Error("Credit invoice payment account number is missing.");
-        addResult(results,"Client Credit Created",bank.text(A.number),"221.300",cents,context(data,[invoice]));
+    function verifiedCredit(credit, method) {
+        if (!invoiceMatches(credit,"AR","AR - Refund/Credit") || credit.text(I.application)!==method)
+            throw new Error("Use a linked AR credit with the matching Method of Application.");
+        const origins=ids(credit,I.originalCreditPayment);
+        if (origins.length!==1) throw new Error("Customer credit must identify one original receipt.");
+        const branches=[...new Set(credit.value(I.transactionBranch) ?? [])];
+        if (ids(credit,I.transactions).length!==1 || branches.length!==1)
+            throw new Error("Customer credit needs one linked transaction with a verified branch.");
+        return { originId:origins[0], invoiceId:credit.id, branch:branches[0] };
+    }
+    async function confirmCredit(data, credit, cents) {
+        if (!customerBalance) throw new Error("Customer credit balance reader is not configured.");
+        if (cents<=0 || await customerBalance.credit(credit.originId,credit.invoiceId,data.record.id,data.entryDate?.slice(0,10))<cents)
+            throw new Error("The application or refund exceeds the posted customer credit available.");
+        return { originId:credit.originId, invoiceId:credit.invoiceId, cents };
     }
     async function handleClientCreditApplication(data,results) {
         const invoice=data.invoice;
         if (!invoiceMatches(invoice,"AR") || !nonzero(invoice,I.creditsApplied)) return;
-        const credits=await client.readRecords(T.invoices,ids(invoice,I.sourceCredits),Object.values(I));
-        if (!credits.some(credit=>credit.text(I.application)==="Credit to Another Order")) return;
-        addResult(results,"Client Credit Applied","221.300","121.100",-money(invoice.value(I.creditsApplied),"Credits Applied"),context(data,[invoice]));
+        const linked=ids(invoice,I.sourceCredits);
+        if (linked.length!==1 || linked[0]===invoice.id)
+            throw new Error("Credit application needs one distinct source credit with a verified allocation.");
+        const record=await client.readRecord(T.invoices,linked[0],Object.values(I));
+        const credit=verifiedCredit(record,"Credit to Another Order");
+        if (combinedInvoiceBranches([invoice])[0]!==credit.branch)
+            throw new Error("Customer credit and recipient invoice branches must match.");
+        const creditClients=ids(record,I.clients), invoiceClients=ids(invoice,I.clients);
+        if (creditClients.length!==1 || invoiceClients.length!==1 || creditClients[0]!==invoiceClients[0])
+            throw new Error("Customer credit and recipient invoice must belong to the same customer.");
+        const cents=-money(invoice.value(I.creditsApplied),"Credits Applied");
+        const creditBalance=await confirmCredit(data,credit,cents);
+        const open=await customerBalance.receivable(invoice.id,invoice.id);
+        if (open==null || cents>open) throw new Error("Credit application exceeds the recipient invoice's posted open AR.");
+        data.customerSettlement={receivables:[{invoiceId:invoice.id,openCents:open}],credit:creditBalance};
+        addResult(results,"Client Credit Applied","221.300","121.100",cents,{
+            ...context(data,[invoice]),branch:[credit.branch],sourceRecordId:credit.originId,
+            debitInvoiceRecordId:credit.invoiceId,creditInvoiceRecordId:invoice.id,
+        });
     }
     async function handleClientCashRefund(data,results) {
         if (!sent(data)) return;
         const invoices=data.invoices.filter(invoice=>invoiceMatches(invoice,"AR","AR - Refund/Credit") && invoice.text(I.application)==="Cash Refund");
         if (!invoices.length) return;
-        addResult(results,"Client Cash Refund","221.300",await selectedAccount(data.payment,P.accounts,"Payment"),-money(data.payment.value(P.amount),"Payment Amount"),context(data,invoices));
+        if (invoices.length!==1 || ids(data.payment,P.invoices).length!==1)
+            throw new Error("A customer refund needs one explicitly allocated credit invoice.");
+        const credit=verifiedCredit(invoices[0],"Cash Refund");
+        if (credit.originId===data.payment.id) throw new Error("The original receipt cannot also be its refund.");
+        const cents=-money(data.payment.value(P.amount),"Refund Payment Amount");
+        data.customerSettlement={credit:await confirmCredit(data,credit,cents)};
+        addResult(results,"Client Cash Refund","221.300",await selectedAccount(data.payment,P.accounts,"Payment"),cents,
+            {...context(data,invoices),branch:[credit.branch],sourceRecordId:credit.originId});
     }
     async function handleVendorCardPayment(data,results) {
-        if (!sent(data) || await selectedAccount(data.payment,P.accounts,"Payment")!=="231.100") return;
+        if (!sent(data) || data.payment.text(P.method)!=="Credit Card") return;
         const invoices=data.invoices.filter(invoice=>invoiceMatches(invoice,"AP","AP - Product"));
-        addPayment(results,data,"Pay a Vendor with the Company Credit Card",invoices,"211.100","231.100");
+        if (!invoices.length) return;
+        const card=await selectedAccount(data.payment,P.accounts,"Payment");
+        if (!CARD_LIABILITY_ACCOUNTS.includes(card)) return;
+        addPayment(results,data,"Pay a Vendor with the Company Credit Card",invoices,"211.100",card);
     }
     async function handleCardStatementPayment(data,results) {
         if (!sent(data,"CC Batch Payment")) return;
-        const minis=await client.readRecords(T.payments,ids(data.payment,P.miniPayments),[P.invoices]);
+        const miniIds=[...new Set(ids(data.payment,P.miniPayments))];
+        const minis=await client.readRecords(T.payments,miniIds,[P.invoices,P.accounts]);
+        if (!minis.length || minis.length!==miniIds.length) throw new Error("Card statement must have all linked mini-payments available.");
+        await client.readRecords(T.accounts,[...new Set(minis.flatMap(mini=>ids(mini,P.accounts)))],[A.number]);
+        const cards=[...new Set(await Promise.all(minis.map(mini=>selectedAccount(mini,P.accounts,"Statement mini-payment"))))];
+        if (cards.length!==1 || !CARD_LIABILITY_ACCOUNTS.includes(cards[0]))
+            throw new Error("Card statement mini-payments must identify one Amex or Chase account.");
+        const bank=await selectedAccount(data.payment,P.accounts,"Payment");
+        if (CARD_LIABILITY_ACCOUNTS.includes(bank) || bank==="231.100") throw new Error("Card statement must use a separate bank account.");
         const invoices=await client.readRecords(T.invoices,[...new Set(minis.flatMap(mini=>ids(mini,P.invoices)))],Object.values(I));
-        addResult(results,"Pay the Credit-card Statement","231.100",await selectedAccount(data.payment,P.accounts,"Payment"),
+        addResult(results,"Pay the Credit-card Statement",cards[0],bank,
             money(data.payment.value(P.amount),"Payment Amount"),context(data,invoices));
     }
     async function handleEarlyPaymentDiscount(data,results) {
-        if (!await paidInvoice(data,"AP") || data.record.text(L.type)!=="Discount" || data.record.text(L.discountStatus)==="Expired") return;
-        addResult(results,"Early-payment Discount Taken","211.100","004.011",-money(data.record.value(L.amount),"Line Amount"),context(data,[data.invoice]));
+        if (data.record.text(L.type)!=="Discount" || data.record.text(L.discountStatus)==="Expired") return;
+        const vendor=data.invoice?.text(I.vendorTypeAP);
+        if (!["AP - Product","AP - Expenses (Sales Tax)"].includes(vendor) || !await paidInvoice(data,"AP",vendor)) return;
+        addResult(results,"Early-payment Discount Taken","211.100","004.011",-money(data.record.value(L.amount),"Line Amount"),
+            context(data,[data.invoice]));
     }
     async function handleVendorCreditApplication(data,results) {
         if (!sent(data)) return;
@@ -53,7 +97,8 @@ export function createCategories(client) {
             if (!sourceIds.length) throw new Error("Bill has Credits Applied but no source credit invoice.");
             const credits=await client.readRecords(T.invoices,sourceIds,Object.values(I));
             const weights=credits.map(credit=>{
-                if (credit.id===invoice.id || !invoiceMatches(credit,"AP","AP - Credit")) throw new Error("Bill source credit must be a distinct AP Credit invoice.");
+                if (credit.id===invoice.id || !invoiceMatches(credit,"AP","AP - Credit") || credit.text(I.application)!=="Credit to Another Order")
+                    throw new Error("Bill source credit must be a distinct AP Credit invoice marked Credit to Another Order.");
                 const available=money(credit.value(I.creditAvailable),"Source Credit Available Credits",4);
                 if (available>=0) throw new Error("Source credit Available Credits must be negative.");
                 return {id:credit.id,units:-available};
@@ -69,26 +114,67 @@ export function createCategories(client) {
     }
     async function handleVendorReturn(data,results) {
         if (!sent(data,"Return Payment") || data.payment.text(P.type)!=="AP") return;
-        const refs=context(data,data.invoices);refs.branch=[];
-        addResult(results,"Vendor Payment Returned","112.100","211.100",-money(data.payment.value(P.amount),"Payment Amount"),refs);
+        const refs=context(data,data.invoices);
+        addResult(results,"Vendor Payment Returned",await selectedAccount(data.payment,P.accounts,"Payment"),"211.100",-money(data.payment.value(P.amount),"Payment Amount"),refs);
     }
     async function handleVendorRepayment(data,results) {
         if (!sent(data,"Repayment") || data.payment.text(P.type)!=="AP") return;
-        addResult(results,"Vendor Return Payment Repaid","211.100","112.100",money(data.payment.value(P.amount),"Payment Amount"),context(data,data.invoices));
+        addResult(results,"Vendor Return Payment Repaid","211.100",await selectedAccount(data.payment,P.accounts,"Payment"),money(data.payment.value(P.amount),"Payment Amount"),context(data,data.invoices));
     }
     async function handleVendorRefund(data,results) {
         if (!sent(data)) return;
         const invoices=data.invoices.filter(invoice=>invoiceMatches(invoice,"AP","AP - Refund"));
         if (!invoices.length) return;
-        addResult(results,"Vendor Refund Received",await selectedAccount(data.payment,P.accounts,"Payment"),"211.100",-money(data.payment.value(P.amount),"Payment Amount"),context(data,invoices));
+        addResult(results,"Vendor Refund Received",await selectedAccount(data.payment,P.accounts,"Payment"),"211.100",-allocateInvoicePaymentCents(data.payment.value(P.amount),data.invoices,invoices,I.paymentProportion),context(data,invoices));
     }
-    async function handleLoanInvoice(data) {
-        if (!invoiceMatches(data.invoice,"AR","AR - Non-Product") || !ids(data.invoice,I.loan).length) return;
-        throw new Error("Not yet implemented: Payment row 12 needs eligible loan accounts and cash-recognition ownership.");
+    async function handleLoanFunding(data,results,setup) {
+        const loan = data.record;
+        if (!loan.value(LOAN_RECORDS.active) || loan.text(LOAN_RECORDS.setup) !== setup) return;
+        const cents = money(loan.value(LOAN_RECORDS.amount),"Loan Amount");
+        if (cents <= 0) throw new Error("Loan Amount must be positive.");
+        const original = loan.value(LOAN_RECORDS.date);
+        const date = loan.value(LOAN_RECORDS.overrideDate) ?? (Array.isArray(original) && original.length === 1 ? original[0] : original);
+        if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}(?:$|T)/.test(date)) throw new Error("One effective Loan Start Date is required.");
+        data.entryDate = date.slice(0,10);
+        const credit = await selectedAccount(loan, LOAN_RECORDS.account,"Loan","Liability");
+
+        const cash = setup === LOAN_RECORDS.cashSetup;
+        let debit = "112.100", invoices = [];
+        if (cash) {
+            const sourceIds = ids(loan,LOAN_RECORDS.sourceInvoice);
+            if (sourceIds.length > 1) throw new Error("Loan must link at most one funding invoice.");
+            invoices = await client.readRecords(T.invoices,sourceIds,Object.values(I));
+            if (invoices.some(invoice=>invoice.value(I.cancelled) || ids(invoice,I.manualJournals).length)) return;
+        } else {
+            const assetIds = ids(loan,LOAN_RECORDS.asset);
+            if (assetIds.length !== 1) throw new Error("Financed purchase must link exactly one asset.");
+            const asset = await client.readRecord(LOAN_RECORDS.assetTable,assetIds[0],[LOAN_RECORDS.assetAccount]);
+            if (!asset) throw new Error("Financed purchase asset is missing.");
+            debit = await selectedAccount(asset,LOAN_RECORDS.assetAccount,"Financed asset","Asset");
+        }
+        addResult(results,cash ? "Loan Funding Recorded" : "Financed Purchase Recorded",debit,credit,cents,context(data,invoices));
     }
-    async function handleLoanPayment(data) {
-        if (!sent(data) || !data.invoices.some(invoice=>invoiceMatches(invoice,"AR","AR - Non-Product"))) return;
-        throw new Error("Not yet implemented: Payment row 13 needs the monthly invoice link and principal/interest source.");
+    async function handleLoanPayment(data,results) {
+        const { invoice, record } = data;
+        const loans = ids(invoice,I.monthlyLoan);
+        if (!loans.length || invoice.value(I.cancelled) || invoice.text(I.status) !== "Fully Paid") return;
+        if (loans.length !== 1) throw new Error("A monthly repayment invoice must link exactly one loan.");
+        const cents = money(record.value(L.amount),"Line Amount");
+        if (!cents) return;
+        const debit = await selectedAccount(record,L.accounts,"Loan repayment line");
+        if (debit !== "007.003") {
+            const loan = await client.readRecord(LOAN_RECORDS.table,loans[0],[LOAN_RECORDS.account]);
+            if (!loan) throw new Error("Monthly repayment loan is missing.");
+            if (debit !== await selectedAccount(loan,LOAN_RECORDS.account,"Loan")) return;
+        }
+        const settlements = await linkedSettlements(invoice);
+        if (settlements.length !== 1) throw new Error("A fully paid loan invoice must identify exactly one sent regular payment.");
+        const payment = settlements[0];
+        const date = payment.text(P.date).slice(0,10);
+        if (!date) throw new Error("Loan repayment Payment Date is missing.");
+        if (!inSyncDateRange(date,client.dateRange)) return;
+        data.entryDate = payment.value(P.date);
+        addResult(results,"Monthly Loan Repayment",debit,await selectedAccount(payment,P.accounts,"Payment"),cents,context(data,[invoice]));
     }
     async function handleOwnerDistribution(data,results) {
         await accountPayment(data,results,"Owner Distribution Paid","AP","AP - Expenses (Non-Sales Tax)","316.100",false);
@@ -109,10 +195,23 @@ export function createCategories(client) {
         await accountPayment(data,results,"Security Deposit Paid","AP","AP - Assets","143.200",false,"211.100");
     }
     async function handleCardRebate(data,results) {
-        if (!sent(data) || await selectedAccount(data.payment,P.accounts,"Payment")!=="231.100") return;
-        const invoices=[];
-        for (const invoice of data.invoices) if (invoiceMatches(invoice,"AR","AR - Non-Product") && invoice.text(I.status)==="Fully Paid" && ids(invoice,I.accounts).length && await selectedAccount(invoice,I.accounts,"Invoice")==="004.011") invoices.push(invoice);
-        addPayment(results,data,"Credit-card Rebate Earned",invoices,"231.100","004.011");
+        if (!sent(data)) return;
+        const card=await selectedAccount(data.payment,P.accounts,"Payment");
+        if (!CARD_LIABILITY_ACCOUNTS.includes(card)) return;
+        const statementDiscounts=[], cashback=[];
+        for (const invoice of data.invoices) {
+            if (invoice.text(I.status)!=="Fully Paid" || !ids(invoice,I.accounts).length) continue;
+            const isStatementDiscount=invoiceMatches(invoice,"AP","AP - Expenses (Non-Sales Tax)")
+                && data.payment.text(P.method)==="Credit Card" && invoice.value(I.amount)<0;
+            const isCashback=invoiceMatches(invoice,"AR","AR - Non-Product");
+            if ((!isStatementDiscount && !isCashback) || await selectedAccount(invoice,I.accounts,"Invoice")!==CARD_REBATE_INCOME) continue;
+            (isStatementDiscount ? statementDiscounts : cashback).push(invoice);
+        }
+        if (statementDiscounts.length) {
+            const cents=-paymentShare(data,statementDiscounts);
+            addResult(results,"Credit-card Rebate Earned",card,CARD_REBATE_INCOME,cents,context(data,statementDiscounts),cashback.length?"statement-discounts":undefined);
+        }
+        addPayment(results,data,"Credit-card Rebate Earned",cashback,card,CARD_REBATE_INCOME);
     }
 
     function ids(record,field) { return (record.value(field)||[]).map(link=>link.id); }
@@ -143,11 +242,12 @@ export function createCategories(client) {
         }
         return new Map(parts.map(part=>[part.id,part.cents]));
     }
-    async function selectedAccount(record,field,label) {
+    async function selectedAccount(record,field,label,expectedType) {
         const links=ids(record,field);
         if (links.length!==1) throw new Error(`${label} must link exactly one account.`);
-        const account=await client.readRecord(T.accounts,links[0],Object.values(A));
+        const account=await client.readRecord(T.accounts,links[0],[...Object.values(A),...(expectedType ? [LOAN_RECORDS.accountType] : [])]);
         if (!account || !account.text(A.number)) throw new Error(`${label} account number is missing.`);
+        if (expectedType && account.text(LOAN_RECORDS.accountType) !== expectedType) throw new Error(`${label} must link a ${expectedType.toLowerCase()} account.`);
         return account.text(A.number);
     }
     function context(data,invoices) {
@@ -157,16 +257,19 @@ export function createCategories(client) {
         for (const [name,field] of [["vendor",I.vendors],["client",I.clients],["staff",I.staff],["transaction",I.transactions],["po",I.purchaseOrders],["state",I.states]]) {
             refs[`${name}RecordIds`]=[...new Set(invoices.flatMap(invoice=>ids(invoice,field)))].sort();
         }
-        const branches=invoices.map(invoice=>invoice.value(I.branch)?.name);
-        refs.branch=branches.some(branch=>!branch)?[]:[...new Set(branches)];
+        refs.branch=combinedInvoiceBranches(invoices);
         return refs;
     }
     function addResult(results,category,debit,credit,cents,refs,entryKey) {
         if (!cents) return;
         results.push({category,...(entryKey?{entryKey}:{}),postings:[{debitAccount:{number:debit},creditAccount:{number:credit},amount:(cents/100).toFixed(2),...refs}]});
     }
+    function paymentShare(data,invoices) {
+        const amount=data.payment.value(P.amount);
+        return allocateInvoicePaymentCents(amount,data.invoices,invoices,I.paymentProportion);
+    }
     function addPayment(results,data,category,invoices,debit,credit) {
-        if (invoices.length) addResult(results,category,debit,credit,money(data.payment.value(P.amount),"Payment Amount"),context(data,invoices));
+        if (invoices.length) addResult(results,category,debit,credit,paymentShare(data,invoices),context(data,invoices));
     }
     async function accountInvoices(data,type,vendor,code) {
         const invoices=[];
@@ -180,22 +283,21 @@ export function createCategories(client) {
         const bank=await selectedAccount(data.payment,P.accounts,"Payment");
         addPayment(results,data,category,invoices,incoming?bank:settlementAccount,incoming?settlementAccount:bank);
     }
+    async function linkedSettlements(invoice) {
+        const controls=POSTING_FIELDS[T.payments];
+        const payments=await client.readRecords(T.payments,ids(invoice,I.payments),LINKED_SETTLEMENT_FIELDS);
+        return payments.filter(payment=>sent({payment}) && !payment.value(controls.reverse) && !payment.value(controls.reverseDate));
+    }
     async function paidInvoice(data,type,vendor) {
         if (!invoiceMatches(data.invoice,type,vendor) || data.invoice.text(I.status)!=="Fully Paid") return false;
-        const controls=POSTING_FIELDS[T.payments];
-        const payments=await client.readRecords(T.payments,ids(data.invoice,I.payments),[...Object.values(P),controls.reverse,controls.reverseDate]);
-        const eligible=[];
-        for (const payment of payments) {
-            if (!payment.value(P.sent) || payment.text(P.recordType)!=="Regular Payment" || payment.value(P.cancelled) || payment.value(controls.reverse) || payment.value(controls.reverseDate) || !inSyncDateRange(payment.text(P.date).slice(0,10),client.dateRange)) continue;
-            eligible.push(payment);
-        }
+        const eligible=(await linkedSettlements(data.invoice)).filter(payment=>inSyncDateRange(payment.text(P.date).slice(0,10),client.dateRange));
         eligible.sort((a,b)=>b.text(P.date).localeCompare(a.text(P.date)) || a.id.localeCompare(b.id));
         if (!eligible.length) return false;
         data.entryDate=eligible[0].value(P.date);
         return true;
     }
     async function loadData(tableId,recordId) {
-        const group=tableId===T.invoices?I:tableId===T.payments?P:tableId===T.lines?L:null;
+        const group=tableId===T.invoices?I:tableId===T.payments?P:tableId===T.lines?L:tableId===LOAN_RECORDS.table?LOAN_SOURCE_FIELDS:null;
         if (!group) throw new Error("Unsupported Payment category source table.");
         const record=await client.readRecord(tableId,recordId,Object.values(group));
         if (!record) throw new Error(`Payment category source not found: ${recordId}`);
@@ -210,10 +312,11 @@ export function createCategories(client) {
         }
         return data;
     }
-    const handlers={"PAY-03":handleClientCredit,"PAY-28":handleClientCreditApplication,"PAY-29":handleClientCashRefund,
+    const handlers={"PAY-28":handleClientCreditApplication,"PAY-29":handleClientCashRefund,
         "PAY-08":handleVendorCardPayment,"PAY-09":handleCardStatementPayment,"PAY-10":handleEarlyPaymentDiscount,
         "PAY-11":handleVendorCreditApplication,"PAY-12":handleVendorReturn,"PAY-30":handleVendorRepayment,
-        "PAY-13":handleVendorRefund,"PAY-31":handleLoanInvoice,"PAY-16":handleLoanPayment,
+        "PAY-13":handleVendorRefund,"PAY-31":(data,results)=>handleLoanFunding(data,results,LOAN_RECORDS.cashSetup),
+        "PAY-33":(data,results)=>handleLoanFunding(data,results,LOAN_RECORDS.purchaseSetup),"PAY-16":handleLoanPayment,
         "PAY-20":handleOwnerDistribution,"PAY-21":handleOwnerContribution,"PAY-23":handleInsuranceReceipt,
         "PAY-32":handleSecurityDepositInvoice,"PAY-24":handleSecurityDepositPayment,"PAY-27":handleCardRebate};
     return {fields,async evaluate(rule,recordId,tableId=T.payments) {

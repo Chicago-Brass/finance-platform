@@ -17,7 +17,7 @@ function fixture(){
   const account=code=>{const id='account-'+code;put(T.accounts,id,{[F.ACCOUNT_FIELDS.number]:code});return id;};
   const invoice=put(T.invoices,ID.invoice,{
     fld9e6yDIv0PtBDV0:{name:'AP'},fldXwodwAuXLJt5rP:{name:'AP - Staff'},
-    fldSungTQU5nIEIvi:'2026-10-10',fldm5nXoW7MrwjkhW:999,
+    fld9UHq6aOrCVzmwL:1,fldSungTQU5nIEIvi:'2026-10-10',fldm5nXoW7MrwjkhW:999,
     fldSHm0sXlVswhqs4:['Chicago'],fldt5PjqGDrINUYT5:{name:'Chicago'},
     fldT5u0prSS8G1H4x:links(account('006.002')),fldF0uqCMkPgwuIes:links(ID.line),
     fld2YNpvvqweloE6S:{name:'Fully Paid'},fldckuYNfSzBXq0AX:true,

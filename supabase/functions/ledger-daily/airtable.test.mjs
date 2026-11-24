@@ -39,3 +39,38 @@ test('permanent API permission errors are not retried',async()=>{
 test('request batch budget pauses before another network call',async()=>{
  let fetched=false;const client=new AirtableClient('test-only',Date.now()+60000,async()=>{fetched=true;return json(schema)});client.requests=80;await assert.rejects(()=>client.initialize(),BudgetExceeded);assert.equal(fetched,false);
 });
+
+test('a partial refresh clears a field omitted by Airtable while retaining other cached fields', async () => {
+ let reads = 0;
+ const client = new AirtableClient('test-only',Date.now()+60000,async url => String(url).includes('/meta/')
+  ? json(schema)
+  : json({records:[{id:'pay',fields:++reads===1?{name:'Payment',type:'AP',links:['bank']}:{name:'Payment'}}]}));
+ await client.initialize();
+ const record = await client.readRecord('payments','pay',['type','links']);
+ await client.queryRecords('payments','TRUE()',['type']);
+ assert.equal(record.value('type'),null);
+ assert.equal(record.value('links')[0].id,'bank');
+});
+
+test('an isolated history client rejects Airtable writes even if its caller attempts one', async () => {
+ let calls=0;
+ const client=new AirtableClient('test-token',Date.now()+60000,async()=>{calls++;return json({});},
+  {ignorePostingMarkers:true});
+ await assert.rejects(()=>client.fetch('https://api.airtable.com/v0/test',{method:'PATCH'}),/forbids Airtable writes/);
+ assert.equal(calls,0);
+});
+
+test('candidate pages can sort by the current Airtable field name', async () => {
+  let params;
+  const client = new AirtableClient('test-only', Date.now() + 60_000, async url => {
+    if (String(url).includes('/meta/')) return json(schema);
+    params = new URL(String(url)).searchParams;
+    return json({records: [{id: 'older'}, {id: 'newer'}]});
+  });
+  await client.initialize();
+  const page = await client.queryIds('payments', 'TRUE()', 'next', undefined, 'type');
+  assert.deepEqual(page.ids, ['older', 'newer']);
+  assert.equal(params.get('sort[0][field]'), 'Renamed Invoice Type');
+  assert.equal(params.get('sort[0][direction]'), 'asc');
+  assert.equal(params.get('offset'), 'next');
+});

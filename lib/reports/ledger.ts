@@ -78,6 +78,7 @@ export type LedgerRow = {
   audit_link: string | null;
   offset_is_split: boolean | null;
   entry_number: number;
+  reverses_entry_id?: string | null;
   line_id: string;
   line_no: number;
 };
@@ -101,7 +102,7 @@ export async function getLedgerPartyDetails(entryNumbers: number[]) {
 }
 
 export const LEDGER_PAGE_SIZE = 100;
-const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,line_id,line_no";
+const LEDGER_COLUMNS = "date,account_number,account_name,offsetting_account_number,offsetting_account_name,debit,credit,notes,audit_link,offset_is_split,entry_number,reverses_entry_id,line_id,line_no";
 
 export type LedgerSide = "all" | "debit" | "credit";
 export type LedgerAccountFilters = { branch?: string; account?: string; offset?: string; query?: string; side?: LedgerSide; accountType?: TbRow["account_type"]; category?: string; min?: number; max?: number };

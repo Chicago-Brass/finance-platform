@@ -2,7 +2,7 @@ import { SyncBusyError } from "./run-lock.ts";
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { postAndSync } from "../ledger-payment/service.ts";
 import type { LedgerPaymentEvent } from "../ledger-payment/ledger.ts";
-import type { LedgerReference, LedgerStore, RunJob, RunState, RunStore } from "./types.ts";
+import type { LedgerReference, LedgerStore, RunJob, RunState, RunStore, SyncSource } from "./types.ts";
 import { RetryableError } from "./retry.ts";
 import { syncLedgerLinks } from "../_shared/ledger-links.ts";
 
@@ -16,6 +16,22 @@ export async function enabledRuleCodes(sql: Sql): Promise<Set<string>> {
   return new Set(rules.map(rule => rule.rule_code));
 }
 
+export async function resolveDisplayRules(sql: Sql, codes: string[]): Promise<string[]> {
+  const rows = await service(sql, tx => tx<{display_code:string;rule_code:string}[]>`
+    select display_code,rule_code from public.ledger_rules where retired_at is null and display_code=any(${codes}::text[])`);
+  const mapping = new Map(rows.map(row => [row.display_code,row.rule_code]));
+  if (codes.some(code => !mapping.has(code))) throw new RangeError("Unknown grouped rule code.");
+  return codes.map(code => mapping.get(code)!);
+}
+
+export async function enqueueSourceReposts(sql: Sql, source: SyncSource) {
+  return await service(sql, tx => tx<{id:string;ruleCode:string;repostOn:string}[]>`
+    select q.id::text, r.display_code as "ruleCode", q.repost_on::text as "repostOn"
+    from ledger_private.enqueue_airtable_reposts(${source.tableId},${source.recordId}) q
+    join public.ledger_rules r on r.rule_code=q.rule_code order by r.display_code
+  `);
+}
+
 export class DatabaseRunStore implements RunStore {
   private sql: Sql;
   constructor(sql: Sql) { this.sql = sql; }
@@ -23,7 +39,7 @@ export class DatabaseRunStore implements RunStore {
     return service(this.sql, async tx => {
       const [lock] = await tx<{acquired:boolean}[]>`select pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('ledger-sync:global',0)) as acquired`;
       if(!lock.acquired) return null;
-      const [unfinished] = await tx<{run_key:string}[]>`select run_key from public.ledger_daily_runs where (state->>'done'='false' or locked_until>now()) and run_key<>${runKey} order by created_at limit 1`;
+      const [unfinished] = await tx<{run_key:string}[]>`select run_key from public.ledger_daily_runs where ledger_private.keeps_daily_run_lock(run_key,state,locked_until,now()) and run_key<>${runKey} order by created_at limit 1`;
       if(unfinished) throw new SyncBusyError(unfinished.run_key);
       await tx`insert into public.ledger_daily_runs (run_key, state) values (${runKey}, ${tx.json(initial)}) on conflict (run_key) do nothing`;
       const token = crypto.randomUUID();
@@ -31,7 +47,7 @@ export class DatabaseRunStore implements RunStore {
         locked_until=now()+interval '3 minutes', updated_at=now()
         where run_key=${runKey} and (locked_until is null or locked_until<now()) returning id::text, state`;
       if (!row) return null;
-      if (row.state.createdFrom !== initial.createdFrom || row.state.dateRange?.from !== initial.dateRange?.from || row.state.dateRange?.to !== initial.dateRange?.to || row.state.source?.tableId !== initial.source?.tableId || row.state.source?.recordId !== initial.source?.recordId || row.state.dryRun !== initial.dryRun || JSON.stringify(row.state.categoryIds) !== JSON.stringify(initial.categoryIds)) throw new RangeError("Run key already belongs to a different category scope, source or posting mode.");
+      if (row.state.repostId !== initial.repostId || row.state.createdFrom !== initial.createdFrom || row.state.dateRange?.from !== initial.dateRange?.from || row.state.dateRange?.to !== initial.dateRange?.to || row.state.source?.tableId !== initial.source?.tableId || row.state.source?.recordId !== initial.source?.recordId || row.state.dryRun !== initial.dryRun || JSON.stringify(row.state.categoryIds) !== JSON.stringify(initial.categoryIds)) throw new RangeError("Run key already belongs to a different category scope, source or posting mode.");
       return { ...row, leaseToken: token };
     });
   }
@@ -62,15 +78,16 @@ export class DatabaseLedgerStore implements LedgerStore {
   private token: string;
   private fetcher: typeof fetch;
   private deadline: number;
-  constructor(sql: Sql, token: string, fetcher: typeof fetch = fetch, deadline = Date.now() + 90_000) {
-    this.sql = sql; this.token = token; this.fetcher = fetcher; this.deadline = deadline;
+  private writeback: boolean;
+  constructor(sql: Sql, token: string, fetcher: typeof fetch = fetch, deadline = Date.now() + 90_000, writeback = true) {
+    this.sql = sql; this.token = token; this.fetcher = fetcher; this.deadline = deadline; this.writeback = writeback;
   }
   async prepareSources(tableId: string, recordIds: string[]): Promise<void> {
     this.sources.clear();
     for (const id of recordIds) this.sources.set(`${tableId}/${id}`, { references: [], reversed: false });
     const rows = await service(this.sql, tx => tx<(LedgerReference & { source_record_id: string; reversed: boolean })[]>`
       select o.rule_code as rule, o.source_entry_key as key, to_char(o.posted_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as datetime, o.id::text, o.source_record_id,
-        exists(select 1 from public.journal_entries r where r.reverses_entry_id=o.id and r.status='posted') as reversed
+        exists(select 1 from ledger_private.ledger_source_cancellations c where c.source_table=o.source_table and c.source_record_id=o.source_record_id) as reversed
       from public.journal_entries o where o.source_system='airtable' and o.source_table=${tableId}
         and o.source_record_id=any(${recordIds}::text[]) and o.status='posted' and o.reverses_entry_id is null`);
     for (const row of rows) {
@@ -85,6 +102,7 @@ export class DatabaseLedgerStore implements LedgerStore {
     return source.references.filter(reference => reference.rule === rule);
   }
   async syncLinks(tableId: string, recordId: string): Promise<LedgerReference[]> {
+    if (!this.writeback) throw new Error("Airtable writeback is disabled.");
     return (await syncLedgerLinks(this.sql, { tableId, recordId }, this.token, this.fetcher, this.deadline)).postings;
   }
   async hasReversals(tableId: string, recordId: string): Promise<boolean> {
@@ -93,7 +111,7 @@ export class DatabaseLedgerStore implements LedgerStore {
     return source.reversed;
   }
   async post(event: LedgerPaymentEvent) {
-    try { return await postAndSync(this.sql, event, this.token, this.fetcher, { allowAdditionalCategories: true, deadline: this.deadline }); }
+    try { return await postAndSync(this.sql, event, this.token, this.fetcher, { allowAdditionalCategories: true, deadline: this.deadline, writeback: this.writeback }); }
     catch (error) {
       const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
       if (transientCodes.has(code) || code.startsWith("08")) throw new RetryableError("Transient ledger connection/transaction failure.");

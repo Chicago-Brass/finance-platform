@@ -9,6 +9,39 @@ import {handleDailyRequest} from './handler.ts';
 import {AirtableClient} from './airtable.ts';
 import {POSTING_FIELDS,paymentSentFields as F,expenseWorkerFields as E} from './definitions.ts';
 const fake={field:(t,f)=>`{${f}}`,eq:(t,f,v)=>`{${f}}=${JSON.stringify(v)}`,includes:(t,f,v)=>`FIND(${JSON.stringify(v)},{${f}})>0`};
+
+test('grouped rules filter resolves display codes and retains date/source scope on continuation',async()=>{
+ const env={databaseUrl:'test',webhookSecret:'secret',airtableToken:'test'},source={tableId:F.TABLES.payments,recordId:'rec00000000009941'};
+ const body={rules:['EXP-02','EXP-02'],dryRun:false,fromDate:'2026-01-01',toDate:'2026-01-31',source,runKey:'grouped-scope'};
+ let lookups=0,calls=0;
+ const resolve=async codes=>{lookups++;assert.deepEqual(codes,['EXP-02']);return['EXP-14'];};
+ const request=value=>new Request('https://example.test/ledger-daily',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(value)});
+ const result=await handleDailyRequest(request(body),env,async options=>{
+  calls++;assert.deepEqual(options.state.categoryIds,['EXP-14']);assert.deepEqual(options.state.source,source);
+  assert.deepEqual(options.state.dateRange,{from:'2026-01-01',to:'2026-01-31'});assert.equal(options.state.dryRun,false);return{done:false};
+ },undefined,resolve);
+ assert.equal(result.status,200);const resume=(await result.json()).requestForResume;
+ assert.deepEqual(resume.rules,['EXP-02']);assert.equal(resume.categoryCodes,undefined);assert.deepEqual(resume.source,source);
+ assert.equal(resume.fromDate,body.fromDate);assert.equal(resume.toDate,body.toDate);assert.equal(lookups,1);assert.equal(calls,1);
+ let previewed=false;
+ const preview=await handleDailyRequest(request({...body,test:true}),env,async()=>{throw Error('No writes');},async options=>{
+  previewed=true;assert.deepEqual(options.categoryCodes,['EXP-14']);assert.deepEqual(options.source,source);return{databaseWrites:0,airtableWrites:0,requestForResume:{test:true,categoryCodes:['EXP-14'],cursor:{example:'unchanged'}}};
+ },resolve);
+ assert.equal(preview.status,200);assert(previewed);const previewResume=(await preview.json()).requestForResume;
+ assert.deepEqual(previewResume.rules,['EXP-02']);assert.equal(previewResume.categoryCodes,undefined);assert.deepEqual(previewResume.cursor,{example:'unchanged'});
+});
+
+test('invalid or unknown grouped rules cannot execute or silently run all categories',async()=>{
+ const env={databaseUrl:'test',webhookSecret:'secret',airtableToken:'test'};let calls=0;
+ const request=value=>new Request('https://example.test',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(value)});
+ const execute=async()=>{calls++;return{done:true};};
+ const resolve=async()=>{throw new RangeError('Unknown grouped rule code.');};
+ for(const body of [{rules:[]},{rules:'EXP-01'},{rules:['']},{rules:[null]},{rules:['EXP-01'],categoryCodes:[]},{rules:['EXP-99']}])assert.equal((await handleDailyRequest(request(body),env,execute,undefined,resolve)).status,400);
+ assert.equal((await handleDailyRequest(request({rules:['EXP-01']}),env,execute)).status,503);
+ assert.equal((await handleDailyRequest(request({rules:['EXP-01']}),env,execute,undefined,async()=>{throw Error('private connection detail');})).status,503);
+ assert.equal(calls,0);
+ await handleDailyRequest(request({categoryCodes:['EXP-02']}),env,async options=>{assert.deepEqual(options.state.categoryIds,['EXP-02']);return{done:true};});
+});
 test('all supported chart rows are registered once, while deferred rows have no active path',()=>{
  const deferredExpenses=['EXP-12','EXP-22','EXP-24','EXP-25'];
  const expected=[...Object.entries(CHART).filter(([code,r])=>code.startsWith('EXP-')?!deferredExpenses.includes(code):r.status?.toLowerCase()!=='not yet').map(([code])=>code),'MAN-01'].sort();

@@ -1,3 +1,4 @@
+import { verifyCustomerSettlement, type CustomerSettlement } from "../_shared/customer-credit.ts";
 // FIN journal service: Airtable supplies final debit/credit pairs; this service validates and writes them atomically.
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import { PostingError } from "./errors.ts";
@@ -56,6 +57,7 @@ export interface LedgerPaymentEvent {
   eventType: "sent" | "cancelled" | "returned" | "reconciled" | "created" | "entry_requested" | "paid";
   entryDate: string;
   sourceDate?: string;
+  customerSettlement?: CustomerSettlement;
   repostId?: string;
   paymentName?: string;
   referenceNumber?: string;
@@ -288,6 +290,7 @@ export async function postPayment(sql: Sql, event: LedgerPaymentEvent, options: 
     }
     let reviewRequestId: string | undefined;
     if (plans.length) {
+      if (event.customerSettlement) await verifyCustomerSettlement(tx, source.recordId, event.customerSettlement, options.approvalEntryDate ?? event.entryDate);
       const [cancelled] = await tx`select 1 from ledger_private.ledger_source_cancellations
         where source_table=${source.tableId} and source_record_id=${source.recordId}`;
       if (cancelled && !event.repostId) throw new PostingError("Source was cancelled or historically reversed; restoring it is not implemented.", "23505");

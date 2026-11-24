@@ -3,7 +3,7 @@ export const MANUAL_TABLE = "tblCoBk0WB46B662R";
 export const MANUAL_FIELDS = {
   date: "fldfndE2cF0BlxIAc", posted: "fld9XfqX2AlWbrudc", cancelled: "flddPrINXnyy3oyBH",
   lines: "fld4z1v1Kfw32JEaM", invoices: "fldWnlGft5OUzojF6", branch: "fldNpnsHJAuVhQI0y",
-  postings: "fldHHTAArfvHasiOJ", ids: "fldZ5cy7agivOFyCv", reversalIds: "fld07eKm90lD9REm0",
+  reference: "fldQXRenNBZa0dS2m",
   reverseDate: "fld1TFuRQFzFCpl1q",
 } as const;
 export const MANUAL_LINE_TABLE = "tblmXtIRH6Bj2jNZM";

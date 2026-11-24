@@ -9,12 +9,12 @@ export interface CategoryDefinition {
   module: string;
   tableId: string;
   eventType: LedgerPaymentEvent["eventType"];
-  filter: (query: FormulaBuilder) => string;
+  filter: (query: FormulaBuilder, repost?: boolean) => string;
   input: "record" | "linked-payment";
   status: "implemented" | "partial" | "blocked" | "deferred";
   related?: {
     tableId: string;
-    filter: (query: FormulaBuilder) => string;
+    filter: (query: FormulaBuilder, repost?: boolean) => string;
     linksFieldId: string;
     through?: { tableId: string; linksFieldId: string };
   };
@@ -22,12 +22,14 @@ export interface CategoryDefinition {
 export type SyncDateRange = { from: string; to: string };
 export interface FormulaBuilder {
   dateRange?: SyncDateRange;
+  ignorePostingMarkers?: boolean;
   field(tableId: string, fieldId: string): string;
   eq(tableId: string, fieldId: string, value: string | number): string;
   includes(tableId: string, fieldId: string, value: string): string;
 }
 export type SyncSource = { tableId: string; recordId: string };
 export type RunState = {
+  repostId?: string;
   createdFrom?: string;
   source?: SyncSource;
   dateRange?: SyncDateRange;
@@ -39,19 +41,20 @@ export type RunState = {
   relatedIds: string[];
   relatedIndex: number;
   recordIds: string[];
+  receiptDates?: Record<string, string>;
   recordIndex: number;
   stats: { candidates: number; processed: number; matched: number; posted: number; existing: number; zero: number; errors: number };
   errors: { category: string; recordId: string; message: string }[];
   done: boolean;
 }
-export interface RuleAttempt {
+export type RuleAttempt = {
   ruleCode: string;
   sourceTable: string;
   sourceRecordId: string;
   outcome: "succeeded" | "failed" | "pending";
   error: string | null;
   occurredAt: string;
-}
+};
 export interface RunJob { id: string; state: RunState; leaseToken: string; attempts?: RuleAttempt[] }
 export interface RunStore {
   claim(runKey: string, initial: RunState): Promise<RunJob | null>;
