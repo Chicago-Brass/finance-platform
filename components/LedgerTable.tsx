@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { LedgerAccountFilters, LedgerAccountOption, LedgerRow, TbRow } from "@/lib/reports/ledger";
-import { formatReportAmount } from "@/lib/format";
+import { formatJournalNumber, formatReportAmount } from "@/lib/format";
 import { formatDate } from "@/lib/reports/report-utils";
 import { JournalEntryDrawer } from "./JournalEntryDrawer";
 import { AccountPill } from "./AccountPill";
@@ -51,7 +51,7 @@ export function GeneralLedgerTable({ rows, accounts = [], from, to, page, pageSi
           <tbody>{visible.length === 0 ? <tr><td colSpan={7} className="ledger-empty">No posted journal lines match the selected dates and filters.</td></tr> : visible.map(row => {
             const auditLink = safeAuditLink(row.audit_link);
             const drilled = journal?.entryNumber === row.entry_number;
-            return <tr key={row.line_id} className={`row-account ledger-entry-row${drilled ? " is-drilled" : ""}`} tabIndex={0} aria-label={`Open journal entry ${row.entry_number}, ${row.account_number} ${row.account_name}`} aria-haspopup="dialog" aria-expanded={drilled} onClick={event => {
+            return <tr key={row.line_id} className={`row-account ledger-entry-row${drilled ? " is-drilled" : ""}`} tabIndex={0} aria-label={`Open journal entry ${formatJournalNumber(row.entry_number, !!row.reverses_entry_id)}, ${row.account_number} ${row.account_name}`} aria-haspopup="dialog" aria-expanded={drilled} onClick={event => {
               if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
               event.currentTarget.focus();
               setJournal({ entryNumber: row.entry_number, lineId: String(row.line_id) });
@@ -59,7 +59,7 @@ export function GeneralLedgerTable({ rows, accounts = [], from, to, page, pageSi
               if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
               event.preventDefault();
               setJournal({ entryNumber: row.entry_number, lineId: String(row.line_id) });
-            }}><td className="label-cell ledger-date-cell"><time dateTime={row.date}>{formatDate(row.date)}</time><small>Entry {row.entry_number}</small></td><th scope="row" className="label-cell"><AccountPill code={row.account_number} name={row.account_name} /></th><td className="label-cell">{row.offset_is_split ? <div className="ledger-offset-accounts">{(row.offsetting_account_number?.split(", ") ?? []).map(code => <AccountPill key={code} code={code} name={accountNames.get(code) ?? null} />)}</div> : <AccountPill code={row.offsetting_account_number} name={row.offsetting_account_name} />}</td><td className="num-cell">{formatReportAmount(Number(row.debit))}</td><td className="num-cell">{formatReportAmount(Number(row.credit))}</td><td className="label-cell ledger-notes-cell">{row.notes || <span className="ledger-muted">-</span>}</td><td className="label-cell">{auditLink ? <a href={auditLink} target="_blank" rel="noopener noreferrer" className="ledger-audit-link">Open<ReportIcon name="arrowUp" /></a> : <span className="ledger-muted">{row.audit_link || "-"}</span>}</td></tr>;
+            }}><td className="label-cell ledger-date-cell"><time dateTime={row.date}>{formatDate(row.date)}</time><small>Entry {formatJournalNumber(row.entry_number, !!row.reverses_entry_id)}</small></td><th scope="row" className="label-cell"><AccountPill code={row.account_number} name={row.account_name} /></th><td className="label-cell">{row.offset_is_split ? <div className="ledger-offset-accounts">{(row.offsetting_account_number?.split(", ") ?? []).map(code => <AccountPill key={code} code={code} name={accountNames.get(code) ?? null} />)}</div> : <AccountPill code={row.offsetting_account_number} name={row.offsetting_account_name} />}</td><td className="num-cell">{formatReportAmount(Number(row.debit))}</td><td className="num-cell">{formatReportAmount(Number(row.credit))}</td><td className="label-cell ledger-notes-cell">{row.notes || <span className="ledger-muted">-</span>}</td><td className="label-cell">{auditLink ? <a href={auditLink} target="_blank" rel="noopener noreferrer" className="ledger-audit-link">Open<ReportIcon name="arrowUp" /></a> : <span className="ledger-muted">{row.audit_link || "-"}</span>}</td></tr>;
           })}</tbody>
         </table>
       </div>

@@ -1,0 +1,166 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {CATEGORIES,candidateFormula} from './queries.ts';
+import {syncDateRange,inSyncDateRange} from './scope.ts';
+import {CHART} from './rules/chart.ts';
+import {SyncBusyError} from './run-lock.ts';
+import {initialState} from './runner.ts';
+import {handleDailyRequest} from './handler.ts';
+import {AirtableClient} from './airtable.ts';
+import {POSTING_FIELDS,paymentSentFields as F,expenseWorkerFields as E} from './definitions.ts';
+const fake={field:(t,f)=>`{${f}}`,eq:(t,f,v)=>`{${f}}=${JSON.stringify(v)}`,includes:(t,f,v)=>`FIND(${JSON.stringify(v)},{${f}})>0`};
+
+test('grouped rules filter resolves display codes and retains date/source scope on continuation',async()=>{
+ const env={databaseUrl:'test',webhookSecret:'secret',airtableToken:'test'},source={tableId:F.TABLES.payments,recordId:'rec00000000009941'};
+ const body={rules:['EXP-02','EXP-02'],dryRun:false,fromDate:'2026-01-01',toDate:'2026-01-31',source,runKey:'grouped-scope'};
+ let lookups=0,calls=0;
+ const resolve=async codes=>{lookups++;assert.deepEqual(codes,['EXP-02']);return['EXP-14'];};
+ const request=value=>new Request('https://example.test/ledger-daily',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(value)});
+ const result=await handleDailyRequest(request(body),env,async options=>{
+  calls++;assert.deepEqual(options.state.categoryIds,['EXP-14']);assert.deepEqual(options.state.source,source);
+  assert.deepEqual(options.state.dateRange,{from:'2026-01-01',to:'2026-01-31'});assert.equal(options.state.dryRun,false);return{done:false};
+ },undefined,resolve);
+ assert.equal(result.status,200);const resume=(await result.json()).requestForResume;
+ assert.deepEqual(resume.rules,['EXP-02']);assert.equal(resume.categoryCodes,undefined);assert.deepEqual(resume.source,source);
+ assert.equal(resume.fromDate,body.fromDate);assert.equal(resume.toDate,body.toDate);assert.equal(lookups,1);assert.equal(calls,1);
+ let previewed=false;
+ const preview=await handleDailyRequest(request({...body,test:true}),env,async()=>{throw Error('No writes');},async options=>{
+  previewed=true;assert.deepEqual(options.categoryCodes,['EXP-14']);assert.deepEqual(options.source,source);return{databaseWrites:0,airtableWrites:0,requestForResume:{test:true,categoryCodes:['EXP-14'],cursor:{example:'unchanged'}}};
+ },resolve);
+ assert.equal(preview.status,200);assert(previewed);const previewResume=(await preview.json()).requestForResume;
+ assert.deepEqual(previewResume.rules,['EXP-02']);assert.equal(previewResume.categoryCodes,undefined);assert.deepEqual(previewResume.cursor,{example:'unchanged'});
+});
+
+test('invalid or unknown grouped rules cannot execute or silently run all categories',async()=>{
+ const env={databaseUrl:'test',webhookSecret:'secret',airtableToken:'test'};let calls=0;
+ const request=value=>new Request('https://example.test',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(value)});
+ const execute=async()=>{calls++;return{done:true};};
+ const resolve=async()=>{throw new RangeError('Unknown grouped rule code.');};
+ for(const body of [{rules:[]},{rules:'EXP-01'},{rules:['']},{rules:[null]},{rules:['EXP-01'],categoryCodes:[]},{rules:['EXP-99']}])assert.equal((await handleDailyRequest(request(body),env,execute,undefined,resolve)).status,400);
+ assert.equal((await handleDailyRequest(request({rules:['EXP-01']}),env,execute)).status,503);
+ assert.equal((await handleDailyRequest(request({rules:['EXP-01']}),env,execute,undefined,async()=>{throw Error('private connection detail');})).status,503);
+ assert.equal(calls,0);
+ await handleDailyRequest(request({categoryCodes:['EXP-02']}),env,async options=>{assert.deepEqual(options.state.categoryIds,['EXP-02']);return{done:true};});
+});
+test('all supported chart rows are registered once, while deferred rows have no active path',()=>{
+ const deferredExpenses=['EXP-12','EXP-22','EXP-24','EXP-25'];
+ const expected=[...Object.entries(CHART).filter(([code,r])=>code.startsWith('EXP-')?!deferredExpenses.includes(code):r.status?.toLowerCase()!=='not yet').map(([code])=>code),'MAN-01'].sort();
+ assert.equal(CHART['MAN-01'],undefined,'Manual entries are outside the T-Charts.');
+ const active=[...new Set(CATEGORIES.filter(c=>c.status!=='deferred').map(c=>c.code))].sort();
+ assert.deepEqual(active,expected);
+ for(const c of CATEGORIES.filter(c=>c.status!=='deferred')){
+  const formula=candidateFormula(c,fake);assert(formula);
+  if(POSTING_FIELDS[c.tableId])assert(formula.includes(c.code));
+ }
+ assert(!initialState([],true).categoryIds.includes('EXP-22'));
+ for(const code of deferredExpenses)assert(!initialState([],true).categoryIds.includes(code));
+});
+test('webhook may be invoked at any time and reports active work as HTTP409',async()=>{
+ const env={databaseUrl:'test',airtableToken:'test',webhookSecret:'secret'};
+ const req=()=>new Request('https://example.test/sync',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify({scheduled:true,categoryCodes:['EXP-06','INV-12']})});
+ const result=await handleDailyRequest(req(),env,async options=>{assert(options.state.categoryIds.includes('EXP-06'));return{done:true};});assert.equal(result.status,200);
+ const busy=await handleDailyRequest(req(),env,async()=>{throw new SyncBusyError('active');});assert.equal(busy.status,409);assert.equal((await busy.json()).runKey,'active');
+});
+test('read-only Airtable mode blocks a mutation before contacting the API',async()=>{
+ let calls=0;const client=new AirtableClient('test',Date.now()+60000,async()=>{calls++;return new Response('{}');},{readOnly:true});
+ await assert.rejects(()=>client.update('table',[{id:'record',fields:{name:'changed'}}]),/Read-only/);assert.equal(calls,0);
+});
+
+test('database claim uses the global transaction lock before inserting a run and rejects another unfinished run',async()=>{
+ const {DatabaseRunStore}=await import('./store.ts');
+ const calls=[];let unfinished='other';
+ const tx=async(strings,...values)=>{
+  const query=strings.join('?');calls.push(query);
+  if(query.includes('pg_try_advisory_xact_lock'))return[{acquired:true}];
+  if(query.includes('select run_key'))return unfinished?[{run_key:unfinished}]:[];
+  if(query.includes('returning id::text'))return[{id:'job',state:values.find(v=>v&&typeof v==='object'&&'dryRun'in v)??initialState(['PAY-09'],true)}];
+  return[];
+ };
+ tx.json=x=>x;
+ const sql={begin:fn=>fn(tx)};
+ await assert.rejects(()=>new DatabaseRunStore(sql).claim('new',initialState(['PAY-09'],true)),error=>error instanceof SyncBusyError&&error.runKey==='other');
+ assert(!calls.some(q=>q.includes('insert into')));
+ assert(calls.findIndex(q=>q.includes('pg_try_advisory_xact_lock'))<calls.findIndex(q=>q.includes('select run_key')));
+ unfinished='';calls.length=0;
+ assert(await new DatabaseRunStore(sql).claim('new',initialState(['PAY-09'],true)));
+ assert(calls.some(q=>q.includes('insert into')));
+});
+
+test('targeted checkpoints compare source and date values independently of JSONB key order',async()=>{
+ const {DatabaseRunStore}=await import('./store.ts');
+ const initial=initialState(['EXP-05'],false,{tableId:F.TABLES.lines,recordId:'rec00000000000001'},{from:'2026-01-01',to:'2026-11-12'});
+ const saved={...structuredClone(initial),source:{recordId:initial.source.recordId,tableId:initial.source.tableId},dateRange:{to:initial.dateRange.to,from:initial.dateRange.from}};
+ const tx=async(strings)=>{
+  const query=strings.join('?');
+  if(query.includes('pg_try_advisory_xact_lock'))return[{acquired:true}];
+  if(query.includes('returning id::text'))return[{id:'job',state:saved}];
+  return[];
+ };
+ tx.json=x=>x;
+ const runs=new DatabaseRunStore({begin:fn=>fn(tx)});
+ assert(await runs.claim('targeted',initial));
+ for(const change of [s=>{s.source.recordId='rec00000000000002';},s=>{s.source.tableId=F.TABLES.invoices;},s=>{s.dateRange.from='2026-02-01';},s=>{s.dateRange.to='2026-11-11';},s=>{s.dryRun=true;},s=>{s.categoryIds=['EXP-06'];}]){
+  const different=structuredClone(initial);change(different);
+  await assert.rejects(()=>runs.claim('targeted',different),/different category scope/);
+ }
+});
+
+test('bank-transfer query and related filters use the same account IDs as its handler',()=>{
+ const transfer=CATEGORIES.find(c=>c.code==='PAY-24');
+ assert(transfer.related);assert(candidateFormula(transfer,fake).includes('PAY-24'));
+ assert(transfer.related.filter(fake).includes('143.200'));
+ const tax=CATEGORIES.find(c=>c.code==='EXP-13');assert(tax.filter(fake).includes('923100'));assert(tax.filter(fake).includes('923300'));
+ for(const oldCode of ['242.100','242.200','011.001','011.002'])assert(!tax.filter(fake).includes(oldCode));
+});
+
+test('Expense source tables match the chart instead of inheriting the old invoice entry point',()=>{
+ const roots={
+  [F.TABLES.invoices]:['EXP-01','EXP-03','EXP-11','EXP-15'],
+  [F.TABLES.lines]:['EXP-05','EXP-06','EXP-07','EXP-09','EXP-13'],
+  [F.TABLES.payments]:['EXP-02','EXP-14','EXP-16','EXP-17','EXP-18','EXP-19','EXP-20','EXP-21','EXP-23','EXP-26','EXP-27'],
+ };
+ for(const [table,codes]of Object.entries(roots))for(const code of codes){
+  const category=CATEGORIES.find(c=>c.code===code);assert(category,code);assert.equal(category.tableId,table,code);assert.equal(category.module,'expenses',code);
+ }
+});
+
+test('Expense queries retain the five W2 accounts, offshore-only scope and AP Assets prepaid filter',()=>{
+ const query=code=>CATEGORIES.find(c=>c.code===code).filter(fake);
+ for(const code of ['005.001','005.002','005.003','005.005','005.006'])assert(query('EXP-06').includes(code));
+ assert(!query('EXP-06').includes('005.101'));
+ assert(query('EXP-07').includes('005.101'));assert(!query('EXP-07').includes('005.001'));assert(!query('EXP-07').includes('005.003'));
+ assert(query('EXP-03').includes('AP - Assets'));assert(query('EXP-03').includes(E.INVOICE_FIELDS.prepaid));
+ const card=CATEGORIES.find(c=>c.code==='EXP-02');assert(card.related.filter(fake).includes(E.INVOICE_FIELDS.noVendorBill));assert.equal(card.status,'implemented');
+});
+
+test('line-based settlements do not require nonzero Payments.Amount',()=>{
+ for(const code of ['EXP-18','EXP-19','EXP-20','EXP-21','EXP-23','EXP-26']){
+  const category=CATEGORIES.find(c=>c.code===code);const query=candidateFormula(category,fake);
+  assert(!query.includes(`{${F.PAYMENT_FIELDS.amount}}!=0`),code);
+  assert(query.includes(F.PAYMENT_FIELDS.sent),code);
+ }
+});
+
+test('AR batch allocations require a nonzero current Payment Amount',()=>{
+ for(const code of ['INV-13','INV-16'])assert(candidateFormula(CATEGORIES.find(c=>c.code===code),fake).includes(`{${F.PAYMENT_FIELDS.amount}}!=0`),code);
+});
+
+test('rolling cutoff uses source accounting dates and linked Payment Date for discount lines',()=>{
+ const {from,to}=syncDateRange();
+ const query=code=>candidateFormula(CATEGORIES.find(c=>c.code===code),fake);
+ assert(query('PAY-09').includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
+ assert(query('INV-12').includes(`{fldSungTQU5nIEIvi}>=DATETIME_PARSE("${from}")`));
+ assert(query('EXP-10').includes(`{fldQ299tE4wJB4SmH}>=DATETIME_PARSE("${from}")`));
+ assert(query('EXP-04').includes(`{fldXoWjXIrS76p84x}>=DATETIME_PARSE("${from}")`));
+ const discount=CATEGORIES.find(c=>c.code==='PAY-10');
+ assert(discount.related.filter(fake).includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
+ assert(query('PAY-27').includes(`{fld0mYG8IMrDaNzdE}>=DATETIME_PARSE("${from}")`));
+ assert(!query('PAY-27').includes('fldSungTQU5nIEIvi'));
+ assert(query('PAY-09').includes(`DATEADD(DATETIME_PARSE("${to}"),1,'days')`));
+});
+
+test('rolling date range covers 30 calendar days across month/year boundaries',()=>{
+ assert.deepEqual(syncDateRange(Date.parse('2026-11-10T12:00:00Z')),{from:'2026-10-12',to:'2026-11-10'});
+ assert.deepEqual(syncDateRange(Date.parse('2026-01-05T00:00:00Z')),{from:'2025-12-07',to:'2026-01-05'});
+ const {from,to}=syncDateRange();assert(inSyncDateRange(from));assert(inSyncDateRange(to));assert(!inSyncDateRange('2000-01-01'));assert(!inSyncDateRange('9999-12-31'));
+});

@@ -78,7 +78,7 @@ test('Journal drawer header renders immediately; loading and error states do not
     const query={data:undefined,pending:!failed,error:failed,retry(){}};
     const {JournalEntryDrawer}=loader({'./ReportData':{useReportQuery:url=>{assert.equal(url,'/api/reports/journal-entry?entry=42');return query;}}})('JournalEntryDrawer.tsx');
     const html=renderToStaticMarkup(React.createElement(JournalEntryDrawer,{entryNumber:42,onClose(){}}));
-    assert.match(html,/role="dialog"/);assert.match(html,/Journal entry #42/);
+    assert.match(html,/role="dialog"/);assert.match(html,/Journal entry 000042/);
     assert.ok(html.includes(failed?'Journal entry could not be loaded.':'Loading journal entry...'));
     assert.doesNotMatch(html,/Entry totals|\$0\.00/);
   }
@@ -88,7 +88,7 @@ test('Loaded journal uses a single header row with an icon source link and no re
   const {JournalEntryDrawer}=loader({'./ReportData':{useReportQuery:()=>({data:entry,pending:false,error:false,retry(){}})}})('JournalEntryDrawer.tsx');
   const html=renderToStaticMarkup(React.createElement(JournalEntryDrawer,{entryNumber:42,onClose(){}}));
   const header=html.match(/<header[\s\S]*?<\/header>/)[0];
-  assert.match(header,/Journal entry #42/);
+  assert.match(header,/Journal entry 000042/);
   assert.match(header,/aria-label="Open source record"/);
   assert.match(header,/href="https:\/\/airtable.com\/source"/);
   assert.doesNotMatch(header,/<p(?:\s|>)|General Ledger|Complete entry|>Open source record</);
@@ -122,4 +122,13 @@ test('Shared drawer traps keyboard focus, closes outside or on Escape and restor
     find(tree,node=>node.props.className==='drill-scrim').props.onPointerDown();assert.equal(closed,2);
     cleanup();assert.equal(openedFocus,1);
   }finally{global.document=previous;}
+});
+
+
+test('reversals display their REV number and the original journal number', () => {
+  const reversal = {...entry, entry_number:235, reverses_entry_id:'original-id', reversed_entry_number:234};
+  const {JournalEntryDrawer}=loader({'./ReportData':{useReportQuery:()=>({data:reversal,pending:false})}})('JournalEntryDrawer.tsx');
+  const html=renderToStaticMarkup(React.createElement(JournalEntryDrawer,{entryNumber:235,onClose(){}}));
+  assert.match(html,/Journal entry R000235/);
+  assert.match(html,/Reverses 000234/);
 });

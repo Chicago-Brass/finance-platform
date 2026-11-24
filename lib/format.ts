@@ -13,3 +13,7 @@ export function formatPercent(v: number | null | undefined): string {
   if (Math.abs(p) < 0.05) return "0.0%";
   return p < 0 ? `(${Math.abs(p).toFixed(1)}%)` : `${p.toFixed(1)}%`;
 }
+
+export function formatJournalNumber(number: number, isReversal = false): string {
+  return `${isReversal ? "R" : ""}${String(number).padStart(6, "0")}`;
+}

@@ -2,16 +2,29 @@
 
 import type { LedgerPaymentEvent, PostingResult } from "./ledger.ts";
 import { PostingError } from "./errors.ts";
+import { LedgerWritebackError } from "../_shared/ledger-links.ts";
 
 export interface LedgerEnvironment {
   databaseUrl: string;
   webhookSecret: string;
 }
 
-export async function handleRequest(
+interface LedgerRequest {
+  source?: { recordId?: string };
+  paymentRecordId?: string;
+  invoiceRecordId?: string;
+  invoiceLineRecordId?: string;
+  depreciationRecordId?: string;
+  prepayLogRecordId?: string;
+  shippingRecordId?: string;
+  manualJournalRecordId?: string;
+  loanRecordId?: string;
+}
+
+export async function handleRequest<TEvent extends LedgerRequest = LedgerPaymentEvent, TResult = PostingResult>(
   request: Request,
   environment: LedgerEnvironment,
-  postEvent: (event: LedgerPaymentEvent) => Promise<PostingResult>,
+  postEvent: (event: TEvent) => Promise<TResult>,
 ): Promise<Response> {
   // ==================== AUTHORIZATION ====================
   const { databaseUrl, webhookSecret } = environment;
@@ -37,11 +50,13 @@ export async function handleRequest(
   }
 
   // ==================== POSTING SERVICE ====================
-  const ledgerEvent = event as LedgerPaymentEvent;
+  if ("repostId" in event) return json({error:"Use ledger-daily with an explicit source and rule to repost."},400);
+  const ledgerEvent = event as TEvent;
   try {
     return json(await postEvent(ledgerEvent));
   } catch (error) {
     // ==================== ERRORS ====================
+    if (error instanceof LedgerWritebackError) return json({ error: error.message, code: "airtable_writeback_failed", outcome: error.outcome, details: error.details }, 503);
     if (error instanceof PostingError) {
       return json({ error: error.message, code: error.code }, error.code === "23505" ? 409 : 400);
     }
@@ -50,7 +65,7 @@ export async function handleRequest(
       // Driver messages can contain database internals; only owned PostingErrors expose their text.
       return json({ error: "Journal data was rejected by the database.", code }, code === "23505" ? 409 : 400);
     }
-    const sourceId = ledgerEvent.source?.recordId ?? ledgerEvent.invoiceRecordId ?? ledgerEvent.paymentRecordId;
+    const sourceId = ledgerEvent.source?.recordId ?? ledgerEvent.loanRecordId ?? ledgerEvent.manualJournalRecordId ?? ledgerEvent.invoiceLineRecordId ?? ledgerEvent.depreciationRecordId ?? ledgerEvent.prepayLogRecordId ?? ledgerEvent.shippingRecordId ?? ledgerEvent.invoiceRecordId ?? ledgerEvent.paymentRecordId;
     console.error("Ledger posting failed.", {
       code: /^[A-Z0-9_]{1,40}$/.test(code) ? code : "UNKNOWN",
       sourceRecordId: typeof sourceId === "string" && /^rec[A-Za-z0-9]{14}$/.test(sourceId) ? sourceId : undefined,

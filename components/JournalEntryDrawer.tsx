@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import type { JournalEntry } from "@/lib/reports/journal-entry";
-import { formatReportAmount } from "@/lib/format";
+import { formatJournalNumber, formatReportAmount } from "@/lib/format";
 import { formatDate } from "@/lib/reports/report-utils";
 import { moneyTotal, safeAuditLink } from "./ledger-table-utils";
 import { AccountPill } from "./AccountPill";
@@ -33,6 +33,7 @@ export function JournalEntryDetails({ entry, selectedLineId }: { entry: JournalE
     <section className="journal-section" aria-label="Entry details">
       <h3>Entry details</h3>
       <p className="journal-description">{entry.description}</p>
+      {entry.reverses_entry_id && <p>{entry.reversed_entry_number ? `Reverses ${formatJournalNumber(entry.reversed_entry_number)}` : "Reversal entry"}</p>}
       <Fields items={[["Source", entry.source_system], ["Table", entry.source_table], ["Record", entry.source_record_id], ["Date", formatDate(entry.entry_date)], ["Transaction type", entry.transaction_type]]} />
       {entry.notes && <div className="journal-notes"><h4>Notes</h4><p>{entry.notes}</p></div>}
     </section>
@@ -62,7 +63,7 @@ export function JournalEntryDrawer({ entryNumber, selectedLineId, onClose }: { e
   const id = useId();
   const query = useReportQuery<JournalEntry>(`/api/reports/journal-entry?entry=${entryNumber}`);
   return <DetailDrawer titleId={`${id}-title`} className="journal-drawer" onClose={onClose}>
-    <header className="drill-header"><div className="drill-heading"><h2 id={`${id}-title`}>Journal entry #{entryNumber}</h2></div>
+    <header className="drill-header"><div className="drill-heading"><h2 id={`${id}-title`}>Journal entry {formatJournalNumber(entryNumber, !!query.data?.reverses_entry_id)}</h2></div>
       <SourceLink url={query.data?.audit_link ?? null} label="Open source record" />
       <button data-drawer-close type="button" className="drill-icon-button drill-close" aria-label="Close journal entry" onClick={onClose}><span aria-hidden="true">×</span></button>
     </header>
