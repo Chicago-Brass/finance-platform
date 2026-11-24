@@ -5,5 +5,5 @@ import { and } from "./common.ts";
 export const MANUAL_CATEGORIES: CategoryDefinition[] = [{
   id: "MAN-01", code: "MAN-01", name: "Manual Journal Entry", module: "manual", tableId: MANUAL_TABLE,
   eventType: "entry_requested", input: "record", status: "implemented",
-  filter: q => and(`LEN(${q.field(MANUAL_TABLE, F.date)}&"")>0`, q.eq(MANUAL_TABLE, F.posted, 0), q.eq(MANUAL_TABLE, F.cancelled, 0)),
+  filter: (q, repost) => and(`LEN(${q.field(MANUAL_TABLE, F.date)}&"")>0`, q.ignorePostingMarkers || repost ? "" : q.eq(MANUAL_TABLE, F.posted, 0), repost ? "" : q.eq(MANUAL_TABLE, F.cancelled, 0)),
 }];

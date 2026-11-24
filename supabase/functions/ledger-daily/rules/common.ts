@@ -1,7 +1,9 @@
-import { paymentSentFields as fields } from "../definitions.ts";
+import { CARD_LIABILITY_ACCOUNTS, paymentSentFields as fields } from "../definitions.ts";
 import type { CategoryDefinition, FormulaBuilder } from "../types.ts";
 export const and = (...parts: string[]) => `AND(${parts.filter(Boolean).join(",")})`;
 export const or = (...parts: string[]) => `OR(${parts.filter(Boolean).join(",")})`;
+export const cardAccountFilter = (q: FormulaBuilder, table: string, field: string) =>
+    or(...CARD_LIABILITY_ACCOUNTS.map(code => q.includes(table, field, code)));
 export function expectedPaymentRecordType(ruleCode: string) {
   if (ruleCode === "PAY-12") return "Return Payment";
   if (ruleCode === "PAY-30") return "Repayment";

@@ -24,6 +24,7 @@ export interface TestRecord {
 export async function testLedgerSync(client: AirtableClient, options: TestOptions, evaluate = createCategoryEvaluator(client)) {
   const state = testState(options.cursor, options.categoryCodes, options.source, options.dateRange, options.createdFrom);
   const records: TestRecord[] = [];
+  const emitted=new Set<string>();
   // The shared runner can only collect previews with this state; write methods fail closed.
   const noWrites = async (): Promise<never> => { throw new Error("Test mode forbids posting and writeback."); };
   const runs: RunStore = {
@@ -44,7 +45,12 @@ export async function testLedgerSync(client: AirtableClient, options: TestOption
       const event = await evaluate(category, source);
       if (event && inSyncDateRange(event.entryDate, options.dateRange)) {
         const proposed = await proposedRecords(client, category.tableId, source.id, event);
-        records.push(...proposed);
+        for (const rule of new Set(proposed.map(record=>record.rule))) {
+          const key=JSON.stringify([category.tableId,source.id,rule]);
+          if (emitted.has(key)) continue;
+          emitted.add(key);
+          records.push(...proposed.filter(record=>record.rule===rule));
+        }
       }
       return event;
     },
@@ -88,6 +94,10 @@ function testState(cursor: unknown, categoryCodes: string[], source?: SyncSource
     || !integer(state.categoryIndex, initial.categoryIds.length) || !["related", "discover", "process"].includes(state.phase)
     || !(state.offset === null || typeof state.offset === "string" && state.offset.length <= 2048)
     || !ids(state.relatedIds) || !ids(state.recordIds)
+    || (state.receiptDates !== undefined && (!state.receiptDates || typeof state.receiptDates !== "object" ||
+      Array.isArray(state.receiptDates) || Object.keys(state.receiptDates).length > 50_000 ||
+      Object.entries(state.receiptDates).some(([id, date]) => !/^rec[A-Za-z0-9]{14}$/.test(id) ||
+        typeof date !== "string" || (date !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(date)))))
     || (source && state.recordIds.some(id => id !== source.recordId))
     || !integer(state.relatedIndex, state.relatedIds.length) || !integer(state.recordIndex, state.recordIds.length)
     || typeof state.done !== "boolean" || !state.stats || typeof state.stats !== "object"

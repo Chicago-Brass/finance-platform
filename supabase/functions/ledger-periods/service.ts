@@ -1,3 +1,4 @@
+import { verifyCustomerSettlement } from "../_shared/customer-credit.ts";
 import { postCappedShipment, verifyPendingShipment } from "../_shared/shipping-deposit.ts";
 import type { Sql, TransactionSql } from "npm:postgres@3.4.9";
 import {
@@ -196,6 +197,9 @@ export async function reviewRequest(
         last_error=null,updated_at=now() where id=${requestId}::uuid`;
       let ids: string[];
       if (request.journal_ids.length) {
+        const settlement = (request.payload as LedgerPaymentEvent).customerSettlement;
+        if (request.kind === "posting" && settlement)
+          await verifyCustomerSettlement(tx, lookup.source_record_id, settlement, entryDate);
         if (request.kind === "posting" && request.payload.shippingRecordId)
           await verifyPendingShipment(tx, request.payload as LedgerPaymentEvent);
         const promoted = await tx`update public.journal_entries set status='posted',entry_date=${entryDate}::date

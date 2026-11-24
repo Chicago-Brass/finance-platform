@@ -23,15 +23,16 @@ function fixture(){
  const mta2=put(T.mtas,id(4),{[M.amount]:10.005,[M.branch]:[{name:'Chicago'}]});
  const shipping=put(T.shipping,id(5),{[S.shipped]:true,[S.date]:'2026-11-03T06:00:00Z',[S.mtas]:links(mta.id,mta2.id),[S.transactions]:links(id(7))});
  const client={async readRecord(t,n){return rows.get(t+'/'+n)??null;},async readRecords(t,ids){return ids.map(n=>{const r=rows.get(t+'/'+n);assert(r,'Missing fixture '+t+'/'+n);return r;});}};
- const depositBalance={cents:500000};
+ const depositBalance={released:0};
+ const customerBalance={receivable:async invoiceId=>Math.round(Math.abs(rows.get(T.invoices+'/'+invoiceId).value(I.amount))*100)};
  put(T.transactions,id(7),{[F.TRANSACTION_FIELDS.invoices]:links(invoice.id)});
- const evaluate=async code=>{const c=INVOICE_CATEGORIES.find(c=>c.code===code);const source=c.tableId===T.payments?payment:c.tableId===T.shipping?shipping:invoice;return createCategoryEvaluator(client,async()=>depositBalance.cents)(c,source);};
- return{invoice,payment,shipping,mta,mta2,client,account,evaluate,put,depositBalance};
+ const evaluate=async code=>{const c=INVOICE_CATEGORIES.find(c=>c.code===code);const source=c.tableId===T.payments?payment:c.tableId===T.shipping?shipping:invoice;return createCategoryEvaluator(client,async(_id,depositCents)=>depositCents-depositBalance.released,customerBalance)(c,source);};
+ return{invoice,payment,shipping,mta,mta2,client,account,evaluate,put,depositBalance,customerBalance};
 }
 const cases=[['INV-12','121.100','221.100','-123.45'],['INV-13','0747','121.100','-60.25'],['INV-15','121.100','004.001','-123.45'],['INV-16','0747','121.100','-60.25'],['INV-07','143.300','211.100','-123.45'],['INV-17','211.100','0747','-60.25'],['INV-10','121.100','004.002','-123.45'],['INV-18','0747','121.100','-60.25']];
 for(const[code,debit,credit,amount]of cases)test('current Invoice Entry mapping '+code,async()=>{
  const f=fixture();if(['INV-15','INV-16'].includes(code))f.invoice.fields[I.kind]={name:'Full Invoice'};
- if(['INV-07','INV-17'].includes(code)){f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Assets'};f.invoice.fields[I.accounts]=links(f.account('143.300'));}
+ if(['INV-07','INV-17'].includes(code)){f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Assets'};f.invoice.fields[I.accounts]=links('rec212rPWpVSmXh8X');}
  if(['INV-10','INV-18'].includes(code))f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};
  const packet=await f.evaluate(code);assert(packet);const p=packet.categories[0].postings[0];
  assert.equal(p.debitAccount.number,debit);assert.equal(p.creditAccount.number,credit);assert.equal(p.amount,amount);
@@ -39,11 +40,11 @@ for(const[code,debit,credit,amount]of cases)test('current Invoice Entry mapping 
  assert.deepEqual(p.clientRecordIds,[id(9)]);assert(!packet.categories.some(c=>c.notes));
  assert.equal(packet.entryDate,packet.paymentRecordId?'2026-11-02':'2026-11-01');
 });
-test('vendor credits negate the source amount and retain invoice ownership and references',async()=>{
+test('vendor returns normalize either source sign to a positive credit and retain ownership and references',async()=>{
  const f=fixture(),category=INVOICE_CATEGORIES.find(c=>c.code==='INV-08');
  f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Credit'};
  f.invoice.fields[I.vendors]=links(id(30));f.invoice.fields[I.staff]=links(id(31));f.invoice.fields[I.transactions]=links(id(32));f.invoice.fields[I.purchaseOrders]=links(id(33));f.invoice.fields[I.states]=links(id(34));
- for(const [source,amount]of [[-123.45,'123.45'],[123.45,'-123.45']]){
+ for(const [source,amount]of [[-123.45,'123.45'],[123.45,'123.45']]){
   f.invoice.fields[I.amount]=source;
   const packet=await createCategoryEvaluator(f.client)(category,f.invoice),p=packet.categories[0].postings[0];
   assert.equal(packet.source.tableId,T.invoices);assert.equal(packet.source.recordId,f.invoice.id);assert.equal(packet.invoiceRecordId,f.invoice.id);assert.equal(packet.paymentRecordId,undefined);
@@ -53,29 +54,48 @@ test('vendor credits negate the source amount and retain invoice ownership and r
  for(const mutate of [()=>f.invoice.fields[I.type]={name:'AR'},()=>{f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Product'};},()=>{f.invoice.fields[I.vendorTypeAP]={name:'AP - Credit'};f.invoice.fields[I.cancelled]=true;}]){
   mutate();assert.equal(await createCategoryEvaluator(f.client)(category,f.invoice),null);
  }
- f.invoice.fields[I.cancelled]=false;f.invoice.fields[I.purchaseOrders]=[];assert.equal(await createCategoryEvaluator(f.client)(category,f.invoice),null);f.invoice.fields[I.purchaseOrders]=links(id(33));
- const q={field:(_t,f)=>'{'+f+'}',eq:(_t,f,v)=>'{'+f+'}='+JSON.stringify(v),includes:(_t,f,v)=>'FIND('+JSON.stringify(v)+',{'+f+'})>0'};assert.equal(category.status,'implemented');assert(category.filter(q).includes(I.purchaseOrders));assert(category.filter(q).includes('AP - Credit'));
+ f.invoice.fields[I.cancelled]=false;f.invoice.fields[I.purchaseOrders]=[];assert.equal((await createCategoryEvaluator(f.client)(category,f.invoice)).categories[0].postings[0].creditAccount.number,'131.400');f.invoice.fields[I.purchaseOrders]=links(id(33));
+ const q={field:(_t,f)=>'{'+f+'}',eq:(_t,f,v)=>'{'+f+'}='+JSON.stringify(v),includes:(_t,f,v)=>'FIND('+JSON.stringify(v)+',{'+f+'})>0'};assert.equal(category.status,'implemented');assert(!category.filter(q).includes(I.purchaseOrders));assert(category.filter(q).includes('AP - Credit'));
  f.invoice.fields[I.amount]=0;assert.equal(await createCategoryEvaluator(f.client)(category,f.invoice),null);
  f.invoice.fields[I.amount]=null;await assert.rejects(()=>createCategoryEvaluator(f.client)(category,f.invoice),/Invoice Amount/);
 });
 
 test('shipment sums extended selling values before rounding and owns its journal',async()=>{
- const f=fixture(),packet=await f.evaluate('INV-14');assert.equal(packet.shippingRecordId,f.shipping.id);assert.equal(packet.invoiceRecordId,undefined);assert.equal(packet.paymentRecordId,undefined);assert.equal(packet.eventType,'created');assert.equal(packet.entryDate,'2026-11-03');
+ const f=fixture();f.invoice.fields[I.amount]=5000;
+ const packet=await f.evaluate('INV-14');assert.equal(packet.depositInvoiceAmountCents,500000);assert.equal(packet.shippingRecordId,f.shipping.id);assert.equal(packet.invoiceRecordId,undefined);assert.equal(packet.paymentRecordId,undefined);assert.equal(packet.eventType,'created');assert.equal(packet.entryDate,'2026-11-03');
  const p=packet.categories[0].postings[0];assert.equal(p.amount,'20.01');assert.equal(p.debitAccount.number,'221.100');assert.equal(p.creditAccount.number,'004.001');assert.deepEqual(p.branch,['Chicago']);assert.deepEqual(p.transactionRecordIds,[id(7)]);assert.deepEqual(p.stateRecordIds,[id(8)]);
  f.mta.fields[M.amount]=-10.005;f.mta2.fields[M.amount]=-10.005;assert.equal((await f.evaluate('INV-14')).categories[0].postings[0].amount,'-20.01');
 });
 test('shipping caps against the linked deposit and fails ambiguous relationships before posting',async()=>{
- const f=fixture();f.depositBalance.cents=1500;
+ const f=fixture();f.invoice.fields[I.amount]=25;f.depositBalance.released=1000;
  let packet=await f.evaluate('INV-14'),p=packet.categories[0].postings[0];
  assert.equal(p.amount,'15.00');assert.equal(p.invoiceRecordId,f.invoice.id);assert.deepEqual(p.invoiceRecordIds,[f.invoice.id]);
  assert.deepEqual(JSON.parse(packet.categories[0].entryKey),[f.invoice.id,2001]);
- f.depositBalance.cents=0;assert.equal(await f.evaluate('INV-14'),null);
- f.depositBalance.cents=-50;assert.equal(await f.evaluate('INV-14'),null);
- f.depositBalance.cents=500000;f.invoice.fields[I.kind]={name:'Full Invoice'};assert.equal(await f.evaluate('INV-14'),null);
+ f.depositBalance.released=2500;assert.equal(await f.evaluate('INV-14'),null);
+ f.depositBalance.released=2550;assert.equal(await f.evaluate('INV-14'),null);
+ f.depositBalance.released=0;f.invoice.fields[I.kind]={name:'Full Invoice'};assert.equal(await f.evaluate('INV-14'),null);
  f.invoice.fields[I.kind]={name:'Deposit Invoice'};f.invoice.fields[I.cancelled]=true;assert.equal(await f.evaluate('INV-14'),null);f.invoice.fields[I.cancelled]=false;
  f.shipping.fields[S.transactions].push(...links(id(8)));await assert.rejects(()=>f.evaluate('INV-14'),/exactly one Transaction/);f.shipping.fields[S.transactions]=links(id(7));
  const second=f.put(T.invoices,id(40),{...f.invoice.fields});f.put(T.transactions,id(7),{[F.TRANSACTION_FIELDS.invoices]:links(f.invoice.id,second.id)});
  await assert.rejects(()=>f.evaluate('INV-14'),/exactly one deposit invoice/);
+});
+
+test('partial shipments consume one deposit across multiple balance invoices',async()=>{
+ const f=fixture();f.invoice.fields[I.amount]=5000;
+ const first=f.put(T.invoices,id(40),{...f.invoice.fields,[I.kind]:{name:'Balance Invoice'},[I.amount]:2500});
+ const second=f.put(T.invoices,id(41),{...first.fields});
+ f.put(T.transactions,id(7),{[F.TRANSACTION_FIELDS.invoices]:links(f.invoice.id,first.id,second.id)});
+ f.mta2.fields[M.amount]=0;
+ for(const [shipped,release] of [[3000,'3000.00'],[1000,'1000.00'],[4000,'1000.00']]){
+  f.mta.fields[M.amount]=shipped;
+  const {categories,depositInvoiceAmountCents}=await f.evaluate('INV-14');
+  assert.equal(depositInvoiceAmountCents,500000);
+  const [posting]=categories[0].postings;
+  assert.equal(posting.amount,release);
+  assert.deepEqual(posting.invoiceRecordIds,[f.invoice.id]);
+  f.depositBalance.released+=Number(release)*100;
+ }
+ assert.equal(await f.evaluate('INV-14'),null);
 });
 
 test('filters reject unsent, canceled, wrong kinds and unrelated asset accounts',async()=>{
@@ -83,13 +103,34 @@ test('filters reject unsent, canceled, wrong kinds and unrelated asset accounts'
  f.invoice.fields[I.cancelled]=true;assert.equal(await f.evaluate('INV-12'),null);assert.equal(await f.evaluate('INV-13'),null);f.invoice.fields[I.cancelled]=false;
  f.invoice.fields[I.kind]={name:'Balance Invoice'};assert.equal(await f.evaluate('INV-12'),null);assert(await f.evaluate('INV-15'));
  f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Assets'};assert.equal(await f.evaluate('INV-07'),null);
- f.invoice.fields[I.accounts]=links(f.account('143.300'));f.invoice.fields[I.prepaid]=true;assert.equal(await f.evaluate('INV-07'),null);assert.equal(await f.evaluate('INV-17'),null);
+ f.invoice.fields[I.accounts]=links('rec212rPWpVSmXh8X');f.invoice.fields[I.prepaid]=true;assert.equal(await f.evaluate('INV-07'),null);assert.equal(await f.evaluate('INV-17'),null);
 });
-test('non-product credit is dynamic, multiple accounts fail and full payment is never allocated',async()=>{
+test('fixed asset rules match exact FIN account IDs and exclude dedicated asset flows',async()=>{
+ const f=fixture();
+ f.invoice.fields[I.type]={name:'AP'};
+ f.invoice.fields[I.vendorTypeAP]={name:'AP - Assets'};
+ const allowed={
+  recFJ4VqOAF9ywdrJ:'143.100',rec212rPWpVSmXh8X:'143.300',
+  recMMetXo1rbkC23L:'151.100',
+ };
+ for(const [recordId,number] of Object.entries(allowed)){
+  f.invoice.fields[I.accounts]=[{id:recordId,name:'Renamed account'}];
+  const invoice=await f.evaluate('INV-07');
+  assert.deepEqual(invoice.categories[0].postings[0].debitAccount,{number,recordId});
+  assert(await f.evaluate('INV-17'));
+ }
+ for(const id of ['rec9dmL357HF378Pa','rec8JHlBdV2gi5u35','recPZsGTz6PUrL96B','recNggwhS1raGAbd9',f.account('143.300')]){
+  f.invoice.fields[I.accounts]=links(id);
+  assert.equal(await f.evaluate('INV-07'),null);
+  assert.equal(await f.evaluate('INV-17'),null);
+ }
+});
+
+test('non-product credit is dynamic and a payment matching every linked invoice retains its amount',async()=>{
  const f=fixture();f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};f.invoice.fields[I.accounts]=links(f.account('010.003'));assert.equal((await f.evaluate('INV-10')).categories[0].postings[0].creditAccount.number,'010.003');
  f.invoice.fields[I.accounts].push(...links(f.account('004.002')));await assert.rejects(()=>f.evaluate('INV-10'),/exactly one/);
  f.invoice.fields[I.accounts]=links(f.account('010.003'));
- f.payment.fields[P.invoices].push(...links(f.put(T.invoices,id(6),{...f.invoice.fields}).id));const p=await f.evaluate('INV-18');assert.equal(p.categories[0].postings.length,1);assert.equal(p.categories[0].postings[0].amount,'-60.25');
+ f.invoice.fields[I.paymentProportion]=0.5;f.payment.fields[P.invoices].push(...links(f.put(T.invoices,id(6),{...f.invoice.fields}).id));const p=await f.evaluate('INV-18');assert.equal(p.categories[0].postings.length,1);assert.equal(p.categories[0].postings[0].amount,'-60.25');
 });
 test('cashback invoices and their payments are excluded from generic non-product entries',async()=>{
  const f=fixture();f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};f.invoice.fields[I.accounts]=links(f.account('004.011'));
@@ -115,34 +156,38 @@ test('separate payments against the same invoice post only their current amount'
  f.payment.fields[P.amount]=300;assert.equal((await f.evaluate('INV-13')).categories[0].postings[0].amount,'300.00');
 });
 for(const[code,kind]of [['INV-13','Deposit Invoice'],['INV-16','Balance Invoice']])test('matching proportions sum before cent allocation: '+code,async()=>{
- const f=fixture();f.payment.fields[P.amount]=0.01;f.invoice.fields[I.kind]={name:kind};f.invoice.fields[I.paymentProportion]=0.3;
+ const f=fixture();f.payment.fields[P.amount]=0.01;f.invoice.fields[I.amount]=100;f.invoice.fields[I.kind]={name:kind};f.invoice.fields[I.paymentProportion]=0.3;
  const second=f.put(T.invoices,id(6),{...f.invoice.fields,[I.kind]:{name:code==='INV-16'?'Full Invoice':kind}}),unmatched=f.put(T.invoices,id(7),{...f.invoice.fields,[I.vendorTypeAR]:{name:'AR - Non-Product'},[I.paymentProportion]:0.2});
  const cancelled=f.put(T.invoices,id(8),{...f.invoice.fields,[I.cancelled]:true,[I.paymentProportion]:0.2});
  f.payment.fields[P.invoices]=links(f.invoice.id,second.id,unmatched.id,cancelled.id);
- const p=(await f.evaluate(code)).categories[0].postings[0];assert.equal(p.amount,'0.01');assert.deepEqual(p.invoiceRecordIds,[f.invoice.id,second.id].sort());
+ const p=(await f.evaluate(code)).categories[0].postings[0];assert.equal(p.amount,'0.01');assert.deepEqual(p.invoiceRecordIds,code==='INV-16'?[f.invoice.id]:[f.invoice.id,second.id].sort());
  f.payment.fields[P.amount]=-0.01;assert.equal((await f.evaluate(code)).categories[0].postings[0].amount,'-0.01');
 });
-test('deposit and balance payments validate proportions while non-product payments remain unchanged',async()=>{
+test('all invoice payment routes validate their batch proportions',async()=>{
  const f=fixture();f.invoice.fields[I.paymentProportion]=null;await assert.rejects(()=>f.evaluate('INV-13'),/Payment Proportion/);
- f.invoice.fields[I.kind]={name:'Full Invoice'};await assert.rejects(()=>f.evaluate('INV-16'),/Payment Proportion/);
- f.invoice.fields[I.paymentProportion]=0.9;await assert.rejects(()=>f.evaluate('INV-16'),/100%/);
+ f.invoice.fields[I.kind]={name:'Full Invoice'};f.invoice.fields[I.amount]=120;f.payment.fields[P.amount]=60.25;
+ assert.equal((await f.evaluate('INV-16')).categories[0].postings[0].amount,'60.25');
+ const second=f.put(T.invoices,id(92),{...f.invoice.fields,[I.paymentProportion]:0.1});
+ f.payment.fields[P.invoices]=links(f.invoice.id,second.id);
+ await assert.rejects(()=>f.evaluate('INV-16'),/Payment Proportion/);
+ f.invoice.fields[I.paymentProportion]=0.8;await assert.rejects(()=>f.evaluate('INV-16'),/100%/);
  f.payment.fields[P.amount]=0;assert.equal(await f.evaluate('INV-16'),null);f.payment.fields[P.amount]=-60.25;
- f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};assert.equal((await f.evaluate('INV-18')).categories[0].postings[0].amount,'-60.25');
+ f.payment.fields[P.invoices]=links(f.invoice.id);f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};await assert.rejects(()=>f.evaluate('INV-18'),/100%/);f.invoice.fields[I.paymentProportion]=1;assert.equal((await f.evaluate('INV-18')).categories[0].postings[0].amount,'-60.25');
 });
 test('repeated payments against the same five invoices keep each category allocation separate',async()=>{
  const f=fixture();f.invoice.fields[I.amount]=100;f.invoice.fields[I.paymentProportion]=0.2;
  const invoices=[f.invoice,...[6,7,8,9].map((n,index)=>f.put(T.invoices,id(n),{...f.invoice.fields,[I.kind]:{name:index<2?'Deposit Invoice':'Full Invoice'}}))];
  f.payment.fields[P.invoices]=links(...invoices.map(i=>i.id));
  for(const [amount,deposit,balance]of [[200,'120.00','80.00'],[300,'180.00','120.00']]){
-  f.payment.fields[P.amount]=amount;assert.equal((await f.evaluate('INV-13')).categories[0].postings[0].amount,deposit);assert.equal((await f.evaluate('INV-16')).categories[0].postings[0].amount,balance);
+  f.payment.fields[P.amount]=amount;assert.equal((await f.evaluate('INV-13')).categories[0].postings[0].amount,deposit);assert.equal((await f.evaluate('INV-16')).categories[0].postings.reduce((sum,p)=>sum+Number(p.amount),0).toFixed(2),balance);
  }
 });
 test('mixed category cent remainders are deterministic for positive and negative payments',async()=>{
- const f=fixture();f.invoice.fields[I.paymentProportion]=0.5;const balance=f.put(T.invoices,id(6),{...f.invoice.fields,[I.kind]:{name:'Full Invoice'}});
+ const f=fixture();f.invoice.fields[I.amount]=120;f.invoice.fields[I.paymentProportion]=0.5;const balance=f.put(T.invoices,id(6),{...f.invoice.fields,[I.kind]:{name:'Full Invoice'}});
  f.payment.fields[P.invoices]=links(balance.id,f.invoice.id);
  for(const amount of [0.01,-0.01]){f.payment.fields[P.amount]=amount;assert.equal(Number((await f.evaluate('INV-13')).categories[0].postings[0].amount),amount);assert.equal(await f.evaluate('INV-16'),null);}
  f.invoice.fields[I.paymentProportion]=1.2;balance.fields[I.paymentProportion]=-0.2;f.payment.fields[P.amount]=100;
- assert.equal((await f.evaluate('INV-13')).categories[0].postings[0].amount,'120.00');assert.equal((await f.evaluate('INV-16')).categories[0].postings[0].amount,'-20.00');
+ assert.equal((await f.evaluate('INV-13')).categories[0].postings[0].amount,'120.00');await assert.rejects(()=>f.evaluate('INV-16'),/allocations exceed/);
 });
 test('AR non-product invoices do not also qualify for the product invoice-kind rules',async()=>{
  const f=fixture();f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};
@@ -150,15 +195,16 @@ test('AR non-product invoices do not also qualify for the product invoice-kind r
  f.invoice.fields[I.kind]={name:'Full Invoice'};assert.equal(await f.evaluate('INV-15'),null);assert.equal(await f.evaluate('INV-16'),null);
  assert(await f.evaluate('INV-10'));assert(await f.evaluate('INV-18'));
 });
-test('shipping refuses missing valuations and skips unshipped records',async()=>{
+test('shipping skips incomplete links and still refuses missing prices on linked items',async()=>{
  const f=fixture();f.shipping.fields[S.shipped]=false;assert.equal(await f.evaluate('INV-14'),null);f.shipping.fields[S.shipped]=true;
  f.mta.fields[M.amount]=null;await assert.rejects(()=>f.evaluate('INV-14'),/Extended Sell Price/);
- f.shipping.fields[S.mtas]=[];await assert.rejects(()=>f.evaluate('INV-14'),/no linked MTAs/);
+ f.shipping.fields[S.transactions]=[];assert.equal(await f.evaluate('INV-14'),null);
+ f.shipping.fields[S.transactions]=links(id(7));f.shipping.fields[S.mtas]=[];assert.equal(await f.evaluate('INV-14'),null);
 });
 test('source selection, dates, linked discovery and retired/deferred routes follow the new sheet',async()=>{
  const q={field:(_t,f)=>'{'+f+'}',eq:(_t,f,v)=>'{'+f+'}='+JSON.stringify(v),includes:(_t,f,v)=>'FIND('+JSON.stringify(v)+',{'+f+'})>0'};
  for(const c of INVOICE_CATEGORIES.filter(c=>c.status!=='deferred')){const fields=sourceFields(c);for(const id of Object.values(POSTING_FIELDS[c.tableId]))assert(fields.includes(id));assert(candidateFormula(c,q).includes(c.code));}
- const ship=INVOICE_CATEGORIES.find(c=>c.code==='INV-14');assert(sourceDateFilter(ship,q).includes(S.date));assert(ship.filter(q).includes(S.shipped));
+ const ship=INVOICE_CATEGORIES.find(c=>c.code==='INV-14');assert(sourceDateFilter(ship,q).includes(S.date));assert(ship.filter(q).includes(S.shipped));assert(ship.filter(q).includes(S.transactions));assert(ship.filter(q).includes(S.mtas));
  for(const code of ['INV-13','INV-16','INV-17','INV-18']){const c=INVOICE_CATEGORIES.find(c=>c.code===code);assert.equal(c.related.tableId,T.invoices);assert.equal(c.related.linksFieldId,I.payments);assert(candidateFormula(c,q).includes('{'+P.amount+'}!=0'));}
  for(const code of ['INV-01','INV-03','INV-04','INV-05','INV-06'])assert(!INVOICE_CATEGORIES.some(c=>c.code===code));
  const f=fixture();for(const c of INVOICE_CATEGORIES.filter(c=>c.status==='deferred'))await assert.rejects(()=>createCategories(f.client).evaluate(c.code,f.invoice.id),/Not yet implemented/);
@@ -171,4 +217,47 @@ test('dynamic non-product accounts preserve approved FIN account identities',asy
   const packet=await f.evaluate('INV-10');
   assert.equal(packet.categories[0].postings[0].creditAccount.number,ledger);
  }
+});
+
+for(const code of ['INV-13','INV-16','INV-17','INV-18'])test('Invoice Entry payment allocates its qualifying invoice subset: '+code,async()=>{
+ const f=fixture();f.payment.fields[P.amount]=100;f.invoice.fields[I.paymentProportion]=0.4;
+ if(code==='INV-16'){f.invoice.fields[I.kind]={name:'Full Invoice'};f.invoice.fields[I.amount]=100;}
+ if(code==='INV-17'){f.invoice.fields[I.type]={name:'AP'};f.invoice.fields[I.vendorTypeAP]={name:'AP - Assets'};f.invoice.fields[I.accounts]=links('rec212rPWpVSmXh8X');}
+ if(code==='INV-18')f.invoice.fields[I.vendorTypeAR]={name:'AR - Non-Product'};
+ const other=f.put(T.invoices,id(90),{...f.invoice.fields,[I.vendorTypeAP]:{name:'Unrelated'},[I.vendorTypeAR]:{name:'Unrelated'},[I.paymentProportion]:0.6});f.payment.fields[P.invoices].push(...links(other.id));
+ const packet=await f.evaluate(code);assert.equal(packet.categories[0].postings[0].amount,'40.00');assert.deepEqual(packet.categories[0].postings[0].invoiceRecordIds,[f.invoice.id]);
+});
+
+test('one receipt posts the open AR and residual customer credit atomically',async()=>{
+ const f=fixture();f.invoice.fields[I.kind]={name:'Full Invoice'};
+ f.invoice.fields[I.amount]=468.2964;f.payment.fields[P.amount]=5619.56;
+ const packet=await f.evaluate('INV-16');
+ assert.deepEqual(packet.categories.map(c=>[c.ruleCode,c.postings[0].creditAccount.number,c.postings[0].amount]),[
+  ['INV-16','121.100','468.30'],['PAY-03','221.300','5151.26'],
+ ]);
+ assert.deepEqual(await f.evaluate('PAY-03'),packet);
+ assert.equal(packet.source.recordId,f.payment.id);
+ f.customerBalance.receivable=async()=>40;
+ assert.deepEqual((await f.evaluate('INV-16')).categories.map(c=>c.postings[0].amount),['0.40','5619.16']);
+ f.customerBalance.receivable=async()=>null;
+ await assert.rejects(()=>f.evaluate('INV-16'),/verify the linked customer invoice balance/);
+ f.invoice.fields[I.amount]=0;
+ f.customerBalance.receivable=async()=>0;
+ assert.deepEqual((await f.evaluate('INV-16')).categories.map(c=>[c.ruleCode,c.postings[0].amount]),[['PAY-03','5619.56']]);
+});
+
+
+test('a small overpayment stays on invoice AR and is marked for manual adjustment',async()=>{
+ const f=fixture(); f.invoice.fields[I.kind]={name:'Full Invoice'};
+ f.invoice.fields[I.amount]=100; f.payment.fields[P.amount]=101;
+ const packet=await f.evaluate('INV-16');
+ assert.deepEqual(packet.categories.map(c=>[c.ruleCode,c.postings[0].amount]),[['INV-16','101.00']]);
+ assert.match(packet.categories[0].notes,/1.00.*manual adjustment/);
+ assert.equal(await f.evaluate('PAY-03'),null);
+ f.payment.fields[P.amount]=101.01;
+ assert.deepEqual((await f.evaluate('INV-16')).categories.map(c=>[c.ruleCode,c.postings[0].amount]),[
+  ['INV-16','100.00'],['PAY-03','1.01'],
+ ]);
+ delete f.invoice.fields[I.date];
+ await assert.rejects(()=>f.evaluate('INV-16'),/accounting date is missing/);
 });

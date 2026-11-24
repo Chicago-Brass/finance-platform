@@ -1,7 +1,7 @@
 import { expenseWorkerFields as F } from "../definitions.ts";
 import { OPERATING_EXPENSE_ACCOUNTS } from "./expense-accounts.ts";
 import { fromStart } from "../scope.ts";
-import { and, or } from "./common.ts";
+import { and, or, cardAccountFilter } from "./common.ts";
 import type { CategoryDefinition, FormulaBuilder } from "../types.ts";
 
 const { TABLES: T, INVOICE_FIELDS: I, LINE_FIELDS: L, PAYMENT_FIELDS: P } = F;
@@ -9,6 +9,9 @@ const w2Accounts = ["005.001", "005.002", "005.003", "005.005", "005.006"];
 const taxAccounts = ["923100", "923300"];
 const invoiceType = (q: FormulaBuilder, vendor: string) => and(q.eq(T.invoices, I.type, "AP"), q.eq(T.invoices, I.vendorType, vendor), q.eq(T.invoices, I.cancelled, 0));
 const expenseInvoice = (q: FormulaBuilder) => invoiceType(q, "AP - Expenses (Non-Sales Tax)");
+const salesTaxInvoice = (q: FormulaBuilder) => invoiceType(q, "AP - Expenses (Sales Tax)");
+const paychexInvoice = (q: FormulaBuilder) => and(expenseInvoice(q), q.includes(T.invoices, I.vendors, "Paychex"),
+    q.eq(T.invoices, I.noVendorBill, 0), `${q.field(T.invoices, I.lines)}!=""`);
 const staffInvoice = (q: FormulaBuilder) => invoiceType(q, "AP - Staff");
 const prepaidInvoice = (q: FormulaBuilder) => and(invoiceType(q, "AP - Assets"), q.eq(T.invoices, I.prepaid, 1), `${q.field(T.invoices, I.accounts)}!=""`);
 const invoiceAccount = (q: FormulaBuilder, code: string) => q.includes(T.invoices, I.accounts, code);
@@ -36,13 +39,15 @@ const deferred = (code: string, name: string, tableId: string = T.invoices) => e
 
 export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
     expense("EXP-01", "Operating expense invoice", T.invoices, q => and(expenseInvoice(q), operatingAccounts(q), q.eq(T.invoices, I.noVendorBill, 0))),
-    expense("EXP-02", "Company credit-card purchase", T.payments, q => and(q.eq(T.payments, P.sent, 1), q.includes(T.payments, P.accounts, "231.100")), {
+    expense("EXP-02", "Company credit-card purchase", T.payments, q => and(q.eq(T.payments, P.sent, 1), q.eq(T.payments, P.method, "Credit Card"), cardAccountFilter(q, T.payments, P.accounts)), {
         related: fromInvoices(q => and(expenseInvoice(q), q.eq(T.invoices, I.noVendorBill, 1), `${q.field(T.invoices, I.accounts)}!=""`)),
     }),
     expense("EXP-03", "Prepaid expense invoice", T.invoices, prepaidInvoice),
     expense("EXP-04", "Prepaid monthly use-up", T.prepay, q => q.eq(T.prepay, F.PREPAY_FIELDS.cancelled, 0), { related: fromInvoices(prepaidInvoice, I.prepayLogs) }),
     lineEntry("EXP-05", "Employee tech allowance", ["005.102"]),
-    lineEntry("EXP-06", "W2, owner and 1099 payroll", w2Accounts),
+    lineEntry("EXP-06", "W2, owner and 1099 payroll", w2Accounts, staffInvoice, {
+        filter: q => or(lineAccounts(q, w2Accounts), and(lineAccounts(q, ["005.004"]), `${q.field(T.lines, L.amount)}<0`)),
+    }),
     lineEntry("EXP-07", "Offshore payroll", ["005.101"]),
     lineEntry("EXP-09", "Bonus invoice", ["005.201"]),
     expense("EXP-10", "Monthly depreciation", T.depreciation, () => "TRUE()"),
@@ -51,7 +56,7 @@ export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
     lineEntry("EXP-13", "Income-tax invoice", taxAccounts, expenseInvoice),
     expense("EXP-14", "Operating expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(expenseInvoice(q), operatingAccounts(q), q.eq(T.invoices, I.noVendorBill, 0))) }),
     expense("EXP-15", "Product invoice", T.invoices, q => invoiceType(q, "AP - Product")),
-    expense("EXP-16", "Product payment", T.payments, q => and(q.eq(T.payments, P.sent, 1), `NOT(${q.includes(T.payments, P.accounts, "231.100")})`), { related: fromInvoices(q => invoiceType(q, "AP - Product")) }),
+    expense("EXP-16", "Product payment", T.payments, q => and(q.eq(T.payments, P.sent, 1), `NOT(${cardAccountFilter(q, T.payments, P.accounts)})`), { related: fromInvoices(q => invoiceType(q, "AP - Product")) }),
     expense("EXP-17", "Prepaid expense payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(prepaidInvoice(q), q.eq(T.invoices, I.status, "Fully Paid"))) }),
     linePayment("EXP-18", "Tech allowance payment", ["005.102"]),
     linePayment("EXP-19", "W2, owner and 1099 payroll payment", w2Accounts),
@@ -63,4 +68,9 @@ export const EXPENSE_CATEGORIES: CategoryDefinition[] = [
     deferred("EXP-25", "Bad-debt recovery"),
     linePayment("EXP-26", "Income-tax payment", taxAccounts, "AP - Expenses (Non-Sales Tax)"),
     expense("EXP-27", "Bank-fee payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(q => and(expenseInvoice(q), invoiceAccount(q, "007.002"), q.eq(T.invoices, I.noVendorBill, 0))) }),
+    expense("EXP-32", "AP Refund Invoice", T.invoices, q => and(invoiceType(q, "AP - Refund"), `${q.field(T.invoices, I.amount)}<0`)),
+    expense("EXP-33", "AP Sales Tax Invoice", T.invoices, salesTaxInvoice),
+    expense("EXP-34", "AP Sales Tax Payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(salesTaxInvoice) }),
+    expense("EXP-35", "Paychex vendor bill", T.invoices, paychexInvoice),
+    expense("EXP-36", "Paychex vendor payment", T.payments, q => q.eq(T.payments, P.sent, 1), { related: fromInvoices(paychexInvoice) }),
 ];

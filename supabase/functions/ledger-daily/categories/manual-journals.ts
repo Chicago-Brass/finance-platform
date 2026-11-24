@@ -6,11 +6,11 @@ import { OPERATING_EXPENSE_ACCOUNT_MAPPING } from "../rules/expense-accounts.ts"
 const ACCOUNT_MAPPING: Record<string, string> = { ...OPERATING_EXPENSE_ACCOUNT_MAPPING, "923100": "011.001", "923300": "011.002" };
 
 export function createCategories(client: AirtableClient) {
-  return { async evaluate(_rule: string, recordId: string) {
+  return { async evaluate(_rule: string, recordId: string, _tableId?: string, repost = false) {
     const record = await client.readRecord(MANUAL_TABLE, recordId, Object.values(F));
     if (!record) throw new Error("Manual journal entry not found.");
     const data = { entryDate: record.value(F.date) };
-    if (!data.entryDate || record.value(F.posted) || record.value(F.cancelled) || record.value(F.reverseDate)) return { data, results: [] };
+    if (!data.entryDate || (!repost && ((!client.ignorePostingMarkers && record.value(F.posted)) || record.value(F.cancelled) || record.value(F.reverseDate)))) return { data, results: [] };
     const lines = await client.readRecords(MANUAL_LINE_TABLE, ids(record, F.lines), Object.values(L));
     if (!lines.length) throw new Error("Manual journal entry needs at least one Journal Line.");
     const invoices = await client.readRecords(I.TABLES.invoices, ids(record, F.invoices), Object.values(I.INVOICE_FIELDS));

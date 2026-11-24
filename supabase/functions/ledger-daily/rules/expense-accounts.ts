@@ -1,3 +1,6 @@
+export const PAYCHEX_VENDOR_ID = "recwfao4PfalXpwuK";
+export const PAYCHEX_LINE_ACCOUNTS = ["005.301", "005.006", "525300"];
+
 // Reviewed operating accounts. Dedicated Expense categories are excluded.
 export const OPERATING_EXPENSE_ACCOUNTS = [
     "004.012",
@@ -35,6 +38,7 @@ export const OPERATING_EXPENSE_ACCOUNTS = [
     "009.013",
     "009.102",
     "010.002",
+    "151.200",
     "525300",
     "922000"
 ];

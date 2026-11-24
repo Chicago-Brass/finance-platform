@@ -2,33 +2,121 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runLedgerSync, initialState } from './runner.ts';
 import { candidateFormula, CATEGORIES } from './queries.ts';
-import { POSTING_FIELDS, paymentSentFields } from './definitions.ts';
+import { POSTING_FIELDS, paymentSentFields, expenseWorkerFields } from './definitions.ts';
 import { BudgetExceeded, RetryableError, retry } from './retry.ts';
-import { LINK_FIELDS } from '../_shared/ledger-links.ts';
+import { serializeLedgerReferences } from '../_shared/ledger-links.ts';
 import { handleDailyRequest } from './handler.ts';
 const P=paymentSentFields.TABLES.payments,F=POSTING_FIELDS[P],PF=paymentSentFields.PAYMENT_FIELDS;
 
 function setup({records=['a'],offsetPage=false,writeFailures=0,postFailures=0}={}) {
  const jobs=new Map(), metadata=new Map(),calls={updates:[],posts:0,queries:[],prepared:[]};
  const record=id=>({id,name:id,value(field){return field===PF.sent?true:null;}});
- const client={requests:0,async initialize(){},clearRecordCache(){},requireWritebackBudget(){},async queryIds(table,formula,offset){calls.queries.push({table,formula,offset,updates:calls.updates.length});return offsetPage&&!offset?{ids:records.slice(0,1),offset:'next'}:{ids:offsetPage?records.slice(1):records,offset:null}},async readRecords(t,ids){return ids.map(record)},async readRecord(t,id){return record(id)},field(t,f){return'{'+f+'}'},eq(t,f,v){return this.field(t,f)+'='+JSON.stringify(v)},includes(t,f,v){return'FIND('+JSON.stringify(v)+','+this.field(t,f)+')>0'},async update(t,rows){if(writeFailures-->0)throw Error('Permission/writeback failed');calls.updates.push(...rows)}};
+ const client={requests:0,async initialize(){},async loadLinkNames(){},clearRecordCache(){},requireWritebackBudget(){},async queryIds(table,formula,offset){calls.queries.push({table,formula,offset,updates:calls.updates.length});return offsetPage&&!offset?{ids:records.slice(0,1),offset:'next'}:{ids:offsetPage?records.slice(1):records,offset:null}},async readRecords(t,ids){return ids.map(record)},async readRecord(t,id){return record(id)},field(t,f){return'{'+f+'}'},eq(t,f,v){return this.field(t,f)+'='+JSON.stringify(v)},includes(t,f,v){return'FIND('+JSON.stringify(v)+','+this.field(t,f)+')>0'},async update(t,rows){if(writeFailures-->0)throw Error('Permission/writeback failed');calls.updates.push(...rows)}};
  const runs={async claim(key,initial){let job=jobs.get(key);if(!job){job={id:key,state:structuredClone(initial),leaseToken:'lease'};jobs.set(key,job)}return job},async save(){},async release(){}};
- const ledger={async prepareSources(t,ids){calls.prepared.push(ids)},async hasReversals(){return false},async findCategory(t,id,rule){return(metadata.get(id)||[]).filter(r=>r.rule===rule)},async syncLinks(t,id){const refs=metadata.get(id)||[];await client.update(t,[{id,fields:{[F.postings]:JSON.stringify(refs),[F.ids]:JSON.stringify(refs.map(r=>r.id)),[LINK_FIELDS[t].reversalIds]:'[]'}}]);return refs},async post(event){calls.posts++;if(postFailures-->0)throw new RetryableError('Connection lost');const rows=event.categories.map((c,i)=>({rule:c.ruleCode,key:c.entryKey||'',datetime:'2026-11-01T00:00:00Z',id:'journal-'+event.source.recordId+'-'+i}));metadata.set(event.source.recordId,rows);try{await this.syncLinks(event.source.tableId,event.source.recordId)}catch(error){metadata.delete(event.source.recordId);throw error}return{postedCount:rows.length,duplicateCount:0}}};
+ const ledger={async prepareSources(t,ids){calls.prepared.push(ids)},async hasReversals(){return false},async findCategory(t,id,rule){return(metadata.get(id)||[]).filter(r=>r.rule===rule)},async syncLinks(t,id){const refs=metadata.get(id)||[];await client.update(t,[{id,fields:{[F.reference]:serializeLedgerReferences(refs)}}]);return refs},async post(event){calls.posts++;if(postFailures-->0)throw new RetryableError('Connection lost');const rows=event.categories.map((c,i)=>({rule:c.ruleCode,key:c.entryKey||'',datetime:'2026-11-01T00:00:00Z',id:'journal-'+event.source.recordId+'-'+i}));metadata.set(event.source.recordId,rows);try{await this.syncLinks(event.source.tableId,event.source.recordId)}catch(error){metadata.delete(event.source.recordId);throw error}return{postedCount:rows.length,duplicateCount:0}}};
  const evaluate=async(category,source)=>({paymentRecordId:source.id,eventType:'sent',source:{tableId:P,recordId:source.id},entryDate:new Date().toISOString().slice(0,10),categories:[{ruleCode:category.code,transactionType:'Test',postings:[{amount:'10.00',debitAccount:{number:'211.100'},creditAccount:{number:'112.100'}}]}]});
  const deps={client,runs,ledger,evaluate,deadline:Date.now()+120000,log(){}};return{deps,calls,jobs,metadata};
 }
 
-test('registry covers 18 retained payment categories; query excludes exact rule and reversed sources',()=>{
- assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,18);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,5);
+test('registry covers 19 retained payment categories; query excludes exact rule and reversed sources',()=>{
+ assert.equal(new Set(CATEGORIES.filter(c=>c.code.startsWith("PAY-")).map(c=>c.code)).size,19);assert.equal(CATEGORIES.filter(c=>c.status==='deferred').length,5);
  const {deps}=setup();const formula=candidateFormula(CATEGORIES.find(c=>c.code==='PAY-09'),deps.client);
- assert(formula.includes('"\\"PAY-09\\""'));assert(formula.includes(F.reverse));assert(formula.includes(PF.sent));
+ assert(formula.includes(JSON.stringify('"main:PAY-09"')));assert(formula.includes(F.reverse));assert(formula.includes(PF.sent));
  const invoiceRule=CATEGORIES.find(c=>c.id==='PAY-28');assert.equal(invoiceRule.tableId,'tbldQXuqNEp8G5pfs');assert(candidateFormula(invoiceRule,deps.client).includes('fldtVpTc9y7AtQNx0'));
+});
+
+test('loan repayment discovery requires a nonempty linked loan',()=>{
+ const {deps}=setup();
+ const rule=CATEGORIES.find(c=>c.code==='PAY-16');
+ assert.match(rule.related.filter(deps.client), /LEN\(\{fldSLnSA4FTOm6spx\}&""\)>0/);
+});
+
+test('a credit-only receipt does not replay a nonexistent AR leg',async()=>{
+ const id='rec00000000009931',t=setup({records:[id]});
+ t.metadata.set(id,[{rule:'PAY-03',key:'',datetime:'2026-11-01T00:00:00Z',id:'credit-journal'}]);
+ t.deps.evaluate=async()=>{throw Error('The receipt should not be re-evaluated');};
+ const result=await runLedgerSync('credit-only-replay',initialState(['INV-16'],false,{tableId:P,recordId:id}),t.deps);
+ assert.equal(result.stats.zero,1);
+ assert.equal(result.stats.errors,0);
+ assert.equal(t.calls.posts,0);
+ assert.equal(t.calls.updates.length,1);
 });
 
 test('discovers every page before writing markers, and posts distinct sources once',async()=>{
  const t=setup({records:['a','b'],offsetPage:true});const result=await runLedgerSync('test',initialState(['PAY-09'],false),t.deps,25);
  assert.equal(t.calls.posts,2);assert.deepEqual(t.calls.queries.map(q=>q.updates),[0,0]);assert.equal(result.done,true);assert.equal(t.calls.updates.length,2);
- for(const update of t.calls.updates){const refs=JSON.parse(update.fields[F.postings]);assert.deepEqual(Object.keys(refs[0]),['rule','key','datetime','id']);assert.deepEqual(JSON.parse(update.fields[F.ids]),refs.map(r=>r.id));}
+ for(const update of t.calls.updates){const refs=JSON.parse(update.fields[F.reference]);assert.equal(refs.version,1);assert(refs.entries.every(row=>row.kind==='journal'&&row.environment==='main'));}
+});
+
+test('operating expense preloads distinct linked accounts once for the source batch',async()=>{
+ const t=setup({records:['a','b','c']}),reads=[];
+ const source=id=>({id,name:id,value:f=>f===expenseWorkerFields.INVOICE_FIELDS.accounts?[{id:id==='c'?'account-2':'account-1'}]:null});
+ t.deps.client.readRecords=async(table,ids,fields,requireAll=true)=>{reads.push({table,ids,fields,requireAll});return ids.map(source);};
+ t.deps.client.readRecord=async(_table,id)=>source(id);
+ const result=await runLedgerSync('operating-bulk',initialState(['EXP-01'],true),t.deps);
+ assert.equal(result.stats.matched,3);assert.equal(result.stats.errors,0);
+ const accountReads=reads.filter(r=>r.table===expenseWorkerFields.TABLES.accounts);
+ assert.equal(accountReads.length,1);assert.deepEqual(accountReads[0].ids,['account-1','account-2']);
+ assert.deepEqual(accountReads[0].fields,Object.values(expenseWorkerFields.ACCOUNT_FIELDS));
+ assert.equal(accountReads[0].requireAll,false);
+});
+
+test('missing prefetched account fails only its invoice while the rest of the batch continues',async()=>{
+ const t=setup({records:['bad','good']}),A=expenseWorkerFields.TABLES.accounts,I=expenseWorkerFields.INVOICE_FIELDS.accounts;
+ const source=id=>({id,name:id,value:f=>f===I?[{id:id==='bad'?'missing-account':'valid-account'}]:null});
+ t.deps.client.readRecords=async(table,ids,_fields,requireAll=true)=>{
+  if(table===A&&ids.includes('missing-account')){
+   if(requireAll)throw Error('Missing linked records');
+   return ids.filter(id=>id!=='missing-account').map(source);
+  }
+  return ids.map(source);
+ };
+ t.deps.client.readRecord=async(_table,id)=>source(id);
+ const evaluate=t.deps.evaluate;
+ t.deps.evaluate=async(category,record)=>{
+  await t.deps.client.readRecords(A,record.value(I).map(link=>link.id),Object.values(expenseWorkerFields.ACCOUNT_FIELDS));
+  return evaluate(category,record);
+ };
+ const result=await runLedgerSync('operating-missing-account',initialState(['EXP-01'],true),t.deps);
+ assert.equal(result.stats.errors,1);assert.equal(result.errors[0].recordId,'bad');
+ assert.equal(result.stats.matched,1);assert.equal(result.preview[0].recordId,'good');assert.equal(result.done,true);
+});
+
+test('operating payments batch linked invoices and both sides account references',async()=>{
+ const t=setup({records:['pay-a','pay-b']}),E=expenseWorkerFields,reads=[];
+ t.deps.client.queryRecords=async()=>({records:[{value:()=>[{id:'pay-a'},{id:'pay-b'}]}],offset:null});
+ const payment=id=>({id,name:id,value:f=>f===E.PAYMENT_FIELDS.sent?true:f===E.PAYMENT_FIELDS.invoices?[{id:'inv-'+id}]:f===E.PAYMENT_FIELDS.accounts?[{id:'bank'}]:null});
+ const invoice=id=>({id,name:id,value:f=>f===E.INVOICE_FIELDS.accounts?[{id:'expense-account'}]:null});
+ t.deps.client.readRecords=async(table,ids,fields,requireAll=true)=>{
+  reads.push({table,ids,fields,requireAll});return ids.map(table===E.TABLES.invoices?invoice:payment);
+ };
+ t.deps.client.readRecord=async(_table,id)=>payment(id);
+ const result=await runLedgerSync('operating-paid-batch',initialState(['EXP-14'],true),t.deps);
+ assert.equal(result.stats.matched,2);assert.equal(result.stats.errors,0);
+ const parents=reads.filter(r=>r.table===E.TABLES.invoices),accounts=reads.filter(r=>r.table===E.TABLES.accounts);
+ assert.equal(parents.length,1);assert.deepEqual(parents[0].ids,['inv-pay-a','inv-pay-b']);assert.equal(parents[0].requireAll,false);
+ assert.deepEqual(parents[0].fields,Object.values(E.INVOICE_FIELDS));
+ assert.equal(accounts.length,1);assert.deepEqual(accounts[0].ids,['expense-account','bank']);assert.equal(accounts[0].requireAll,false);
+});
+
+test('a missing linked invoice fails only its operating payment',async()=>{
+ const t=setup({records:['bad','good']}),E=expenseWorkerFields;
+ t.deps.client.queryRecords=async()=>({records:[{value:()=>[{id:'bad'},{id:'good'}]}],offset:null});
+ const payment=id=>({id,name:id,value:f=>f===E.PAYMENT_FIELDS.sent?true:f===E.PAYMENT_FIELDS.invoices?[{id:id==='bad'?'missing':'present'}]:null});
+ t.deps.client.readRecords=async(table,ids,_fields,requireAll=true)=>{
+  if(table===E.TABLES.invoices&&ids.includes('missing')){
+   if(requireAll)throw Error('Missing linked invoice');return ids.filter(id=>id!=='missing').map(payment);
+  }
+  return ids.map(payment);
+ };
+ t.deps.client.readRecord=async(_table,id)=>payment(id);
+ const evaluate=t.deps.evaluate;
+ t.deps.evaluate=async(category,source)=>{
+  await t.deps.client.readRecords(E.TABLES.invoices,source.value(E.PAYMENT_FIELDS.invoices).map(link=>link.id),Object.values(E.INVOICE_FIELDS));
+  return evaluate(category,source);
+ };
+ const result=await runLedgerSync('operating-missing-invoice',initialState(['EXP-14'],true),t.deps);
+ assert.equal(result.stats.errors,1);assert.equal(result.errors[0].recordId,'bad');assert.equal(result.stats.matched,1);assert.equal(result.preview[0].recordId,'good');
 });
 
 test('disabled explicit category stays empty instead of falling back to all categories',async()=>{
@@ -37,6 +125,22 @@ test('disabled explicit category stays empty instead of falling back to all cate
  const result=await runLedgerSync('disabled',state,t.deps);
  assert.equal(result.done,true);assert.equal(t.calls.posts,0);assert.equal(t.calls.queries.length,0);
  assert.deepEqual(t.jobs.get('disabled').state.categoryIds,ids);assert.deepEqual(result.disabledCategories,['PAY-09']);
+});
+
+test('targeted retry verifies a cached posting and restores links without reposting',async()=>{
+ const id='rec00000000009931',t=setup({records:[id]});
+ const marker=`FIND(${JSON.stringify('"main:PAY-09"')},{${F.reference}}&"")=0`;
+ t.metadata.set(id,[{rule:'PAY-09',key:'',datetime:'2026-11-01T00:00:00Z',id:'existing-journal'}]);
+ t.deps.client.queryIds=async(_table,formula)=>({ids:formula.includes(marker)?[]:[id],offset:null});
+ const ordinary=await runLedgerSync('cached-full',initialState(['PAY-09'],false),t.deps);
+ assert.equal(ordinary.stats.processed,0);
+ const targeted=await runLedgerSync('cached-targeted',initialState(['PAY-09'],false,{tableId:P,recordId:id}),t.deps);
+ assert.equal(targeted.stats.existing,1);assert.equal(targeted.stats.posted,0);assert.equal(targeted.stats.errors,0);
+ assert.equal(t.calls.posts,0);assert.equal(t.calls.updates.length,1);
+ assert.deepEqual(JSON.parse(t.calls.updates[0].fields[F.reference]).entries.map(row=>row.id),['existing-journal']);
+ const category=CATEGORIES.find(c=>c.code==='PAY-09'),formula=candidateFormula(category,t.deps.client,undefined,id);
+ assert(formula.includes(`RECORD_ID()=${JSON.stringify(id)}`));assert(!formula.includes(marker));
+ assert(formula.includes(F.reverse));assert(formula.includes(F.reverseDate));assert(formula.includes(PF.sent));
 });
 
 test('daily discovery skips disabled rules and processes enabled rules in the same scope',async()=>{
@@ -297,4 +401,103 @@ test('period review outcomes remain pending rather than successful posting attem
  const t=setup();t.deps.ledger.post=async()=>({status:'pending_review',requestId:'review',postedCount:0,duplicateCount:0});
  const result=await runLedgerSync('review-attempts',initialState(['PAY-09'],false),t.deps);
  assert.equal(result.stats.posted,0);assert.equal(t.jobs.get('review-attempts').attempts[0].outcome,'pending');
+});
+
+test('daily sync skips empty groups and keeps exact filters for nonempty or rejected groups', async () => {
+ const clock = new Date().toISOString().slice(0,10);
+ const range = {from:clock,to:clock};
+ for (const outcome of ["empty","match","rejected"]) {
+  const empty = outcome === "empty";
+  const t = setup(), originalQuery = t.deps.client.queryIds, groupQueries = [];
+  t.deps.client.queryIds = async (table, formula, offset, maxRecords) => {
+   if (maxRecords !== 1) return originalQuery.call(t.deps.client,table,formula,offset);
+   groupQueries.push(formula);
+   if (outcome === 'rejected') throw Error('Airtable GET failed (422): invalid formula');
+   return {ids:empty?[]:['a'],offset:null};
+  };
+  const result = await runLedgerSync('daily-group',initialState(['EXP-02','EXP-14'],false,undefined,range,clock+'T00:00:00.000Z'),t.deps);
+  assert.equal(groupQueries.length,1);
+  assert.match(groupQueries[0], /CREATED_TIME/);
+  for (const code of ['EXP-02','EXP-14']) assert(groupQueries[0].includes(JSON.stringify('"main:'+code+'"')));
+  assert.equal(result.skippedDiscovery,empty?2:0);
+  assert.equal(t.calls.queries.length,empty?0:2);
+  assert.equal(t.calls.posts,empty?0:2);
+  assert.equal(result.stats.errors,0);
+  assert.equal(result.done,true);
+ }
+});
+
+test('isolated history checks branch journals and ignores FIN posting markers without rewriting them', async () => {
+ const t = setup();
+ t.deps.client.ignorePostingMarkers = true;
+ t.metadata.set('a',[{rule:'EXP-14',id:'staging-journal'}]);
+ const target = {tableId:P,recordId:'rec'+'I'.repeat(14)};
+ const result = await runLedgerSync('isolated-history',initialState(['EXP-14'],false,target),t.deps);
+ assert.equal(result.stats.existing,1);
+ assert.equal(result.stats.posted,0);
+ assert.equal(result.stats.errors,0);
+ assert.equal(t.calls.updates.length,0);
+ const formula=candidateFormula(CATEGORIES.find(c=>c.code==='EXP-14'),t.deps.client);
+ assert(!formula.includes(F.reference));
+ assert(formula.includes(F.reverse));
+ assert(formula.includes(F.reverseDate));
+ assert(formula.includes(PF.sent));
+});
+
+test('scheduled discovery uses accounting dates on payment owners regardless of creation time', async () => {
+ const t=setup();
+ t.deps.client.queryRecords=async()=>{throw Error('Daily payment discovery must use its owner date');};
+ const day=new Date().toISOString().slice(0,10);
+ const result=await runLedgerSync('scheduled:'+day,initialState(['EXP-14'],true,undefined,{from:day,to:day}),t.deps);
+ assert.equal(result.stats.matched,1);
+ assert.match(t.calls.queries[0].formula,/DATETIME_PARSE/);
+ assert(!t.calls.queries[0].formula.includes('CREATED_TIME'));
+});
+
+test('repost requests require an enabled gate, exactly one source and rule, and a stable retry ID', async () => {
+ const env={databaseUrl:'db',airtableToken:'token',webhookSecret:'secret',repostEnabled:true};
+ const source={tableId:'tbldQXuqNEp8G5pfs',recordId:'rec'+'R'.repeat(14)};
+ const cycle='c9dc02b5-ce56-4b33-9607-30642f6bc290';
+ const request=body=>new Request('https://example.test',{method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(body)});
+ const body={source,categoryCodes:['EXP-01'],dryRun:false,repostId:cycle,runKey:cycle};
+ const execute=async ({state})=>{assert.equal(state.repostId,cycle);assert.deepEqual(state.source,source);return {done:false};};
+ assert.equal((await handleDailyRequest(request(body),{...env,repostEnabled:false},execute)).status,409);
+ assert.equal((await handleDailyRequest(request({...body,runKey:'different'}),env,execute)).status,400);
+ assert.equal((await handleDailyRequest(request({...body,source:undefined}),env,execute)).status,400);
+ assert.equal((await handleDailyRequest(request({...body,categoryCodes:['EXP-14']}),env,execute)).status,400);
+ const response=await handleDailyRequest(request(body),env,execute);
+ assert.equal(response.status,200);
+ assert.equal((await response.json()).requestForResume.repostId,cycle);
+});
+
+test('the Airtable queue accepts only invoices and loans and never invokes the posting worker', async () => {
+ const env={databaseUrl:'db',airtableToken:'token',webhookSecret:'secret',repostEnabled:true};
+ const makeRequest=body=>new Request('https://example.test/ledger-daily',{
+  method:'POST',headers:{'x-ledger-secret':'secret'},body:JSON.stringify(body),
+ });
+ const recordId='rec00000000000001';
+ const execute=async()=>assert.fail('Queue should never post');
+ const enqueue=async source=>[{id:source.recordId,ruleCode:'EXP-01',repostOn:'2026-11-20'}];
+ const body=tableId=>({enqueueRepost:true,source:{tableId,recordId}});
+ for(const table of ['tbldQXuqNEp8G5pfs','tblzYDob4qF6Kha8u']){
+  const res=await handleDailyRequest(makeRequest(body(table)),env,execute,undefined,undefined,enqueue);
+  assert.equal(res.status,202);
+  assert.equal((await res.json()).repostOn,'2026-11-20');
+ }
+ assert.equal((await handleDailyRequest(makeRequest(body('tblR61NG9i0giid28')),env,execute,undefined,undefined,enqueue)).status,400);
+ const invoice=makeRequest(body('tbldQXuqNEp8G5pfs'));
+ assert.equal((await handleDailyRequest(invoice,env,execute,undefined,undefined,async()=>[])).status,409);
+});
+
+test('receipt discovery merges paginated candidates in date and record ID order', async()=>{
+ const t=setup(), records=['recZ0000000000000','recB0000000000000','recA0000000000000'];
+ t.deps.client.queryRecords=async()=>({records:[],offset:null});
+ t.deps.client.queryIds=async(_table,_formula,offset,_limit,_sort,dateField)=>{
+  assert.equal(dateField,PF.date);
+  return offset ? {ids:records.slice(1),dates:{[records[1]]:'2026-11-01',[records[2]]:'2026-11-01'},offset:null} :
+   {ids:[records[0]],dates:{[records[0]]:'2026-11-02'},offset:'next'};
+ };
+ const result=await runLedgerSync('scheduled:receipt-order-test',initialState(['INV-16'],false,undefined,{from:'2026-11-01',to:'2026-11-30'}),t.deps);
+ assert.equal(result.stats.errors,0);
+ assert.deepEqual(t.calls.prepared.flat(),[records[2],records[1],records[0]]);
 });
